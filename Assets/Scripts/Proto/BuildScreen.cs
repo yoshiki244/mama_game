@@ -3,6 +3,7 @@ using UnityEngine.UI;
 using TMPro;
 using System.Collections;
 using System.Collections.Generic;
+using System.Linq;
 
 // ビルド画面: 10x10盤面にピースを配置する（GDD USP①スキルパネルビルド）
 // 左クリック=配置 / 右クリック=撤去 / 回転ボタンでピース回転
@@ -46,7 +47,7 @@ public class BuildScreen : MonoBehaviour
     public void Show()
     {
         _root.gameObject.SetActive(true);
-        _title.text = $"ビルド画面 — Wave {_main.Wave}";
+        _title.text = "ビルド画面";
         RefreshBoard();
     }
 
@@ -60,7 +61,7 @@ public class BuildScreen : MonoBehaviour
         ProtoUI.StyleTitle(_title, ProtoUI.Gold, 8f);
 
         // ---- 盤面（左側） ----
-        var board = ProtoUI.CreatePanel("Board", _root, new Vector2(-330, 30),
+        var board = ProtoUI.CreatePanel("Board", _root, new Vector2(-330, 85),
             new Vector2(10 * (CellSize + CellGap) + CellGap, 10 * (CellSize + CellGap) + CellGap),
             new Color(0.08f, 0.07f, 0.14f));
 
@@ -110,11 +111,21 @@ public class BuildScreen : MonoBehaviour
             btn.targetGraphic = img;
             btn.onClick.AddListener(() => SelectSkill(s));
 
-            // 色見本
-            ProtoUI.CreatePanel("Swatch", img.transform, new Vector2(-185, 0), new Vector2(28, 28), s.color);
+            // ピース形状のミニプレビュー（行の左端に実際の形を表示）
+            float cs = 8f, cgap = 1f;
+            int minX = s.shape.Min(v => v.x), minY = s.shape.Min(v => v.y);
+            int maxX = s.shape.Max(v => v.x), maxY = s.shape.Max(v => v.y);
+            float ox = -190f - (maxX - minX) * (cs + cgap) / 2f;
+            float oy = (maxY - minY) * (cs + cgap) / 2f;
+            foreach (var v in s.shape)
+            {
+                ProtoUI.CreatePanel("Mas", img.transform,
+                    new Vector2(ox + (v.x - minX) * (cs + cgap), oy - (v.y - minY) * (cs + cgap)),
+                    new Vector2(cs, cs), s.color).raycastTarget = false;
+            }
             var label = ProtoUI.CreateText("Label", img.transform,
-                $"{s.skillName}　{s.Size}マス / 威力 {s.power}", 17,
-                new Vector2(20, 0), new Vector2(370, 48), Color.white, TextAlignmentOptions.Left);
+                $"{s.skillName}　{s.Size}マス / 威力 {s.power}", 16,
+                new Vector2(45, 0), new Vector2(325, 48), Color.white, TextAlignmentOptions.Left);
 
             _trayButtons.Add((s, img, label));
             ty -= 56;
@@ -130,9 +141,9 @@ public class BuildScreen : MonoBehaviour
         ProtoUI.CreateText("Hint", _root, "左クリック=配置　右クリック=撤去　ドラッグ=移動\n盤面のピースをクリックで選択（光る）→ Rキーで回転\n1マス=出現率1%　空白マスは「通常攻撃」になる", 14,
             new Vector2(330, ty - 75), new Vector2(460, 70), new Color(0.7f, 0.7f, 0.8f));
 
-        // 出現確率の内訳（盤面の下。複数行OK・上揃え）
-        _info = ProtoUI.CreateText("Info", _root, "", 18,
-            new Vector2(-330, -280), new Vector2(720, 130), new Color(0.85f, 0.8f, 1f),
+        // 出現確率の内訳（盤面の下。スキルごとに1行・上揃え）
+        _info = ProtoUI.CreateText("Info", _root, "", 17,
+            new Vector2(-330, -270), new Vector2(720, 230), new Color(0.85f, 0.8f, 1f),
             TextAlignmentOptions.Top);
 
         // 出撃ボタン
@@ -378,6 +389,6 @@ public class BuildScreen : MonoBehaviour
                 parts.Add($"<color=#{hex}>{skill.skillName}: {pct}%</color>");
             }
         }
-        _info.text = $"占有 {occupied}/100 マス\n" + string.Join("　　", parts);
+        _info.text = $"占有 {occupied}/100 マス\n" + string.Join("\n", parts);
     }
 }

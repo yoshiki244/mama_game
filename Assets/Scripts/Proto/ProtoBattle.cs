@@ -117,7 +117,7 @@ public class ProtoBattle : MonoBehaviour
 
         // キャラクター（ドット絵）。外側=モーション用 / 内側=アイドルアニメ用 の2層構造
         _mamaImg = CreateCharacterSprite("MamaSprite", ProtoPixelArt.Mama(), new Vector2(-470, 40), new Vector2(400, 475));
-        _slimeImg = CreateCharacterSprite("DragonSprite", ProtoPixelArt.Dragon(), new Vector2(470, 50), new Vector2(380, 260));
+        _slimeImg = CreateCharacterSprite("DragonSprite", ProtoPixelArt.Dragon(), new Vector2(460, 70), new Vector2(480, 330));
         _mamaRt = (RectTransform)_mamaImg.transform.parent;
         _slimeRt = (RectTransform)_slimeImg.transform.parent;
         _mamaInner = (RectTransform)_mamaImg.transform;
@@ -224,14 +224,14 @@ public class ProtoBattle : MonoBehaviour
 
         if (_mamaInner != null)
         {
-            // MAMA: ゆっくり上下＋わずかな伸縮（呼吸）
-            _mamaInner.anchoredPosition = new Vector2(0, Mathf.Sin(t * 2.0f) * 4f);
-            _mamaInner.localScale = new Vector3(1f, 1f + Mathf.Sin(t * 2.0f) * 0.012f, 1f);
+            // MAMA: 上下＋わずかな伸縮（呼吸）
+            _mamaInner.anchoredPosition = new Vector2(0, Mathf.Sin(t * 3.0f) * 4f);
+            _mamaInner.localScale = new Vector3(1f, 1f + Mathf.Sin(t * 3.0f) * 0.012f, 1f);
         }
         if (_enemyInner != null)
         {
-            // ドラゴン: 大きめにふわふわ浮遊（位相をずらして同期感をなくす）
-            _enemyInner.anchoredPosition = new Vector2(0, Mathf.Sin(t * 1.4f + 1.7f) * 9f);
+            // ドラゴン: ふわふわ浮遊（位相をずらして同期感をなくす）
+            _enemyInner.anchoredPosition = new Vector2(0, Mathf.Sin(t * 2.1f + 1.7f) * 9f);
         }
     }
 

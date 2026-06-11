@@ -71,7 +71,7 @@ public class ProtoMain : MonoBehaviour
 
     void EnsureEventSystem()
     {
-        if (FindFirstObjectByType<EventSystem>() != null) return;
+        if (FindAnyObjectByType<EventSystem>() != null) return;
         var es = new GameObject("EventSystem");
         es.AddComponent<EventSystem>();
 #if ENABLE_INPUT_SYSTEM
