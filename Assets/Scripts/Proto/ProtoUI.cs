@@ -15,8 +15,20 @@ public static class ProtoUI
         {
             if (!_fontLoaded)
             {
-                _font = Resources.Load<TMP_FontAsset>("NotoSansJP-VariableFont_wght SDF");
                 _fontLoaded = true;
+
+                // ① ゲーム用ドットフォント（DotGothic16）を最優先。実行時にTMPフォント化する
+                var ttf = Resources.Load<UnityEngine.Font>("DotGothic16-Regular");
+                if (ttf != null)
+                {
+                    _font = TMP_FontAsset.CreateFontAsset(ttf);
+                }
+                else
+                {
+                    // ② フォールバック: Noto Sans JP
+                    _font = Resources.Load<TMP_FontAsset>("NotoSansJP-VariableFont_wght SDF");
+                }
+
                 if (_font == null)
                     Debug.LogWarning("日本語フォントが Assets/Resources に見つかりません。文字が□になります。");
             }
@@ -77,8 +89,23 @@ public static class ProtoUI
         t.fontSize = fontSize;
         t.color = color ?? Color.white;
         t.alignment = align;
+
+        // 視認性のための細い黒縁取り（どんな背景でも文字が沈まない）
+        t.outlineWidth = 0.18f;
+        t.outlineColor = new Color32(12, 10, 24, 235);
         return t;
     }
+
+    // 見出し用の高級感スタイル（太字＋字間広め＋指定色）
+    public static void StyleTitle(TextMeshProUGUI t, Color color, float spacing = 5f)
+    {
+        t.fontStyle = FontStyles.Bold;
+        t.characterSpacing = spacing;
+        t.color = color;
+    }
+
+    // シャンパンゴールド（アクセントカラー）
+    public static readonly Color Gold = new Color(0.92f, 0.82f, 0.55f);
 
     public static Button CreateButton(string name, Transform parent, string label, float fontSize,
         Vector2 pos, Vector2 size, Color bg, System.Action onClick)

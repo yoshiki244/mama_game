@@ -199,6 +199,48 @@ public static class ProtoPixelArt
         tex.SetPixel(x, y, c);
     }
 
+    // 赤いドラゴン（左=プレイヤー側を向く。角・翼・しっぽ・かぎ爪つき）
+    public static Sprite Dragon()
+    {
+        var rows = new string[]
+        {
+            "..............wWWW..............",
+            ".............wWWWWW............",
+            "....HH......wWWWWWWW...........",
+            "....dH.....wWWWWWWWWW..........",
+            "...DDDDD...wWWWWWWWWWW.........",
+            "..DDDDDDD..WWdWWWWWdWW.........",
+            ".DDeEDDDDD.dDDDDDDDDDd.........",
+            ".DDDDDDDDDDDDDDDDDDDDDd........",
+            "DDNDDDDDDDDDDDDDDDDDDDDd.......",
+            "DDDDDDDdDDDDDDDDDDDDDDDDd......",
+            ".DdddDDDDDDDDDDDDDDDDDDDDdd....",
+            "..DDYYYDDDDDDDDDDDDDDDDDDDDd...",
+            "..DYYYYYDDDDDDDDDDDDDDDDDDDDdd.",
+            "..DYYYYYYDDDDDDDDDDDDDDDDDDDDd.",
+            "...DYYYYYDDDDDDDDdddDDDDDDDDd..",
+            "...DDYYYDDDDDDDDd...ddDDDDdd...",
+            "....DDDDDDDDDDDd......dddd.....",
+            "....DDDDDDDDDDd................",
+            "....DDdd..ddDDdd...............",
+            "....DDd....dDDd................",
+            "...HHHd....dHHHd...............",
+        };
+        var palette = new Dictionary<char, Color>
+        {
+            { 'D', new Color(0.78f, 0.30f, 0.22f) },  // 体（赤）
+            { 'd', new Color(0.50f, 0.18f, 0.14f) },  // 体の陰
+            { 'Y', new Color(0.96f, 0.82f, 0.55f) },  // 腹（クリーム色）
+            { 'W', new Color(0.45f, 0.16f, 0.22f) },  // 翼膜
+            { 'w', new Color(0.62f, 0.26f, 0.32f) },  // 翼の縁（明）
+            { 'H', new Color(0.95f, 0.92f, 0.80f) },  // 角・かぎ爪
+            { 'E', new Color(1f, 0.85f, 0.2f) },      // 目（金）
+            { 'e', new Color(0.2f, 0.1f, 0.05f) },    // 瞳
+            { 'N', new Color(0.3f, 0.1f, 0.08f) },    // 鼻孔
+        };
+        return FromMap(rows, palette);
+    }
+
     public static Sprite Slime()
     {
         var rows = new string[]

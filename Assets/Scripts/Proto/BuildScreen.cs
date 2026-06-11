@@ -1,6 +1,7 @@
 using UnityEngine;
 using UnityEngine.UI;
 using TMPro;
+using System.Collections;
 using System.Collections.Generic;
 
 // ビルド画面: 10x10盤面にピースを配置する（GDD USP①スキルパネルビルド）
@@ -14,7 +15,8 @@ public class BuildScreen : MonoBehaviour
     TextMeshProUGUI _title;
     TextMeshProUGUI _info;
     TextMeshProUGUI _selectedText;
-    readonly List<(ProtoSkill skill, Image img)> _trayButtons = new List<(ProtoSkill, Image)>();
+    readonly List<(ProtoSkill skill, Image img, TextMeshProUGUI label)> _trayButtons
+        = new List<(ProtoSkill, Image, TextMeshProUGUI)>();
 
     ProtoSkill _selected;
     int _rotation;
@@ -55,9 +57,10 @@ public class BuildScreen : MonoBehaviour
         _root = ProtoUI.CreateFullScreen("BuildScreen", _main.Canvas.transform);
 
         _title = ProtoUI.CreateText("Title", _root, "ビルド画面", 34, new Vector2(0, 410), new Vector2(800, 50));
+        ProtoUI.StyleTitle(_title, ProtoUI.Gold, 8f);
 
         // ---- 盤面（左側） ----
-        var board = ProtoUI.CreatePanel("Board", _root, new Vector2(-330, -20),
+        var board = ProtoUI.CreatePanel("Board", _root, new Vector2(-330, 30),
             new Vector2(10 * (CellSize + CellGap) + CellGap, 10 * (CellSize + CellGap) + CellGap),
             new Color(0.08f, 0.07f, 0.14f));
 
@@ -109,27 +112,28 @@ public class BuildScreen : MonoBehaviour
 
             // 色見本
             ProtoUI.CreatePanel("Swatch", img.transform, new Vector2(-185, 0), new Vector2(28, 28), s.color);
-            ProtoUI.CreateText("Label", img.transform,
-                $"{s.skillName}　{s.Size}マス / 威力 {s.power}", 19,
-                new Vector2(20, 0), new Vector2(360, 48), Color.white, TextAlignmentOptions.Left);
+            var label = ProtoUI.CreateText("Label", img.transform,
+                $"{s.skillName}　{s.Size}マス / 威力 {s.power}", 17,
+                new Vector2(20, 0), new Vector2(370, 48), Color.white, TextAlignmentOptions.Left);
 
-            _trayButtons.Add((s, img));
+            _trayButtons.Add((s, img, label));
             ty -= 56;
         }
 
         // 選択中表示と回転ボタン
-        _selectedText = ProtoUI.CreateText("Selected", _root, "ピース未選択", 20,
-            new Vector2(250, ty - 10), new Vector2(280, 40));
+        _selectedText = ProtoUI.CreateText("Selected", _root, "ピース未選択", 18,
+            new Vector2(230, ty - 10), new Vector2(300, 50));
         ProtoUI.CreateButton("RotateBtn", _root, "回転", 20,
-            new Vector2(460, ty - 10), new Vector2(120, 44), new Color(0.3f, 0.25f, 0.45f), RotateAny);
+            new Vector2(470, ty - 10), new Vector2(120, 44), new Color(0.3f, 0.25f, 0.45f), RotateAny);
 
         // 操作ヒント
         ProtoUI.CreateText("Hint", _root, "左クリック=配置　右クリック=撤去　ドラッグ=移動\n盤面のピースをクリックで選択（光る）→ Rキーで回転\n1マス=出現率1%　空白マスは「通常攻撃」になる", 14,
             new Vector2(330, ty - 75), new Vector2(460, 70), new Color(0.7f, 0.7f, 0.8f));
 
-        // 占有率表示
+        // 出現確率の内訳（盤面の下。複数行OK・上揃え）
         _info = ProtoUI.CreateText("Info", _root, "", 18,
-            new Vector2(-330, -310), new Vector2(460, 80), new Color(0.85f, 0.8f, 1f));
+            new Vector2(-330, -280), new Vector2(720, 130), new Color(0.85f, 0.8f, 1f),
+            TextAlignmentOptions.Top);
 
         // 出撃ボタン
         ProtoUI.CreateButton("StartBtn", _root, "出撃！", 28,
@@ -143,7 +147,7 @@ public class BuildScreen : MonoBehaviour
         _boardSel = null; // トレイを触ったら盤面側の選択は解除
         _rotation = 0;
         UpdateSelectedText();
-        foreach (var (skill, img) in _trayButtons)
+        foreach (var (skill, img, _) in _trayButtons)
             img.color = skill == _selected ? TraySelected : TrayNormal;
     }
 
@@ -155,9 +159,19 @@ public class BuildScreen : MonoBehaviour
 
     void UpdateSelectedText()
     {
+        // 盤面でピースを選択中ならそちらを優先表示（改行位置を固定した2行表示）
+        if (_boardSel.HasValue)
+        {
+            var p = _main.Panel.GetAt(_boardSel.Value.x, _boardSel.Value.y);
+            if (p != null)
+            {
+                _selectedText.text = $"選択中: {p.skill.skillName}\nRキーで回転";
+                return;
+            }
+        }
         _selectedText.text = _selected == null
             ? "ピース未選択"
-            : $"選択中: {_selected.skillName}（回転 {_rotation * 90}°）";
+            : $"選択中: {_selected.skillName}\n回転 {_rotation * 90}°";
     }
 
     void OnCellLeftClick(int x, int y)
@@ -169,19 +183,19 @@ public class BuildScreen : MonoBehaviour
         {
             _boardSel = placed.cells[0]; // ピボットマスで記憶（回転後も追従できる）
             _selected = null;            // トレイ選択は解除
-            UpdateSelectedText();
-            foreach (var (skill, img) in _trayButtons)
+            foreach (var (skill, img, _) in _trayButtons)
                 img.color = TrayNormal;
+            UpdateSelectedText();
             RefreshBoard();
             return;
         }
 
-        // 空きマスをクリック → トレイ選択中のピースを配置（選択は解除）
+        // 空きマスをクリック → トレイ選択中のピースを配置（盤面選択は解除）
         _boardSel = null;
-        if (_selected != null && _main.Panel.Place(_selected, new Vector2Int(x, y), _rotation))
-            RefreshBoard();
-        else
-            RefreshBoard(); // 選択解除の反映
+        if (_selected != null)
+            _main.Panel.Place(_selected, new Vector2Int(x, y), _rotation);
+        UpdateSelectedText();
+        RefreshBoard();
     }
 
     // Rキー: 盤面で選択中のピースを回転。なければトレイ選択中のピースを回転
@@ -214,15 +228,37 @@ public class BuildScreen : MonoBehaviour
                     _boardSel = placements[placements.Count - 1].cells[0];
                 RefreshBoard();
             }
+            else
+            {
+                ShowNotice("回転できません！まわりのスペースが足りません");
+            }
             return;
         }
         RotateSelected();
+    }
+
+    // 一時的なエラーメッセージ（1.5秒後に元の表示へ戻る）
+    Coroutine _noticeCo;
+
+    void ShowNotice(string msg)
+    {
+        if (_noticeCo != null) StopCoroutine(_noticeCo);
+        _noticeCo = StartCoroutine(NoticeRoutine(msg));
+    }
+
+    IEnumerator NoticeRoutine(string msg)
+    {
+        _selectedText.text = $"<color=#FF7070>{msg}</color>";
+        yield return new WaitForSeconds(1.5f);
+        _noticeCo = null;
+        UpdateSelectedText();
     }
 
     void OnCellRightClick(int x, int y)
     {
         _main.Panel.RemoveAt(x, y);
         RefreshBoard();
+        UpdateSelectedText();
     }
 
     // ---- 配置済みピースのドラッグ移動 ----
@@ -234,6 +270,7 @@ public class BuildScreen : MonoBehaviour
 
         _isDragging = true;
         _boardSel = null; // ドラッグ開始で選択解除
+        UpdateSelectedText();
         _dragSkill = p.skill;
         _dragOrigCells = new List<Vector2Int>(p.cells);
         _dragGrabCell = new Vector2Int(x, y);
@@ -328,10 +365,19 @@ public class BuildScreen : MonoBehaviour
             }
         }
 
+        // 盤面下に出現確率の内訳を表示（通常攻撃＋配置済みスキルを個別に。スキル名はピース色）
         int occupied = panel.OccupiedCount();
-        var lines = new List<string> { $"占有 {occupied}/100 マス（スキル発動率 {occupied}% / 通常攻撃 {100 - occupied}%）" };
-        foreach (var kv in panel.CountBySkill())
-            lines.Add($"{kv.Key.skillName}: {kv.Value}%");
-        _info.text = string.Join("　", lines);
+        var counts = panel.CountBySkill();
+
+        var parts = new List<string> { $"通常攻撃: {100 - occupied}%" };
+        foreach (var skill in ProtoSkills.All)
+        {
+            if (counts.TryGetValue(skill, out int pct))
+            {
+                string hex = ColorUtility.ToHtmlStringRGB(skill.color);
+                parts.Add($"<color=#{hex}>{skill.skillName}: {pct}%</color>");
+            }
+        }
+        _info.text = $"占有 {occupied}/100 マス\n" + string.Join("　　", parts);
     }
 }
