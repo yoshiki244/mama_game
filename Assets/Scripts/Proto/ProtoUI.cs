@@ -1,0 +1,162 @@
+using UnityEngine;
+using UnityEngine.UI;
+using UnityEngine.EventSystems;
+using TMPro;
+
+// UIをコードから生成するためのヘルパー集
+public static class ProtoUI
+{
+    static TMP_FontAsset _font;
+    static bool _fontLoaded;
+
+    public static TMP_FontAsset Font
+    {
+        get
+        {
+            if (!_fontLoaded)
+            {
+                _font = Resources.Load<TMP_FontAsset>("NotoSansJP-VariableFont_wght SDF");
+                _fontLoaded = true;
+                if (_font == null)
+                    Debug.LogWarning("日本語フォントが Assets/Resources に見つかりません。文字が□になります。");
+            }
+            return _font;
+        }
+    }
+
+    public static Canvas CreateCanvas()
+    {
+        var go = new GameObject("ProtoCanvas");
+        var canvas = go.AddComponent<Canvas>();
+        canvas.renderMode = RenderMode.ScreenSpaceOverlay;
+        var scaler = go.AddComponent<CanvasScaler>();
+        scaler.uiScaleMode = CanvasScaler.ScaleMode.ScaleWithScreenSize;
+        scaler.referenceResolution = new Vector2(1600, 900);
+        go.AddComponent<GraphicRaycaster>();
+        return canvas;
+    }
+
+    public static RectTransform CreateRect(string name, Transform parent)
+    {
+        var go = new GameObject(name, typeof(RectTransform));
+        var rt = (RectTransform)go.transform;
+        rt.SetParent(parent, false);
+        return rt;
+    }
+
+    // 画面いっぱいに広がるコンテナ
+    public static RectTransform CreateFullScreen(string name, Transform parent)
+    {
+        var rt = CreateRect(name, parent);
+        rt.anchorMin = Vector2.zero;
+        rt.anchorMax = Vector2.one;
+        rt.offsetMin = Vector2.zero;
+        rt.offsetMax = Vector2.zero;
+        return rt;
+    }
+
+    public static Image CreatePanel(string name, Transform parent, Vector2 pos, Vector2 size, Color color)
+    {
+        var rt = CreateRect(name, parent);
+        rt.anchoredPosition = pos;
+        rt.sizeDelta = size;
+        var img = rt.gameObject.AddComponent<Image>();
+        img.color = color;
+        return img;
+    }
+
+    public static TextMeshProUGUI CreateText(string name, Transform parent, string text, float fontSize,
+        Vector2 pos, Vector2 size, Color? color = null, TextAlignmentOptions align = TextAlignmentOptions.Center)
+    {
+        var rt = CreateRect(name, parent);
+        rt.anchoredPosition = pos;
+        rt.sizeDelta = size;
+        var t = rt.gameObject.AddComponent<TextMeshProUGUI>();
+        if (Font != null) t.font = Font;
+        t.text = text;
+        t.fontSize = fontSize;
+        t.color = color ?? Color.white;
+        t.alignment = align;
+        return t;
+    }
+
+    public static Button CreateButton(string name, Transform parent, string label, float fontSize,
+        Vector2 pos, Vector2 size, Color bg, System.Action onClick)
+    {
+        var img = CreatePanel(name, parent, pos, size, bg);
+        var btn = img.gameObject.AddComponent<Button>();
+        btn.targetGraphic = img;
+        if (onClick != null) btn.onClick.AddListener(() => onClick());
+        CreateText("Label", img.transform, label, fontSize, Vector2.zero, size);
+        return btn;
+    }
+
+    // 数字入力欄（点滅チャレンジの手入力用）
+    public static TMP_InputField CreateInputField(string name, Transform parent, Vector2 pos, Vector2 size, float fontSize)
+    {
+        var bg = CreatePanel(name, parent, pos, size, new Color(0.1f, 0.09f, 0.18f));
+        var input = bg.gameObject.AddComponent<TMP_InputField>();
+        input.targetGraphic = bg;
+
+        var areaRt = CreateRect("Text Area", bg.transform);
+        areaRt.anchorMin = Vector2.zero;
+        areaRt.anchorMax = Vector2.one;
+        areaRt.offsetMin = new Vector2(10, 6);
+        areaRt.offsetMax = new Vector2(-10, -7);
+        areaRt.gameObject.AddComponent<RectMask2D>();
+
+        var text = CreateText("Text", areaRt, "", fontSize, Vector2.zero, Vector2.zero);
+        var textRt = (RectTransform)text.transform;
+        textRt.anchorMin = Vector2.zero;
+        textRt.anchorMax = Vector2.one;
+        textRt.offsetMin = Vector2.zero;
+        textRt.offsetMax = Vector2.zero;
+
+        input.textViewport = areaRt;
+        input.textComponent = text;
+        input.contentType = TMP_InputField.ContentType.IntegerNumber;
+        return input;
+    }
+
+    // ゲージ（HPバー・タイマー用）。fillの幅を割合で操作する
+    public static Image CreateGauge(string name, Transform parent, Vector2 pos, Vector2 size,
+        Color bgColor, Color fillColor, out Image fill)
+    {
+        var bg = CreatePanel(name, parent, pos, size, bgColor);
+        var fillRt = CreateRect("Fill", bg.transform);
+        fillRt.anchorMin = new Vector2(0, 0);
+        fillRt.anchorMax = new Vector2(0, 1);
+        fillRt.pivot = new Vector2(0, 0.5f);
+        fillRt.anchoredPosition = Vector2.zero;
+        fillRt.sizeDelta = new Vector2(size.x, 0);
+        fill = fillRt.gameObject.AddComponent<Image>();
+        fill.color = fillColor;
+        return bg;
+    }
+
+    public static void SetGauge(Image fill, float ratio, float fullWidth)
+    {
+        var rt = (RectTransform)fill.transform;
+        rt.sizeDelta = new Vector2(fullWidth * Mathf.Clamp01(ratio), 0);
+    }
+}
+
+// 左右クリック＋ドラッグを受け取るためのハンドラ
+public class CellClickHandler : MonoBehaviour, IPointerClickHandler,
+    IBeginDragHandler, IDragHandler, IEndDragHandler
+{
+    public System.Action<PointerEventData> onClick;
+    public System.Action<PointerEventData> onBeginDrag;
+    public System.Action<PointerEventData> onDrag;
+    public System.Action<PointerEventData> onEndDrag;
+
+    public void OnPointerClick(PointerEventData e)
+    {
+        if (e.dragging) return; // ドラッグ後のリリースはクリック扱いしない
+        onClick?.Invoke(e);
+    }
+
+    public void OnBeginDrag(PointerEventData e) => onBeginDrag?.Invoke(e);
+    public void OnDrag(PointerEventData e) => onDrag?.Invoke(e);
+    public void OnEndDrag(PointerEventData e) => onEndDrag?.Invoke(e);
+}
