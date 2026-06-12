@@ -3,9 +3,11 @@ using UnityEngine.UI;
 using System.Collections;
 using System.Collections.Generic;
 
-// マップ画面: ポケモン式のマス目移動（上下左右1マスずつ）。
-// 敵はマップ上に見えていて、ぶつかる（隣のマスへ進もうとする）とバトル開始。
-// Bキー（またはボタン）でビルド画面（キャラのステータス）を開ける。
+// マップ画面: ポケモン式のマス目移動。3つのエリアを縦に移動する。
+//   エリア1「草原」    … 弱い敵。ここでレベル上げ
+//   エリア2「風雨の森」… 雨が降る暗い森。強めの敵＋中ボス（キングゴーレム）
+//   エリア3「嵐の山頂」… 岩場と階段。頂上にボスのドラゴン（高レベル）
+// 上端中央のひらけた道から次のエリアへ、下端から前のエリアへ戻れる。
 public class MapScreen : MonoBehaviour
 {
     ProtoMain _main;
@@ -19,12 +21,25 @@ public class MapScreen : MonoBehaviour
     const float TileSize = 72f;
     const int GridMinX = -9, GridMaxX = 9;   // 横19マス
     const int GridMinY = -5, GridMaxY = 3;   // 縦9マス
-    const int EnemyCount = 6;                // マップ上の敵の数
+    const int TexTilesX = 21, TexTilesY = 12;
+
+    // エリア設定
+    int _area;
+    static readonly string[] AreaNames = { "草原", "風雨の森", "嵐の山頂" };
+    static readonly int[] AreaEnemyCount = { 6, 5, 2 };
 
     Vector2Int _gridPos;
     Image _playerImg;
     Sprite[][] _walkSprites;     // [向き(0正面/1背面/2左)][コマ(0/1)]
     int _facing;                 // 0=下 1=上 2=左 3=右
+
+    Image _fieldImg;
+    Image _darkOverlay;
+    TMPro.TextMeshProUGUI _areaLabel;
+
+    // 雨（エリア2・3で降る）
+    RectTransform _rainContainer;
+    readonly List<RectTransform> _rainStreaks = new List<RectTransform>();
 
     // 仲間の隊列追従（プレイヤーの過去位置を辿る）
     class Follower
@@ -35,7 +50,7 @@ public class MapScreen : MonoBehaviour
         public Vector2Int gpos;
     }
     readonly List<Follower> _followers = new List<Follower>();
-    readonly List<Vector2Int> _trail = new List<Vector2Int>(); // プレイヤーが直前にいたマスの履歴
+    readonly List<Vector2Int> _trail = new List<Vector2Int>();
 
     class MapEnemy
     {
@@ -43,17 +58,18 @@ public class MapScreen : MonoBehaviour
         public Vector2Int gpos;
         public RectTransform rt;
         public float wanderTimer;
+        public bool isBoss; // ボスはうろつかない・倒しても補充されない
     }
 
     readonly List<MapEnemy> _enemies = new List<MapEnemy>();
-    readonly HashSet<Vector2Int> _trees = new HashSet<Vector2Int>(); // 木のマス（通行不可）
-    MapEnemy _engaged; // 今戦っている敵（勝ったらマップから消す）
+    readonly HashSet<Vector2Int> _trees = new HashSet<Vector2Int>(); // 通行不可マス
+    MapEnemy _engaged;
 
     public void Init(ProtoMain main)
     {
         _main = main;
         BuildUI();
-        for (int i = 0; i < EnemyCount; i++) SpawnEnemy();
+        LoadArea(0, spawnAt: new Vector2Int(0, -2));
         Hide();
     }
 
@@ -62,10 +78,198 @@ public class MapScreen : MonoBehaviour
         _root.gameObject.SetActive(true);
         _busy = false;
         _moving = false;
-        RefreshFollowers(); // パーティが増えていたら追従キャラを作り直す
+        RefreshFollowers();
     }
 
-    // パーティ2人目以降の追従キャラを生成（プレイヤーと同じ見た目システムの色違い）
+    public void Hide()
+    {
+        StopAllCoroutines();
+        _moving = false;
+        _root.gameObject.SetActive(false);
+    }
+
+    // バトル勝利時: 倒した敵を消す。ボスは補充しない
+    public void OnEnemyDefeated()
+    {
+        if (_engaged != null)
+        {
+            bool wasBoss = _engaged.isBoss;
+            Destroy(_engaged.rt.gameObject);
+            _enemies.Remove(_engaged);
+            _engaged = null;
+            if (!wasBoss) SpawnRandomEnemy();
+        }
+    }
+
+    // ==================== UI構築 ====================
+
+    void BuildUI()
+    {
+        _root = ProtoUI.CreateFullScreen("MapScreen", _main.Canvas.transform);
+        var backdrop = _root.gameObject.AddComponent<Image>();
+        backdrop.color = new Color(0.07f, 0.11f, 0.07f);
+
+        _gridPos = new Vector2Int(0, -2);
+
+        // フィールド画像（中身はLoadAreaで差し替える）
+        var field = ProtoUI.CreateRect("Field", _root);
+        field.sizeDelta = new Vector2(TexTilesX * TileSize, TexTilesY * TileSize);
+        field.anchoredPosition = new Vector2(0, -1.5f * TileSize - 30f);
+        _fieldImg = field.gameObject.AddComponent<Image>();
+        _fieldImg.raycastTarget = false;
+
+        // 歩行スプライト
+        _walkSprites = new Sprite[3][];
+        for (int d = 0; d < 3; d++)
+            _walkSprites[d] = new[] { ProtoPixelArt.MapMama(d, 0), ProtoPixelArt.MapMama(d, 1) };
+
+        // プレイヤー
+        _player = ProtoUI.CreateRect("Player", _root);
+        _player.sizeDelta = new Vector2(78, 95);
+        _player.anchoredPosition = GridToAnchored(_gridPos);
+        AddShadow(_player, 46f);
+        _playerImg = _player.gameObject.AddComponent<Image>();
+        _playerImg.sprite = _walkSprites[0][0];
+        _playerImg.preserveAspect = true;
+
+        // 暗さオーバーレイ（荒れたエリアほど暗くなる）
+        var overlayRt = ProtoUI.CreateFullScreen("DarkOverlay", _root);
+        _darkOverlay = overlayRt.gameObject.AddComponent<Image>();
+        _darkOverlay.color = Color.clear;
+        _darkOverlay.raycastTarget = false;
+
+        // 雨（細い線を降らせる）
+        _rainContainer = ProtoUI.CreateFullScreen("Rain", _root);
+        for (int i = 0; i < 50; i++)
+        {
+            var streak = ProtoUI.CreateRect($"Drop{i}", _rainContainer);
+            streak.sizeDelta = new Vector2(2, 22);
+            streak.localRotation = Quaternion.Euler(0, 0, 8f); // 風で少し斜めに
+            streak.anchoredPosition = new Vector2(Random.Range(-820f, 820f), Random.Range(-470f, 470f));
+            var img = streak.gameObject.AddComponent<Image>();
+            img.color = new Color(0.72f, 0.82f, 1f, 0.38f);
+            img.raycastTarget = false;
+            _rainStreaks.Add(streak);
+        }
+        _rainContainer.gameObject.SetActive(false);
+
+        // 下部のUIバー
+        var bottomBar = ProtoUI.CreatePanel("BottomBar", _root, new Vector2(0, -424), new Vector2(1700, 56),
+            new Color(0.05f, 0.04f, 0.10f, 0.92f));
+        bottomBar.raycastTarget = false;
+        ProtoUI.CreatePanel("BottomBarLine", _root, new Vector2(0, -396), new Vector2(1700, 2),
+            new Color(0.85f, 0.72f, 0.4f, 0.7f)).raycastTarget = false;
+
+        ProtoUI.CreateText("Hint", _root,
+            "WASD / 矢印キー = 移動　　上端のひらけた道 = 次のエリアへ　　B = メニュー", 17,
+            new Vector2(60, -424), new Vector2(1100, 30));
+        ProtoUI.CreateButton("MenuBtn", _root, "メニュー", 18,
+            new Vector2(-700, -424), new Vector2(150, 42),
+            new Color(0.3f, 0.25f, 0.45f), () => _main.ShowMenu());
+
+        // エリア名表示（左上）
+        var labelBg = ProtoUI.CreatePanel("AreaLabelBg", _root, new Vector2(-660, 415), new Vector2(260, 44),
+            new Color(0.05f, 0.04f, 0.10f, 0.85f));
+        labelBg.raycastTarget = false;
+        _areaLabel = ProtoUI.CreateText("AreaLabel", _root, "", 19, new Vector2(-660, 415), new Vector2(250, 36));
+        ProtoUI.StyleTitle(_areaLabel, ProtoUI.Gold, 2f);
+    }
+
+    // ==================== エリアの構築 ====================
+
+    void LoadArea(int area, Vector2Int spawnAt)
+    {
+        _area = area;
+        _gridPos = spawnAt;
+
+        // 敵を全消去
+        foreach (var e in _enemies) Destroy(e.rt.gameObject);
+        _enemies.Clear();
+        _engaged = null;
+
+        // 通行不可マスとフィールドの絵を作る
+        _trees.Clear();
+        var treeMap = new bool[TexTilesX, TexTilesY];
+        bool[,] pathMap = null;
+
+        bool topOpen = area < 2;    // 上端の出口（次のエリアへ）
+        bool bottomOpen = area > 0; // 下端の出口（前のエリアへ）
+
+        // 外周の壁（出口部分はひらけている）
+        for (int gx = -10; gx <= 10; gx++)
+        {
+            for (int gy = -7; gy <= 4; gy++)
+            {
+                bool isBorder = gx <= GridMinX - 1 || gx >= GridMaxX + 1 || gy <= GridMinY - 1 || gy >= GridMaxY + 1;
+                if (!isBorder) continue;
+                bool inTopGate = topOpen && gy >= GridMaxY + 1 && Mathf.Abs(gx) <= 1;
+                bool inBottomGate = bottomOpen && gy <= GridMinY - 1 && Mathf.Abs(gx) <= 1;
+                if (inTopGate || inBottomGate) continue;
+                treeMap[gx + 10, 4 - gy] = true;
+            }
+        }
+
+        // 内側の木/岩（スタート地点と出口前は空ける）
+        var rng = new System.Random(11 + area * 31);
+        int wantTrees = area == 2 ? 8 : area == 1 ? 14 : 12;
+        int planted = 0, guard = 0;
+        while (planted < wantTrees && guard++ < 300)
+        {
+            var g = new Vector2Int(rng.Next(GridMinX, GridMaxX + 1), rng.Next(GridMinY, GridMaxY + 1));
+            if (_trees.Contains(g)) continue;
+            if (Mathf.Abs(g.x - spawnAt.x) + Mathf.Abs(g.y - spawnAt.y) < 3) continue;
+            if (Mathf.Abs(g.x) <= 1) continue; // 中央の通り道（出口ルート）は塞がない
+            _trees.Add(g);
+            treeMap[g.x + 10, 4 - g.y] = true;
+            planted++;
+        }
+
+        // 山頂エリア: 頂上へ続く石の階段
+        if (area == 2)
+        {
+            pathMap = new bool[TexTilesX, TexTilesY];
+            for (int gy = -1; gy <= 4; gy++)
+                for (int gx = -1; gx <= 1; gx++)
+                    pathMap[gx + 10, 4 - gy] = true;
+        }
+
+        _fieldImg.sprite = ProtoPixelArt.TopDownField(TexTilesX, TexTilesY, treeMap, 11 + area * 31, area, pathMap);
+
+        // 環境表現: エリアが進むほど暗く、雨が降る
+        _darkOverlay.color = area == 0 ? Color.clear
+            : area == 1 ? new Color(0.02f, 0.02f, 0.10f, 0.22f)
+            : new Color(0.03f, 0.03f, 0.12f, 0.32f);
+        _rainContainer.gameObject.SetActive(area >= 1);
+
+        _areaLabel.text = $"エリア{area + 1}　{AreaNames[area]}";
+
+        // 通常の敵を配置
+        for (int i = 0; i < AreaEnemyCount[area]; i++) SpawnRandomEnemy();
+
+        // ボス配置
+        if (area == 1)
+            SpawnEnemyAt(ProtoEnemies.Find("kinggolem"), new Vector2Int(0, 1), isBoss: true);  // 中ボス
+        if (area == 2)
+            SpawnEnemyAt(ProtoEnemies.Find("dragon"), new Vector2Int(0, GridMaxY), isBoss: true); // 階段の頂上にドラゴン
+
+        // プレイヤーと隊列を配置し直す
+        _player.anchoredPosition = GridToAnchored(_gridPos);
+        _trail.Clear();
+        foreach (var f in _followers)
+        {
+            f.gpos = _gridPos;
+            f.rt.anchoredPosition = GridToAnchored(_gridPos);
+        }
+    }
+
+    // エリア間の移動
+    void TransitionArea(int newArea, bool enterFromBottom)
+    {
+        var spawn = enterFromBottom ? new Vector2Int(0, GridMinY) : new Vector2Int(0, GridMaxY);
+        LoadArea(newArea, spawn);
+    }
+
+    // パーティ2人目以降の追従キャラを生成
     void RefreshFollowers()
     {
         foreach (var f in _followers) Destroy(f.rt.gameObject);
@@ -82,7 +286,7 @@ public class MapScreen : MonoBehaviour
 
             var rt = ProtoUI.CreateRect($"Follower_{m.name}", _root);
             rt.sizeDelta = new Vector2(78, 95);
-            rt.anchoredPosition = GridToAnchored(_gridPos); // 最初はプレイヤーと同じ場所
+            rt.anchoredPosition = GridToAnchored(_gridPos);
             AddShadow(rt, 46f);
             var img = rt.gameObject.AddComponent<Image>();
             img.sprite = sprites[0][0];
@@ -90,118 +294,20 @@ public class MapScreen : MonoBehaviour
             img.raycastTarget = false;
 
             _followers.Add(new Follower { rt = rt, img = img, sprites = sprites, gpos = _gridPos });
-
-            // プレイヤーより手前に描画されないよう、プレイヤーの直前に並べる
             rt.SetSiblingIndex(_player.GetSiblingIndex());
         }
-    }
-
-    public void Hide()
-    {
-        StopAllCoroutines();
-        _moving = false;
-        _root.gameObject.SetActive(false);
-    }
-
-    // バトル勝利時に呼ばれる: 倒した敵をマップから消し、新しい敵を補充
-    public void OnEnemyDefeated()
-    {
-        if (_engaged != null)
-        {
-            Destroy(_engaged.rt.gameObject);
-            _enemies.Remove(_engaged);
-            _engaged = null;
-            SpawnEnemy();
-        }
-    }
-
-    // ==================== UI構築 ====================
-
-    void BuildUI()
-    {
-        _root = ProtoUI.CreateFullScreen("MapScreen", _main.Canvas.transform);
-        var backdrop = _root.gameObject.AddComponent<Image>();
-        backdrop.color = new Color(0.07f, 0.11f, 0.07f); // フィールド外周の暗い緑
-
-        _gridPos = new Vector2Int(0, -2);
-
-        // フィールドのレイアウトを決める（外周＝木の壁、内側にランダムな木）
-        // テクスチャのタイル範囲: gx -10..10（21列）, gy -7..4（12行）
-        const int texTilesX = 21, texTilesY = 12;
-        _trees.Clear();
-        var treeMap = new bool[texTilesX, texTilesY];
-
-        // 外周リング（歩行範囲の外側）を木で囲う
-        for (int gx = -10; gx <= 10; gx++)
-        {
-            for (int gy = -7; gy <= 4; gy++)
-            {
-                bool isBorder = gx <= GridMinX - 1 || gx >= GridMaxX + 1 || gy <= GridMinY - 1 || gy >= GridMaxY + 1;
-                if (isBorder)
-                    treeMap[gx + 10, 4 - gy] = true;
-            }
-        }
-
-        // 内側にもランダムに木を植える（スタート地点の周囲は空ける）
-        var rng = new System.Random(11);
-        int planted = 0;
-        while (planted < 12)
-        {
-            var g = new Vector2Int(rng.Next(GridMinX, GridMaxX + 1), rng.Next(GridMinY, GridMaxY + 1));
-            if (_trees.Contains(g)) continue;
-            if (Mathf.Abs(g.x - _gridPos.x) + Mathf.Abs(g.y - _gridPos.y) < 3) continue;
-            _trees.Add(g);
-            treeMap[g.x + 10, 4 - g.y] = true;
-            planted++;
-        }
-
-        // 見下ろしフィールドの描画（タイル中心がグリッドと一致するよう配置）
-        var field = ProtoUI.CreateRect("Field", _root);
-        field.sizeDelta = new Vector2(texTilesX * TileSize, texTilesY * TileSize);
-        field.anchoredPosition = new Vector2(0, -1.5f * TileSize - 30f);
-        var fieldImg = field.gameObject.AddComponent<Image>();
-        fieldImg.sprite = ProtoPixelArt.TopDownField(texTilesX, texTilesY, treeMap, 11);
-        fieldImg.raycastTarget = false;
-
-        // 歩行スプライトを4方向×2コマぶん用意（右向きは左向きのX反転で済ます）
-        _walkSprites = new Sprite[3][];
-        for (int d = 0; d < 3; d++)
-            _walkSprites[d] = new[] { ProtoPixelArt.MapMama(d, 0), ProtoPixelArt.MapMama(d, 1) };
-
-        // プレイヤー（足元に影＝接地感）
-        _player = ProtoUI.CreateRect("Player", _root);
-        _player.sizeDelta = new Vector2(78, 95);
-        _player.anchoredPosition = GridToAnchored(_gridPos);
-        AddShadow(_player, 46f);
-        _playerImg = _player.gameObject.AddComponent<Image>();
-        _playerImg.sprite = _walkSprites[0][0]; // 最初は正面向き
-        _playerImg.preserveAspect = true;
-
-        // 下部のUIバー（フィールドと分離した専用枠にヒントとメニューボタンを置く）
-        var bottomBar = ProtoUI.CreatePanel("BottomBar", _root, new Vector2(0, -424), new Vector2(1700, 56),
-            new Color(0.05f, 0.04f, 0.10f, 0.92f));
-        bottomBar.raycastTarget = false;
-        ProtoUI.CreatePanel("BottomBarLine", _root, new Vector2(0, -396), new Vector2(1700, 2),
-            new Color(0.85f, 0.72f, 0.4f, 0.7f)).raycastTarget = false;
-
-        ProtoUI.CreateText("Hint", _root,
-            "WASD / 矢印キー = 移動　　敵にぶつかるとバトル！　　B = メニュー", 17,
-            new Vector2(60, -424), new Vector2(1100, 30));
-        ProtoUI.CreateButton("MenuBtn", _root, "メニュー", 18,
-            new Vector2(-700, -424), new Vector2(150, 42),
-            new Color(0.3f, 0.25f, 0.45f), () => _main.ShowMenu());
     }
 
     Vector2 GridToAnchored(Vector2Int g)
         => new Vector2(g.x * TileSize, g.y * TileSize - 30f);
 
-    // 足元の影（楕円風）。これがあるだけで「地面に立っている」感が出る
+    // 足元の影（楕円風）
     void AddShadow(RectTransform parent, float width)
     {
         var shadow = ProtoUI.CreateRect("Shadow", parent);
         shadow.anchoredPosition = new Vector2(0, -parent.sizeDelta.y / 2f + 4f);
         shadow.sizeDelta = new Vector2(width, 13f);
-        shadow.localRotation = Quaternion.Euler(0, 0, 45); // ひし形→つぶれた楕円風
+        shadow.localRotation = Quaternion.Euler(0, 0, 45);
         shadow.localScale = new Vector3(1f, 0.35f, 1f);
         var img = shadow.gameObject.AddComponent<Image>();
         img.color = new Color(0f, 0f, 0f, 0.28f);
@@ -210,11 +316,10 @@ public class MapScreen : MonoBehaviour
 
     // ==================== 敵のスポーン ====================
 
-    void SpawnEnemy()
+    void SpawnRandomEnemy()
     {
-        var data = ProtoEnemies.RandomEnemy();
+        var data = ProtoEnemies.RandomEnemy(_area);
 
-        // 空いているマスを探す（プレイヤーの周囲2マスは避ける）
         Vector2Int g;
         int guard = 0;
         do
@@ -224,13 +329,19 @@ public class MapScreen : MonoBehaviour
         } while ((IsOccupied(g) || _trees.Contains(g)
                   || Mathf.Abs(g.x - _gridPos.x) + Mathf.Abs(g.y - _gridPos.y) < 3) && guard < 100);
 
+        SpawnEnemyAt(data, g, isBoss: false);
+    }
+
+    void SpawnEnemyAt(ProtoEnemy data, Vector2Int g, bool isBoss)
+    {
         var rt = ProtoUI.CreateRect($"Enemy_{data.id}", _root);
-        rt.sizeDelta = data.mapSize;
+        rt.sizeDelta = isBoss ? data.mapSize * 1.25f : data.mapSize; // ボスはひと回り大きく
         rt.anchoredPosition = GridToAnchored(g);
-        AddShadow(rt, data.mapSize.x * 0.6f);
+        AddShadow(rt, rt.sizeDelta.x * 0.6f);
         var img = rt.gameObject.AddComponent<Image>();
         img.sprite = data.sprite;
         img.preserveAspect = true;
+        rt.SetSiblingIndex(_player.GetSiblingIndex()); // プレイヤーやオーバーレイより後ろに
 
         _enemies.Add(new MapEnemy
         {
@@ -238,6 +349,7 @@ public class MapScreen : MonoBehaviour
             gpos = g,
             rt = rt,
             wanderTimer = Random.Range(1.5f, 3.5f),
+            isBoss = isBoss,
         });
     }
 
@@ -259,13 +371,17 @@ public class MapScreen : MonoBehaviour
 
     void Update()
     {
-        if (_root == null || !_root.gameObject.activeSelf || _busy) return;
+        if (_root == null || !_root.gameObject.activeSelf) return;
+
+        UpdateRain(); // 雨はいつでも降り続ける
+
+        if (_busy) return;
 
         UpdateEnemies();
 
         if (_moving) return;
 
-        // 入力（上下左右のみ・斜め移動なし）
+        // 入力（上下左右のみ）
         Vector2Int dir = Vector2Int.zero;
         bool buildKey = false;
 
@@ -298,16 +414,28 @@ public class MapScreen : MonoBehaviour
         }
         if (dir == Vector2Int.zero) return;
 
-        // 進む向きにキャラを向ける（壁や敵にぶつかる場合でも向きだけは変わる）
         _facing = dir == Vector2Int.down ? 0 : dir == Vector2Int.up ? 1 : dir == Vector2Int.left ? 2 : 3;
         ApplyPlayerSprite(0);
 
         Vector2Int target = _gridPos + dir;
-        if (target.x < GridMinX || target.x > GridMaxX || target.y < GridMinY || target.y > GridMaxY)
-            return;
-        if (_trees.Contains(target)) return; // 木のマスは通れない
 
-        // 敵のマスへ進もうとした → バトル！
+        // 出口判定: 上端中央から次のエリアへ / 下端中央から前のエリアへ
+        if (target.y > GridMaxY)
+        {
+            if (_area < 2 && Mathf.Abs(_gridPos.x) <= 1)
+                TransitionArea(_area + 1, enterFromBottom: true);
+            return;
+        }
+        if (target.y < GridMinY)
+        {
+            if (_area > 0 && Mathf.Abs(_gridPos.x) <= 1)
+                TransitionArea(_area - 1, enterFromBottom: false);
+            return;
+        }
+
+        if (target.x < GridMinX || target.x > GridMaxX) return;
+        if (_trees.Contains(target)) return;
+
         var enemy = EnemyAt(target);
         if (enemy != null)
         {
@@ -318,12 +446,30 @@ public class MapScreen : MonoBehaviour
         StartCoroutine(StepTo(target));
     }
 
-    // 1マスぶん歩く（前半=足を開く、後半=足をそろえる の2コマアニメ）
+    // 雨のアニメーション（落ちて、下に消えたら上に戻る）
+    void UpdateRain()
+    {
+        if (!_rainContainer.gameObject.activeSelf) return;
+        float dt = Time.deltaTime;
+        foreach (var s in _rainStreaks)
+        {
+            var p = s.anchoredPosition;
+            p.y -= 950f * dt;
+            p.x -= 130f * dt; // 風に流される
+            if (p.y < -480f)
+            {
+                p.y = 480f;
+                p.x = Random.Range(-820f, 880f);
+            }
+            s.anchoredPosition = p;
+        }
+    }
+
+    // 1マスぶん歩く
     IEnumerator StepTo(Vector2Int target)
     {
         _moving = true;
 
-        // 隊列の履歴を更新して、仲間たちを1マスずつ前進させる
         _trail.Insert(0, _gridPos);
         if (_trail.Count > _followers.Count) _trail.RemoveRange(_followers.Count, _trail.Count - _followers.Count);
         for (int i = 0; i < _followers.Count && i < _trail.Count; i++)
@@ -350,7 +496,7 @@ public class MapScreen : MonoBehaviour
         {
             t += Time.deltaTime;
             float p = t / dur;
-            ApplyPlayerSprite(p < 0.5f ? 1 : 0); // 歩きのコマ切り替え
+            ApplyPlayerSprite(p < 0.5f ? 1 : 0);
             _player.anchoredPosition = Vector2.Lerp(from, to, p);
             yield return null;
         }
@@ -359,7 +505,6 @@ public class MapScreen : MonoBehaviour
         _moving = false;
     }
 
-    // 仲間が1マスついてくる移動
     IEnumerator SlideFollower(Follower f, Vector2 to, int fdir)
     {
         Vector2 from = f.rt.anchoredPosition;
@@ -372,10 +517,9 @@ public class MapScreen : MonoBehaviour
             yield return null;
         }
         f.rt.anchoredPosition = to;
-        f.img.sprite = f.sprites[fdir == 3 ? 2 : fdir][0]; // 足をそろえる
+        f.img.sprite = f.sprites[fdir == 3 ? 2 : fdir][0];
     }
 
-    // 向きとコマに応じてスプライトを適用（右向きは左向きをX反転）
     void ApplyPlayerSprite(int frame)
     {
         int d = _facing == 3 ? 2 : _facing;
@@ -383,11 +527,12 @@ public class MapScreen : MonoBehaviour
         _player.localScale = new Vector3(_facing == 3 ? -1f : 1f, 1f, 1f);
     }
 
-    // 敵がときどき1マスうろつく
+    // 敵がときどき1マスうろつく（ボスは動かない）
     void UpdateEnemies()
     {
         foreach (var e in _enemies)
         {
+            if (e.isBoss) continue;
             e.wanderTimer -= Time.deltaTime;
             if (e.wanderTimer > 0f) continue;
             e.wanderTimer = Random.Range(1.5f, 3.5f);
@@ -396,9 +541,8 @@ public class MapScreen : MonoBehaviour
             Vector2Int target = e.gpos + dirs[Random.Range(0, 4)];
             if (target.x < GridMinX || target.x > GridMaxX || target.y < GridMinY || target.y > GridMaxY)
                 continue;
-            if (_trees.Contains(target)) continue; // 敵も木は通れない
+            if (_trees.Contains(target)) continue;
 
-            // プレイヤーのマスに踏み込んできたら向こうからエンカウント！
             if (target == _gridPos)
             {
                 if (!_busy) StartCoroutine(Encounter(e));
@@ -425,14 +569,14 @@ public class MapScreen : MonoBehaviour
         rt.anchoredPosition = to;
     }
 
-    // エンカウント演出: 「！」が跳ねてからバトルへ
+    // エンカウント演出
     IEnumerator Encounter(MapEnemy enemy)
     {
         _busy = true;
         _engaged = enemy;
 
-        var alert = ProtoUI.CreateText("Alert", _root, "！", 64,
-            _player.anchoredPosition + new Vector2(0, 90), new Vector2(80, 80),
+        var alert = ProtoUI.CreateText("Alert", _root, enemy.isBoss ? "！！" : "！", 64,
+            _player.anchoredPosition + new Vector2(0, 90), new Vector2(140, 80),
             new Color(1f, 0.3f, 0.3f));
         alert.fontStyle = TMPro.FontStyles.Bold;
 

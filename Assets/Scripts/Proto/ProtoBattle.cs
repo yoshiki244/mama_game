@@ -81,6 +81,7 @@ public class ProtoBattle : MonoBehaviour
     }
 
     ProtoEnemy _enemy; // 今戦っている敵
+    int _effWave;      // 敵の実効レベル（Wave + ボスのレベル補正）
 
     // --- ATB（アクティブタイムバトル）---
     bool _atb;            // 設定でON/OFF
@@ -115,9 +116,10 @@ public class ProtoBattle : MonoBehaviour
         }
         _playerHP = _playerMaxHP; // 合計値（敗北判定用）
         BuildPartyHpBars();
-        _enemyMaxHP = enemy.baseHP + 40 * (_main.Wave - 1); // 敵ごとの基礎HP＋Wave補正
+        _effWave = _main.Wave + enemy.levelOffset; // ボスはレベル補正で大幅に強くなる
+        _enemyMaxHP = enemy.baseHP + 40 * (_effWave - 1);
         _enemyHP = _enemyMaxHP;
-        _enemyName.text = $"{enemy.enemyName} Lv{_main.Wave}";
+        _enemyName.text = $"{enemy.enemyName} Lv{_effWave}";
 
         // 敵の見た目を差し替え。地上の敵は足が地面ラインに着く位置＋影、飛行の敵は浮いたまま
         _slimeImg.sprite = enemy.sprite;
@@ -1302,7 +1304,7 @@ public class ProtoBattle : MonoBehaviour
         if (_enemyHP <= 0)
         {
             // EXP獲得とレベルアップ判定（パーティ全員が同じEXPをもらう）
-            int expGain = _enemy.baseHP / 2 + 10 * _main.Wave;
+            int expGain = _enemy.baseHP / 2 + 10 * _effWave; // 強い敵ほどEXPが多い
             var levelUps = new List<string>();
             for (int i = 0; i < _main.MemberStats.Count; i++)
             {
@@ -1401,7 +1403,7 @@ public class ProtoBattle : MonoBehaviour
             var targetStats = _main.MemberStats[target];
 
             int raw = Mathf.RoundToInt(Random.Range(_enemy.minAtk, _enemy.maxAtk + 1) * atk.mult)
-                      + 3 * (_main.Wave - 1);
+                      + 3 * (_effWave - 1);
             int dmg = Mathf.Max(1, raw - targetStats.Defense);
             bool dodged = Random.Range(0, 100) < targetStats.Speed * 2; // 素早さ×2 %で回避
 

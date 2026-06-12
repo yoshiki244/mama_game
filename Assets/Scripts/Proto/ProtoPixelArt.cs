@@ -366,9 +366,11 @@ public static class ProtoPixelArt
         return FromMap(rows, palette);
     }
 
-    // 見下ろし型フィールド（ポケモン風）: 市松模様の草タイル＋花＋木（上から見た樹冠）
-    // tree[tx,ty] = true のタイルに木を描く（ty は上から数える）
-    public static Sprite TopDownField(int tilesX, int tilesY, bool[,] tree, int seed)
+    // 見下ろし型フィールド（ポケモン風）: 市松模様の地面＋木/岩（上から見た図）
+    // tree[tx,ty] = true のタイルに木（テーマ2では岩）を描く
+    // theme: 0=草原 1=風雨の森（暗い緑） 2=嵐の山頂（岩場）
+    // path:  trueのタイルに石の階段を描く（山頂の登り道用）
+    public static Sprite TopDownField(int tilesX, int tilesY, bool[,] tree, int seed, int theme = 0, bool[,] path = null)
     {
         const int px = 8; // 1タイル=8ピクセル
         int w = tilesX * px, h = tilesY * px;
@@ -376,14 +378,34 @@ public static class ProtoPixelArt
         tex.filterMode = FilterMode.Point;
         var rng = new System.Random(seed);
 
-        // 草タイル（2色の市松模様＋まだらノイズ）
+        // テーマごとの配色
+        Color baseA, baseB, treeDark, treeMid, treeLight;
+        bool flowers;
+        switch (theme)
+        {
+            case 1: // 風雨の森: 暗く湿った緑
+                baseA = new Color(0.28f, 0.43f, 0.27f); baseB = new Color(0.25f, 0.39f, 0.24f);
+                treeDark = new Color(0.08f, 0.26f, 0.12f); treeMid = new Color(0.12f, 0.33f, 0.16f); treeLight = new Color(0.18f, 0.40f, 0.22f);
+                flowers = false;
+                break;
+            case 2: // 嵐の山頂: 岩場（木の代わりに岩）
+                baseA = new Color(0.44f, 0.44f, 0.49f); baseB = new Color(0.40f, 0.40f, 0.45f);
+                treeDark = new Color(0.26f, 0.26f, 0.30f); treeMid = new Color(0.50f, 0.50f, 0.55f); treeLight = new Color(0.62f, 0.62f, 0.68f);
+                flowers = false;
+                break;
+            default: // 草原
+                baseA = new Color(0.46f, 0.73f, 0.42f); baseB = new Color(0.42f, 0.69f, 0.38f);
+                treeDark = new Color(0.16f, 0.42f, 0.20f); treeMid = new Color(0.22f, 0.52f, 0.26f); treeLight = new Color(0.34f, 0.64f, 0.36f);
+                flowers = true;
+                break;
+        }
+
+        // 地面タイル（2色の市松模様＋まだらノイズ）
         for (int ty = 0; ty < tilesY; ty++)
         {
             for (int tx = 0; tx < tilesX; tx++)
             {
-                var baseCol = ((tx + ty) % 2 == 0)
-                    ? new Color(0.46f, 0.73f, 0.42f)
-                    : new Color(0.42f, 0.69f, 0.38f);
+                var baseCol = ((tx + ty) % 2 == 0) ? baseA : baseB;
                 for (int y = 0; y < px; y++)
                 {
                     for (int x = 0; x < px; x++)
@@ -401,21 +423,41 @@ public static class ProtoPixelArt
             }
         }
 
-        // 花を散らす（木のないタイルだけ）
-        for (int i = 0; i < tilesX * tilesY / 6; i++)
+        // 石の階段（横線で段差を表現）
+        if (path != null)
         {
-            int tx = rng.Next(tilesX), ty = rng.Next(tilesY);
-            if (tree[tx, ty]) continue;
-            Color fc = rng.Next(3) switch
+            var stone = new Color(0.66f, 0.65f, 0.70f);
+            var stoneEdge = new Color(0.45f, 0.44f, 0.50f);
+            for (int ty = 0; ty < tilesY; ty++)
             {
-                0 => new Color(1f, 0.8f, 0.85f),
-                1 => new Color(1f, 0.95f, 0.6f),
-                _ => Color.white,
-            };
-            tex.SetPixel(tx * px + rng.Next(2, 6), h - 1 - (ty * px + rng.Next(2, 6)), fc);
+                for (int tx = 0; tx < tilesX; tx++)
+                {
+                    if (!path[tx, ty]) continue;
+                    for (int y = 0; y < px; y++)
+                        for (int x = 0; x < px; x++)
+                            tex.SetPixel(tx * px + x, h - 1 - (ty * px + y), (y % 4 == 0) ? stoneEdge : stone);
+                }
+            }
         }
 
-        // 木（上から見たこんもり樹冠）
+        // 花を散らす（草原テーマだけ。木のないタイルに）
+        if (flowers)
+        {
+            for (int i = 0; i < tilesX * tilesY / 6; i++)
+            {
+                int tx = rng.Next(tilesX), ty = rng.Next(tilesY);
+                if (tree[tx, ty]) continue;
+                Color fc = rng.Next(3) switch
+                {
+                    0 => new Color(1f, 0.8f, 0.85f),
+                    1 => new Color(1f, 0.95f, 0.6f),
+                    _ => Color.white,
+                };
+                tex.SetPixel(tx * px + rng.Next(2, 6), h - 1 - (ty * px + rng.Next(2, 6)), fc);
+            }
+        }
+
+        // 木 or 岩（テーマの配色で描く）
         for (int ty = 0; ty < tilesY; ty++)
         {
             for (int tx = 0; tx < tilesX; tx++)
@@ -423,9 +465,9 @@ public static class ProtoPixelArt
                 if (!tree[tx, ty]) continue;
                 int cx = tx * px + px / 2;
                 int cy = h - 1 - (ty * px + px / 2);
-                DrawCircle(tex, cx, cy, 3, new Color(0.16f, 0.42f, 0.20f));
-                DrawCircle(tex, cx - 1, cy + 1, 2, new Color(0.22f, 0.52f, 0.26f));
-                tex.SetPixel(cx - 1, cy + 2, new Color(0.34f, 0.64f, 0.36f));
+                DrawCircle(tex, cx, cy, 3, treeDark);
+                DrawCircle(tex, cx - 1, cy + 1, 2, treeMid);
+                tex.SetPixel(cx - 1, cy + 2, treeLight);
             }
         }
 

@@ -22,6 +22,7 @@ public class ProtoEnemy
     public Vector2 mapSize;      // マップ上での大きさ
     public float atbInterval;    // ATBモードでの攻撃間隔（秒）
     public bool flying;          // 飛行する敵は地面に立たない（影もつけない）
+    public int levelOffset;      // ボス用のレベル補正（Wave+この値で強さを計算）
     public EnemyAttack[] attacks;
 }
 
@@ -73,6 +74,7 @@ public static class ProtoEnemies
                     new ProtoEnemy { id = "dragon", enemyName = "ドラゴン", sprite = ProtoPixelArt.Dragon(),
                         baseHP = 170, minAtk = 12, maxAtk = 20, battleSize = new Vector2(700, 460), mapSize = new Vector2(112, 74),
                         atbInterval = 5.5f, flying = true,
+                        levelOffset = 9, // 山頂のボス。序盤のレベルでは歯が立たない
                         attacks = new[]
                         {
                             new EnemyAttack { name = "かみつき",       mult = 1.0f,  hits = 1, weight = 35 },
@@ -80,6 +82,17 @@ public static class ProtoEnemies
                             new EnemyAttack { name = "つばさの連撃",   mult = 0.6f,  hits = 3, weight = 20 },
                             new EnemyAttack { name = "しっぽ振り回し", mult = 0.85f, hits = 2, weight = 15 },
                             new EnemyAttack { name = "天をあおいで咆哮した", mult = 0f, hits = 0, weight = 8 },
+                        } },
+                    new ProtoEnemy { id = "kinggolem", enemyName = "キングゴーレム", sprite = ProtoPixelArt.Golem(),
+                        baseHP = 300, minAtk = 16, maxAtk = 24, battleSize = new Vector2(560, 510), mapSize = new Vector2(105, 96),
+                        atbInterval = 6.0f,
+                        levelOffset = 4, // 風雨の森の中ボス
+                        attacks = new[]
+                        {
+                            new EnemyAttack { name = "なぐりつけ",     mult = 1.0f, hits = 1, weight = 40 },
+                            new EnemyAttack { name = "大地砕き",       mult = 2.0f, hits = 1, weight = 25 },
+                            new EnemyAttack { name = "岩石乱舞",       mult = 0.7f, hits = 3, weight = 20 },
+                            new EnemyAttack { name = "ちからをためている", mult = 0f, hits = 0, weight = 15 },
                         } },
                 };
             }
@@ -101,13 +114,24 @@ public static class ProtoEnemies
         return enemy.attacks[0];
     }
 
-    // 出現抽選（弱い敵ほど出やすく、ドラゴンはレア）
-    public static ProtoEnemy RandomEnemy()
+    public static ProtoEnemy Find(string id) => All.Find(e => e.id == id);
+
+    // エリア別の出現抽選（ドラゴンはボス専用になったので通常湧きしない）
+    public static ProtoEnemy RandomEnemy(int area)
     {
         float r = Random.value;
-        if (r < 0.12f) return All[3]; // ドラゴン 12%
-        if (r < 0.35f) return All[2]; // ゴーレム 23%
-        if (r < 0.65f) return All[1]; // コウモリ 30%
-        return All[0];                // スライム 35%
+        switch (area)
+        {
+            case 1: // 風雨の森: 強めの敵が多い
+                if (r < 0.20f) return Find("slime");
+                if (r < 0.55f) return Find("bat");
+                return Find("golem");
+            case 2: // 嵐の山頂: ゴーレムだけがうろつく
+                return Find("golem");
+            default: // 草原: 弱い敵中心
+                if (r < 0.45f) return Find("slime");
+                if (r < 0.80f) return Find("bat");
+                return Find("golem");
+        }
     }
 }

@@ -73,10 +73,10 @@ public class MenuScreen : MonoBehaviour
         var title = ProtoUI.CreateText("Title", panel.transform, "メニュー", 30, new Vector2(0, 316), new Vector2(400, 44));
         ProtoUI.StyleTitle(title, ProtoUI.Gold, 10f);
 
-        // ---- 左の項目ボタン列 ----
+        // ---- 左の項目ボタン列（開いたとき最初に表示されるステータスを先頭に） ----
         float by = 230;
-        CreateMenuButton(panel.transform, "ビルド", ref by, () => _main.ShowBuild());
         CreateMenuButton(panel.transform, "ステータス", ref by, ShowStatusTab);
+        CreateMenuButton(panel.transform, "ビルド", ref by, () => _main.ShowBuild());
         CreateMenuButton(panel.transform, "仲間", ref by, ShowPartyTab);
         CreateMenuButton(panel.transform, "設定", ref by, ShowSettingsTab);
         CreateMenuButton(panel.transform, "セーブ", ref by, SaveGame);
@@ -115,6 +115,8 @@ public class MenuScreen : MonoBehaviour
             new Vector2(-145, -210), new Vector2(260, 60), new Color(0.3f, 0.45f, 0.3f), AddMember);
         ProtoUI.CreateButton("RemoveMember", _partyContent, "仲間を外す", 22,
             new Vector2(145, -210), new Vector2(260, 60), new Color(0.45f, 0.3f, 0.3f), RemoveMember);
+        ProtoUI.CreateText("PartyHint", _partyContent, "→キー = 仲間を増やす　　←キー = 仲間を外す", 15,
+            new Vector2(0, -260), new Vector2(500, 26), new Color(0.6f, 0.6f, 0.75f));
 
         _partyContent.gameObject.SetActive(false);
     }
@@ -258,6 +260,13 @@ public class MenuScreen : MonoBehaviour
                 }
             }
             return;
+        }
+
+        // ===== 仲間タブ表示中: ←→で仲間を増減 =====
+        if (_partyContent != null && _partyContent.gameObject.activeSelf)
+        {
+            if (right) { AddMember(); return; }    // → 仲間を増やす
+            if (left) { RemoveMember(); return; }  // ← 仲間を外す
         }
 
         // ===== 左のメニュー項目の操作 =====
