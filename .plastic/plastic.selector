@@ -1,0 +1,4 @@
+repository "mama_game/mama_game@15669707536463@cloud"
+  path "/"
+    br "/main"
+    co "/main"
