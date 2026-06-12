@@ -117,6 +117,7 @@ public class ProtoMain : MonoBehaviour
     // 画面に合わせてBGMを切り替える（同じ曲なら何もしない）
     void PlayBgm(AudioClip clip)
     {
+        if (_bgmSource == null || clip == null) return; // 起動初期化中はまだBGMが無い
         if (_bgmSource.clip == clip && _bgmSource.isPlaying) return;
         _bgmSource.clip = clip;
         if (BgmEnabled) _bgmSource.Play();
