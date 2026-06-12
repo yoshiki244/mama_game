@@ -41,6 +41,12 @@ public class MapScreen : MonoBehaviour
     RectTransform _rainContainer;
     readonly List<RectTransform> _rainStreaks = new List<RectTransform>();
 
+    // 雷（ボスエリアのみ）
+    Image _lightningFlash;
+    float _lightningTimer;
+    AudioSource _sfx;
+    AudioClip _thunderClip;
+
     // 仲間の隊列追従（プレイヤーの過去位置を辿る）
     class Follower
     {
@@ -79,6 +85,7 @@ public class MapScreen : MonoBehaviour
         _busy = false;
         _moving = false;
         RefreshFollowers();
+        _main.PlayMapBgm(_area);
     }
 
     public void Hide()
@@ -152,6 +159,16 @@ public class MapScreen : MonoBehaviour
             _rainStreaks.Add(streak);
         }
         _rainContainer.gameObject.SetActive(false);
+
+        // 雷の画面フラッシュ（ボスエリア用。普段は透明）
+        var flashRt = ProtoUI.CreateFullScreen("LightningFlash", _root);
+        _lightningFlash = flashRt.gameObject.AddComponent<Image>();
+        _lightningFlash.color = Color.clear;
+        _lightningFlash.raycastTarget = false;
+
+        // 雷鳴の音源
+        _sfx = gameObject.AddComponent<AudioSource>();
+        _thunderClip = ProtoAudio.CreateThunder();
 
         // 下部のUIバー
         var bottomBar = ProtoUI.CreatePanel("BottomBar", _root, new Vector2(0, -424), new Vector2(1700, 56),
@@ -242,6 +259,8 @@ public class MapScreen : MonoBehaviour
         _rainContainer.gameObject.SetActive(area >= 1);
 
         _areaLabel.text = $"エリア{area + 1}　{AreaNames[area]}";
+        _lightningTimer = Random.Range(2f, 5f);
+        _main.PlayMapBgm(area); // 山頂では緊迫したBGMに
 
         // 通常の敵を配置
         for (int i = 0; i < AreaEnemyCount[area]; i++) SpawnRandomEnemy();
@@ -374,6 +393,7 @@ public class MapScreen : MonoBehaviour
         if (_root == null || !_root.gameObject.activeSelf) return;
 
         UpdateRain(); // 雨はいつでも降り続ける
+        UpdateLightning(); // ボスエリアでは雷が落ちる
 
         if (_busy) return;
 
@@ -444,6 +464,58 @@ public class MapScreen : MonoBehaviour
         }
 
         StartCoroutine(StepTo(target));
+    }
+
+    // ボスエリアの雷: 数秒おきに稲妻が落ち、画面が一瞬光って雷鳴が轟く
+    void UpdateLightning()
+    {
+        if (_area < 2) return;
+        _lightningTimer -= Time.deltaTime;
+        if (_lightningTimer > 0f) return;
+        _lightningTimer = Random.Range(3.5f, 8f); // 次の雷まで
+        StartCoroutine(LightningStrike());
+    }
+
+    IEnumerator LightningStrike()
+    {
+        // 稲妻の形: 上空からジグザグに落ちる細い光の線分
+        float x = Random.Range(-600f, 600f);
+        float y = 470f;
+        var segments = new List<Image>();
+        int count = Random.Range(4, 7);
+        for (int i = 0; i < count; i++)
+        {
+            float nextX = x + Random.Range(-70f, 70f);
+            float nextY = y - Random.Range(80f, 140f);
+            var seg = ProtoUI.CreateRect("Bolt" + i, _root);
+            Vector2 mid = new Vector2((x + nextX) / 2f, (y + nextY) / 2f);
+            Vector2 d = new Vector2(nextX - x, nextY - y);
+            seg.anchoredPosition = mid;
+            seg.sizeDelta = new Vector2(4f, d.magnitude);
+            seg.localRotation = Quaternion.Euler(0, 0, Mathf.Atan2(d.y, d.x) * Mathf.Rad2Deg - 90f);
+            var img = seg.gameObject.AddComponent<Image>();
+            img.color = new Color(1f, 1f, 0.85f, 0.95f);
+            img.raycastTarget = false;
+            segments.Add(img);
+            x = nextX; y = nextY;
+        }
+
+        // 雷鳴＋画面が一瞬白く（単発フラッシュ・短時間。光過敏性に配慮）
+        _sfx.PlayOneShot(_thunderClip);
+        float t = 0f;
+        const float dur = 0.28f;
+        while (t < dur)
+        {
+            t += Time.deltaTime;
+            float p = t / dur;
+            _lightningFlash.color = new Color(1f, 1f, 0.95f, Mathf.Lerp(0.32f, 0f, p));
+            foreach (var img in segments)
+                if (img != null) img.color = new Color(1f, 1f, 0.85f, 0.95f * (1f - p));
+            yield return null;
+        }
+        _lightningFlash.color = Color.clear;
+        foreach (var img in segments)
+            if (img != null) Destroy(img.gameObject);
     }
 
     // 雨のアニメーション（落ちて、下に消えたら上に戻る）

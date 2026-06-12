@@ -111,6 +111,83 @@ public static class ProtoAudio
         return clip;
     }
 
+    // 嵐の山頂BGM: 短調のドローン＋半音のきしみで不穏に（ボスエリア用）
+    public static AudioClip CreateStormBgm()
+    {
+        const int sampleRate = 44100;
+        const float noteDur = 0.42f; // 重く遅いテンポ
+
+        // Dマイナーの不穏なオスティナート（D-E♭の半音が緊張を生む）
+        float[] melody =
+        {
+            293.66f, 311.13f, 293.66f, 220.00f,  // D Eb D A(低)
+            293.66f, 311.13f, 349.23f, 311.13f,  // D Eb F Eb
+            293.66f, 311.13f, 293.66f, 220.00f,
+            174.61f, 185.00f, 174.61f, 146.83f,  // F3 Gb3 F3 D3（沈む）
+        };
+        float[] bass = { 73.42f, 73.42f, 69.30f, 73.42f }; // D2のドローン（時々半音下がる）
+
+        int samplesPerNote = (int)(sampleRate * noteDur);
+        int total = samplesPerNote * melody.Length;
+        var data = new float[total];
+
+        for (int n = 0; n < melody.Length; n++)
+        {
+            float freq = melody[n];
+            float bassFreq = bass[(n / 4) % bass.Length];
+            for (int s = 0; s < samplesPerNote; s++)
+            {
+                int idx = n * samplesPerNote + s;
+                float t = (float)idx / sampleRate;
+                float p = s / (float)samplesPerNote;
+                float env = Mathf.Exp(-2.5f * p);
+
+                // メロディ: 細い矩形波がきしむ
+                float square = Mathf.Sign(Mathf.Sin(2f * Mathf.PI * freq * t)) * 0.04f * env;
+                // ドローン: 低いサインがずっと唸る（減衰しない）
+                float drone = Mathf.Sin(2f * Mathf.PI * bassFreq * t) * 0.06f;
+                // 5度上を薄く重ねて広がりを出す
+                float fifth = Mathf.Sin(2f * Mathf.PI * bassFreq * 1.5f * t) * 0.025f;
+
+                data[idx] = square + drone + fifth;
+            }
+        }
+
+        var clip = AudioClip.Create("ProtoStormBgm", total, 1, sampleRate, false);
+        clip.SetData(data, 0);
+        return clip;
+    }
+
+    // 雷鳴（バリッ！という亀裂音＋ゴロゴロと続く残響）
+    public static AudioClip CreateThunder()
+    {
+        const int sampleRate = 44100;
+        const float dur = 1.4f;
+        int total = (int)(sampleRate * dur);
+        var data = new float[total];
+        var rng = new System.Random(13);
+
+        float low = 0f; // ローパス用（ゴロゴロ感）
+        for (int i = 0; i < total; i++)
+        {
+            float p = i / (float)total;
+            float noise = (float)rng.NextDouble() * 2f - 1f;
+
+            // 最初の0.1秒は鋭い亀裂音（バリッ）
+            float crack = p < 0.07f ? noise * 0.5f * (1f - p / 0.07f) : 0f;
+
+            // 残りは低くこもった轟き（ノイズをならして低音化）
+            low = Mathf.Lerp(low, noise, 0.04f);
+            float rumble = low * 0.55f * Mathf.Exp(-2.2f * p);
+
+            data[i] = crack + rumble;
+        }
+
+        var clip = AudioClip.Create("ThunderSfx", total, 1, sampleRate, false);
+        clip.SetData(data, 0);
+        return clip;
+    }
+
     // 敵の攻撃の風切り音（ヒュッ！）
     public static AudioClip CreateSwing()
     {

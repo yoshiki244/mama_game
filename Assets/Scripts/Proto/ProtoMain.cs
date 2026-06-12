@@ -1,4 +1,4 @@
-using UnityEngine;
+﻿using UnityEngine;
 using UnityEngine.EventSystems;
 
 // プリプロ版の起動スクリプト。
@@ -56,7 +56,7 @@ public class ProtoMain : MonoBehaviour
     MenuScreen _menu;
     UnityEngine.UI.Image _bgImg;
     AudioSource _bgmSource;
-    AudioClip _fieldBgm, _battleBgm;
+    AudioClip _fieldBgm, _battleBgm, _stormBgm;
 
     public void SetWave(int wave) => Wave = wave;
 
@@ -107,6 +107,7 @@ public class ProtoMain : MonoBehaviour
         AudioListener.volume = PlayerPrefs.GetFloat("volume", 0.8f);
         _fieldBgm = ProtoAudio.CreateBgm();
         _battleBgm = ProtoAudio.CreateBattleBgm();
+        _stormBgm = ProtoAudio.CreateStormBgm();
         _bgmSource = gameObject.AddComponent<AudioSource>();
         _bgmSource.clip = _fieldBgm;
         _bgmSource.loop = true;
@@ -119,6 +120,12 @@ public class ProtoMain : MonoBehaviour
         if (_bgmSource.clip == clip && _bgmSource.isPlaying) return;
         _bgmSource.clip = clip;
         if (BgmEnabled) _bgmSource.Play();
+    }
+
+    // マップのエリアに応じたBGM（嵐の山頂=緊迫した曲）。MapScreenから呼ばれる
+    public void PlayMapBgm(int area)
+    {
+        PlayBgm(area >= 2 ? _stormBgm : _fieldBgm);
     }
 
     void Start() => ShowMap();
