@@ -127,19 +127,26 @@ public class MapScreen : MonoBehaviour
 
         // プレイヤー（足元に影＝接地感）
         _player = ProtoUI.CreateRect("Player", _root);
-        _player.sizeDelta = new Vector2(72, 92);
+        _player.sizeDelta = new Vector2(78, 95);
         _player.anchoredPosition = GridToAnchored(_gridPos);
         AddShadow(_player, 46f);
         _playerImg = _player.gameObject.AddComponent<Image>();
         _playerImg.sprite = _walkSprites[0][0]; // 最初は正面向き
         _playerImg.preserveAspect = true;
 
+        // 下部のUIバー（フィールドと分離した専用枠にヒントとメニューボタンを置く）
+        var bottomBar = ProtoUI.CreatePanel("BottomBar", _root, new Vector2(0, -424), new Vector2(1700, 56),
+            new Color(0.05f, 0.04f, 0.10f, 0.92f));
+        bottomBar.raycastTarget = false;
+        ProtoUI.CreatePanel("BottomBarLine", _root, new Vector2(0, -396), new Vector2(1700, 2),
+            new Color(0.85f, 0.72f, 0.4f, 0.7f)).raycastTarget = false;
+
         ProtoUI.CreateText("Hint", _root,
-            "WASD / 矢印キー = 1マスずつ移動　　敵にぶつかるとバトル！　　B = ビルド画面", 18,
-            new Vector2(0, -420), new Vector2(1100, 30));
-        ProtoUI.CreateButton("BuildBtn", _root, "ビルド", 20,
-            new Vector2(-690, -410), new Vector2(160, 50),
-            new Color(0.3f, 0.25f, 0.45f), () => _main.ShowBuild());
+            "WASD / 矢印キー = 移動　　敵にぶつかるとバトル！　　B = メニュー", 17,
+            new Vector2(60, -424), new Vector2(1100, 30));
+        ProtoUI.CreateButton("MenuBtn", _root, "メニュー", 18,
+            new Vector2(-700, -424), new Vector2(150, 42),
+            new Color(0.3f, 0.25f, 0.45f), () => _main.ShowMenu());
     }
 
     Vector2 GridToAnchored(Vector2Int g)
@@ -243,7 +250,7 @@ public class MapScreen : MonoBehaviour
 
         if (buildKey)
         {
-            _main.ShowBuild();
+            _main.ShowMenu();
             return;
         }
         if (dir == Vector2Int.zero) return;

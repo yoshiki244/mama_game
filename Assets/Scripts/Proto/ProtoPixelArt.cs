@@ -1,4 +1,4 @@
-using UnityEngine;
+﻿using UnityEngine;
 using System.Collections.Generic;
 
 // 仮グラフィック用のドット絵をコードから生成する（プリプロ用）
@@ -30,72 +30,48 @@ public static class ProtoPixelArt
         return Sprite.Create(tex, new Rect(0, 0, w, h), new Vector2(0.5f, 0.5f), 16f);
     }
 
-    // 銀髪ロング・青目・水色リボン・白ドレス（裾シースルー）・茶靴
-    // 22x32の高解像度版: ハイライト(L)・髪の陰(h)・ドレスの皺(w)・瞳の描き分け(E/e)入り
+    // バトル用MAMA（30x38）: 銀髪ロング・黒ドレス・シースルー裾・右腕を突き出す構え
     public static Sprite Mama()
     {
-        // 30x38: 黒ドレス版
-        // ・黒ドレスで銀髪とのコントラストを確保（同化問題の解消）
-        // ・髪は頭→肩→太もも付近まで途切れず流れる超ロング
-        // ・前髪はギザギザの不揃いな毛先
-        // 36x53 高解像度かわいい版
-        // ・大きなキラキラ瞳（まつ毛k＋虹彩E/e＋白ハイライトO の4層）
-        // ・ふんわり丸い輪郭＋ギザギザ前髪＋腰下までの銀髪ロング
-        // ・黒ドレス＋シースルー裾、両腕は体に沿わせた柔らかい立ち姿
         var rows = new string[]
         {
-            "..............HHHHHHHH..............",
-            "...........HHHHHHHHHHHHHH...........",
-            ".........HHHHHHHHHHHHHHHHHH.........",
-            "........HHHHHLLHHHHHHHHHHHHH........",
-            ".......HHHHLLHHHHHHHHHHHHHHHH.......",
-            "......hHHHLLHHHHHHHHHHHHHHHHHh......",
-            "......hHHHHHHHHHHHHHHHHHHHHHHh......",
-            "......hHHHHSHHHHHSSHHHHHSHHHHh......",
-            "......hHHHSSSHHHSSSSHHHSSSHHHh......",
-            ".....hHHSSSSSSSSSSSSSSSSSSSHHHh.....",
-            ".....hHHSSkSSSSSSSSSSSSSSSkSSHHh....",
-            ".....hHSSSkkkkkSSSSSkkkkkSSSHHh.....",
-            ".....hHSSSSkEekSSSSSkEekSSSSHHh.....",
-            ".....hHSSSSSkkSSSSSSSkkSSSSSHHh.....",
-            ".....hHSSSSSSSSSSSSSSSSSSSSSHHh.....",
-            ".....hHSSCCSSSSSSSSSSSSSCCSSHHh.....",
-            ".....hHSSCCSSSMSSSSSMSSSCCSSHHh.....",
-            ".....hHSSSSSSSSMMMMMSSSSSSSSHHh.....",
-            "......hHSSSSSSSSSSSSSSSSSSSHHh......",
-            "......hHHSSSSSSSSSSSSSSSSSHHHh......",
-            ".......hHHSSSSSSSSSSSSSSSHHHh.......",
-            "........hHHHSSSSSSSSSSSHHHHh........",
-            ".......hHHHHHHSSSSSSSHHHHHh.........",
-            ".......hHHHHHHHSSSSSHHHHHHh.........",
-            "......hHHHHHHWWWWWWWWWHHHHHh........",
-            "......hHHHHHWWWWWWWWWWWHHHHh........",
-            "......hHHHHSSWWWWWWWWWSSHhSSSS......",
-            "......hHHHHSSWWWwWWWwWWSHhSSSSSS....",
-            "......hHHHHSSWWWWWWWWWSSHHHHh.......",
-            "......hHHHHSSWWWWWWWWWSSHHHHh.......",
-            "......hHHHHSSwWWWWWWWwSSHHHHh.......",
-            ".....hHHHHHHSSWWWWWWWSSHHHHHh.......",
-            ".....hHHHHHHSSWWWWWWWSSHHHHHh.......",
-            ".....hHHHHHHHHwWWWwHHHHHHHHh........",
-            "....hHHHHHHHHVWWWWWVHHHHHHHh........",
-            "....hHHHHHHVVWWWWWVVHHHHHHHh........",
-            "....hHHHHHVVVwWWWwVVVHHHHHh.........",
-            "....hHHHHVVVVWWWWWVVVVHHHHh.........",
-            "....hHHHVVVVVWWWWWVVVVVHHHh.........",
-            ".....hHHVVVVVVVVVVVVVVHHHh..........",
-            ".....hHHVVVVVVVVVVVVVVVHh...........",
-            ".....hhVVVVVVVVVVVVVVVVhh...........",
-            ".....hhvVVVVVVVVVVVVVvhh............",
-            "............SSS.....SSS.............",
-            "............SSS.....SSS.............",
-            ".............SS.....SS..............",
-            ".............SS.....SS..............",
-            ".............SS.....SS..............",
-            ".............SS.....SS..............",
-            "............BBB.....BBB.............",
-            "...........BBBB.....BBBB............",
-            "...........bBBB.....bBBB............",
+            "...........HHHHHHHH...........",
+            ".........HHHHHHHHHHHH.........",
+            "........HHHHHHHHHHHHHH........",
+            "........HHHLHHHHHHLHHH........",
+            ".......hHHHHHHHHHHHHHHh.......",
+            ".......hHHHSHHHHSHHHHHh.......",
+            ".......hHHSSSHHSSSHHHHh.......",
+            ".......hHSSSSSSSSSSSHHh.......",
+            ".......hHSkkSSSSkkSSHHh.......",
+            ".......hHSeESSSSeESSHHh.......",
+            ".......hHSCSSSSSSCSSHHh.......",
+            ".......hHSSSSMMSSSSSHHh.......",
+            ".......hHHSSSSSSSSSHHHh.......",
+            "......hHHHSSSSSSSHHHHh........",
+            "......hHHHHSSSSSSHHHHh........",
+            ".....hHHHHHWWWWWHHHHHHh.......",
+            ".....hHHSSWWWWWWWHHHHhSSSS....",
+            ".....hHHSSWWWWWWWWHhSSSSSSS...",
+            ".....hHHSSWWwWWwWWHHHHh.......",
+            ".....hHHSSWWWWWHHHHHHHh.......",
+            ".....hHHSSwWWWwHHHHHHHh.......",
+            "......hHSSSWWWWWWHHHHh........",
+            "..........WWWWWWWW............",
+            "..........VWWWWWWV............",
+            ".........VVWWWWWWVV...........",
+            ".........VVwWWWWwVV...........",
+            "........VVVWWWWWVVV...........",
+            "........VVVVVVVVVVV...........",
+            "........VVVVVVVVVVVV..........",
+            "........VVVVVVVVVVVV..........",
+            "........SSS......SSS..........",
+            "........SSS......SSS..........",
+            ".........SS.......SS..........",
+            ".........SS.......SS..........",
+            ".........SS.......SS..........",
+            "........BBB......BBB..........",
+            "........bBB......bBB..........",
         };
         var palette = new Dictionary<char, Color>
         {
@@ -106,7 +82,6 @@ public static class ProtoPixelArt
             { 'E', new Color(0.45f, 0.68f, 1f) },           // 瞳（青・明）
             { 'e', new Color(0.18f, 0.32f, 0.65f) },        // 瞳（青・暗＝深み）
             { 'k', new Color(0.32f, 0.28f, 0.36f) },        // まつ毛（柔らかい目元）
-            { 'O', new Color(1f, 1f, 1f) },                 // 瞳のキラキラハイライト
             { 'C', new Color(1f, 0.72f, 0.72f) },           // 頬の赤らみ
             { 'M', new Color(0.9f, 0.55f, 0.55f) },         // 口（微笑み）
             { 'W', new Color(0.13f, 0.12f, 0.18f) },        // ドレス（黒）
@@ -278,78 +253,90 @@ public static class ProtoPixelArt
         string[] body;
         string[] legs;
 
-        if (dir == 0) // 正面
+        if (dir == 0) // 正面: 顔→首→襟付き黒ドレス→シースルー裾 の段差をはっきり
         {
             body = new[]
             {
-                "....HHHHHH....",
-                "...HHHHHHHH...",
-                "..HHHHHHHHHH..",
-                "..HHSSSSSSHH..",
-                "..HHSESSESHH..",
-                "..HHSSSSSSHH..",
-                "..HHHSSSSHHH..",
-                "..HHWWWWWWHH..",
-                "..HHWWWWWWHH..",
-                "..hHWWWWWWHh..",
-                "..hHWWWWWWHh..",
-                "...hWWWWWWh...",
-                "....WWWWWW....",
-                "....WWWWWW....",
+                "......HHHHHH......",
+                "....HHHHHHHHHH....",
+                "...HHHHHHHHHHHH...",
+                "...HHHHHHHHHHHH...",
+                "...HHSSSSSSSSHH...",
+                "...HHSEESSEESHH...",
+                "...HHSSSSSSSSHH...",
+                "...HHSCSSSSCSHH...",
+                "....HHSSSSSSHH....",
+                ".......SSSS.......",
+                "....HHWWWWWWHH....",
+                "...HHWWWWWWWWHH...",
+                "...HHWWWwwWWWHH...",
+                "...hHWWWWWWWWHh...",
+                "...hHWWWWWWWWHh...",
+                "....hVWWWWWWVh....",
+                "....VVWWWWWWVV....",
+                "...VVVVVVVVVVVV...",
             };
         }
-        else if (dir == 1) // 背面（髪が背中に流れる）
+        else if (dir == 1) // 背面: 背中いっぱいの銀髪が裾近くまで流れる
         {
             body = new[]
             {
-                "....HHHHHH....",
-                "...HHHHHHHH...",
-                "..HHHHHHHHHH..",
-                "..HHHHHHHHHH..",
-                "..HHHHHHHHHH..",
-                "..HHHHHHHHHH..",
-                "..HHHHHHHHHH..",
-                "..HHHHHHHHHH..",
-                "..HHHHHHHHHH..",
-                "..hHHHHHHHHh..",
-                "..hHWHHHHWHh..",
-                "...hWHHHHWh...",
-                "....WHHHHW....",
-                "....WWHHWW....",
+                "......HHHHHH......",
+                "....HHHHHHHHHH....",
+                "...HHHHHHHHHHHH...",
+                "...HHHHHHHHHHHH...",
+                "...HHHHHHHHHHHH...",
+                "...HHHHHHHHHHHH...",
+                "...HHHHHHHHHHHH...",
+                "...HHHHHHHHHHHH...",
+                "....HHHHHHHHHH....",
+                "...HHHHHHHHHHHH...",
+                "...HHHHHHHHHHHH...",
+                "...HHHHHHHHHHHH...",
+                "...hHHHHHHHHHHh...",
+                "...hHWHHHHHHWHh...",
+                "...hHWHHHHHHWHh...",
+                "....hVWHHHHWVh....",
+                "....VVWWHHWWVV....",
+                "...VVVVVVVVVVVV...",
             };
         }
-        else // 左向き（横顔）
+        else // 左向き: 横顔＋首＋髪は後ろへ
         {
             body = new[]
             {
-                "....HHHHHH....",
-                "...HHHHHHHH...",
-                "..HHHHHHHHHH..",
-                "..HSSSSHHHHH..",
-                "..HSESSHHHHH..",
-                "..HSSSSHHHHH..",
-                "..HHSSSHHHHH..",
-                "..HHWWWWWHHH..",
-                "..HHWWWWWHHh..",
-                "..hHWWWWWHHh..",
-                "..hHWWWWWHh...",
-                "...hWWWWWh....",
-                "....WWWWW.....",
-                "....WWWWW.....",
+                "......HHHHHH......",
+                "....HHHHHHHHHH....",
+                "...HHHHHHHHHHHH...",
+                "...HHHHHHHHHHHH...",
+                "...HSSSSSHHHHHH...",
+                "...HSEESSHHHHHH...",
+                "...HSSSSSHHHHHH...",
+                "...HSCSSSHHHHHH...",
+                "....HSSSSHHHHH....",
+                ".......SSS.HHH....",
+                "....HWWWWWWHHH....",
+                "...HHWWWWWWHHHH...",
+                "...HHWWwwWWHHHh...",
+                "...hHWWWWWWHHh....",
+                "...hHWWWWWWHh.....",
+                "....hVWWWWVh......",
+                "....VVWWWWVV......",
+                "...VVVVVVVVVV.....",
             };
         }
 
         if (dir == 2) // 横向きの足
         {
             legs = frame == 0
-                ? new[] { ".....SSS......", ".....SSS......", ".....BBB......", ".............." }
-                : new[] { "....SS..S.....", "....SS..S.....", "....BB..B.....", ".............." };
+                ? new[] { ".......SSS........", ".......SSS........", ".......BBB........", ".................." }
+                : new[] { "......SS..S.......", "......SS..S.......", "......BB..B.......", ".................." };
         }
         else // 正面・背面の足
         {
             legs = frame == 0
-                ? new[] { "....SS..SS....", "....SS..SS....", "....BB..BB....", ".............." }
-                : new[] { "...SS....SS...", "...SS....SS...", "...BB....BB...", ".............." };
+                ? new[] { "......SS..SS......", "......SS..SS......", "......BB..BB......", ".................." }
+                : new[] { ".....SS....SS.....", ".....SS....SS.....", ".....BB....BB.....", ".................." };
         }
 
         var rows = new string[body.Length + legs.Length];
@@ -358,12 +345,15 @@ public static class ProtoPixelArt
 
         var palette = new Dictionary<char, Color>
         {
-            { 'H', new Color(0.87f, 0.88f, 0.95f) },  // 髪（銀髪）
-            { 'h', new Color(0.66f, 0.68f, 0.80f) },  // 髪の陰
-            { 'S', new Color(1f, 0.88f, 0.78f) },     // 肌
-            { 'E', new Color(0.35f, 0.6f, 0.95f) },   // 目
-            { 'W', new Color(0.13f, 0.12f, 0.18f) },  // ドレス（黒）
-            { 'B', new Color(0.72f, 0.52f, 0.34f) },  // 靴
+            { 'H', new Color(0.87f, 0.88f, 0.95f) },        // 髪（銀髪）
+            { 'h', new Color(0.66f, 0.68f, 0.80f) },        // 髪の陰
+            { 'S', new Color(1f, 0.88f, 0.78f) },           // 肌
+            { 'E', new Color(0.35f, 0.6f, 0.95f) },         // 目
+            { 'C', new Color(1f, 0.72f, 0.72f) },           // 頬の赤らみ
+            { 'W', new Color(0.13f, 0.12f, 0.18f) },        // ドレス（黒）
+            { 'w', new Color(0.26f, 0.24f, 0.34f) },        // ドレスの光沢
+            { 'V', new Color(0.2f, 0.18f, 0.3f, 0.7f) },    // 裾シースルー（黒レース）
+            { 'B', new Color(0.72f, 0.52f, 0.34f) },        // 靴
         };
         return FromMap(rows, palette);
     }

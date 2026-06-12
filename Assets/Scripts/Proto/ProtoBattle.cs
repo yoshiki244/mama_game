@@ -13,7 +13,7 @@ public class ProtoBattle : MonoBehaviour
     RectTransform _root;
 
     // --- UI ---
-    TextMeshProUGUI _playerName, _enemyName, _playerHPText, _enemyHPText, _message, _deckText;
+    TextMeshProUGUI _playerName, _enemyName, _playerHPText, _enemyHPText, _message, _deckText, _resultSub;
     Image _playerFill, _enemyFill;
     RectTransform _handArea;
     RectTransform _challengeRoot;
@@ -38,10 +38,24 @@ public class ProtoBattle : MonoBehaviour
     int _challengeAnswer; // -1=時間切れ, それ以外=選んだ数
     bool _challengeDone;
 
+    AudioSource _sfx;
+    AudioClip[] _hitClips;
+
     public void Init(ProtoMain main)
     {
         _main = main;
         BuildUI();
+
+        // ヒット効果音（4段階）を生成
+        _sfx = gameObject.AddComponent<AudioSource>();
+        _hitClips = new[]
+        {
+            ProtoAudio.CreateHitClip(0),
+            ProtoAudio.CreateHitClip(1),
+            ProtoAudio.CreateHitClip(2),
+            ProtoAudio.CreateHitClip(3),
+        };
+
         Hide();
     }
 
@@ -64,7 +78,7 @@ public class ProtoBattle : MonoBehaviour
         _resultRoot.gameObject.SetActive(false);
         _challengeRoot.gameObject.SetActive(false);
 
-        _playerMaxHP = 120;
+        _playerMaxHP = _main.Stats.MaxHP; // ステータスのHPを反映
         _playerHP = _playerMaxHP;
         _enemyMaxHP = enemy.baseHP + 40 * (_main.Wave - 1); // 敵ごとの基礎HP＋Wave補正
         _enemyHP = _enemyMaxHP;
@@ -125,7 +139,7 @@ public class ProtoBattle : MonoBehaviour
             () => _main.ShowMap());
 
         // キャラクター（ドット絵）。外側=モーション用 / 内側=アイドルアニメ用 の2層構造
-        _mamaImg = CreateCharacterSprite("MamaSprite", ProtoPixelArt.Mama(), new Vector2(-470, 40), new Vector2(350, 515));
+        _mamaImg = CreateCharacterSprite("MamaSprite", ProtoPixelArt.Mama(), new Vector2(-470, 0), new Vector2(280, 345));
         _slimeImg = CreateCharacterSprite("DragonSprite", ProtoPixelArt.Dragon(), new Vector2(460, 70), new Vector2(540, 355));
         _mamaRt = (RectTransform)_mamaImg.transform.parent;
         _slimeRt = (RectTransform)_slimeImg.transform.parent;
@@ -164,8 +178,9 @@ public class ProtoBattle : MonoBehaviour
         _resultRoot = ProtoUI.CreateFullScreen("Result", _root);
         var rdim = _resultRoot.gameObject.AddComponent<Image>();
         rdim.color = new Color(0, 0, 0, 0.8f);
-        _resultText = ProtoUI.CreateText("RText", _resultRoot, "", 60, new Vector2(0, 60), new Vector2(800, 90));
+        _resultText = ProtoUI.CreateText("RText", _resultRoot, "", 60, new Vector2(0, 90), new Vector2(800, 90));
         ProtoUI.StyleTitle(_resultText, ProtoUI.Gold, 10f);
+        _resultSub = ProtoUI.CreateText("RSub", _resultRoot, "", 24, new Vector2(0, -10), new Vector2(700, 110));
         ProtoUI.CreateButton("BackBtn", _resultRoot, "マップへ戻る", 24,
             new Vector2(0, -60), new Vector2(280, 64), new Color(0.35f, 0.3f, 0.55f),
             () => { if (_enemyHP <= 0) _main.OnBattleWon(); else _main.ShowMap(); });
@@ -630,6 +645,10 @@ public class ProtoBattle : MonoBehaviour
     {
         bool critical = multiplier >= 2f;
         int size = skill?.Size ?? 1;
+
+        // 技の強さに応じたヒット音（小技→中技→大技→クリティカル）
+        int sfxTier = critical ? 3 : size >= 5 ? 2 : size >= 3 ? 1 : 0;
+        _sfx.PlayOneShot(_hitClips[sfxTier]);
         Color burstColor = skill?.color ?? Color.white;
 
         // マス数でスケールするパラメータ（全体的に増量）
@@ -999,8 +1018,9 @@ public class ProtoBattle : MonoBehaviour
         }
 
         // 技ごとの攻撃モーション → ヒットエフェクト（ダメージ数値付き）
+        // ダメージ = (カード威力 + 攻撃力) × 倍率
         bool isCritical = multiplier >= 2f;
-        int damage = Mathf.RoundToInt(basePower * multiplier);
+        int damage = Mathf.RoundToInt((basePower + _main.Stats.Attack) * multiplier);
         yield return AttackMotionFor(skill);
         yield return Impact(_slimeRt, _slimeImg, skill, damage, multiplier);
 
@@ -1012,7 +1032,15 @@ public class ProtoBattle : MonoBehaviour
 
         if (_enemyHP <= 0)
         {
-            _resultText.text = $"Wave {_main.Wave} クリア！";
+            // EXP獲得とレベルアップ判定
+            int expGain = _enemy.baseHP / 2 + 10 * _main.Wave;
+            int beforeLevel = _main.Stats.Level;
+            bool leveled = _main.Stats.GainExp(expGain);
+
+            _resultText.text = $"{_enemy.enemyName}を倒した！";
+            _resultSub.text = leveled
+                ? $"EXP +{expGain}\nレベルアップ！　Lv{beforeLevel} → Lv{_main.Stats.Level}\nHP・攻撃・防御・素早さが上がった！"
+                : $"EXP +{expGain}（次のレベルまで {_main.Stats.ExpToNext - _main.Stats.Exp}）";
             _resultRoot.gameObject.SetActive(true);
             yield break;
         }
@@ -1021,18 +1049,31 @@ public class ProtoBattle : MonoBehaviour
         _message.text = $"{_enemy.enemyName}のターン…";
         yield return new WaitForSeconds(0.9f);
 
-        // 敵の攻撃モーション → 被弾エフェクト（ダメージ数値付き）
-        int enemyDamage = Random.Range(_enemy.minAtk, _enemy.maxAtk + 1) + 3 * (_main.Wave - 1);
+        // 敵の攻撃。素早さで回避判定、防御力でダメージ軽減
+        int rawDamage = Random.Range(_enemy.minAtk, _enemy.maxAtk + 1) + 3 * (_main.Wave - 1);
+        int enemyDamage = Mathf.Max(1, rawDamage - _main.Stats.Defense);
+        bool dodged = Random.Range(0, 100) < _main.Stats.Speed * 2; // 素早さ×2 %で回避
+
         yield return Lunge(_slimeRt, new Vector2(-150, 0));
-        yield return Impact(_mamaRt, _mamaImg, null, enemyDamage, 1f);
-        _playerHP = Mathf.Max(0, _playerHP - enemyDamage);
-        _message.text = $"{_enemy.enemyName}の攻撃！MAMAは {enemyDamage} のダメージ！";
-        RefreshAll();
-        yield return new WaitForSeconds(1f);
+
+        if (dodged)
+        {
+            _message.text = "MAMAはひらりとかわした！";
+            yield return new WaitForSeconds(1f);
+        }
+        else
+        {
+            yield return Impact(_mamaRt, _mamaImg, null, enemyDamage, 1f);
+            _playerHP = Mathf.Max(0, _playerHP - enemyDamage);
+            _message.text = $"{_enemy.enemyName}の攻撃！MAMAは {enemyDamage} のダメージ！";
+            RefreshAll();
+            yield return new WaitForSeconds(1f);
+        }
 
         if (_playerHP <= 0)
         {
             _resultText.text = "MAMAは倒れてしまった…";
+            _resultSub.text = "";
             _resultRoot.gameObject.SetActive(true);
             yield break;
         }

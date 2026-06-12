@@ -30,9 +30,9 @@ public static class ProtoEnemies
                     new ProtoEnemy { id = "bat",    enemyName = "コウモリ", sprite = ProtoPixelArt.Bat(),
                         baseHP = 45,  minAtk = 8,  maxAtk = 14, battleSize = new Vector2(310, 160), mapSize = new Vector2(80, 42) },
                     new ProtoEnemy { id = "golem",  enemyName = "ゴーレム", sprite = ProtoPixelArt.Golem(),
-                        baseHP = 140, minAtk = 10, maxAtk = 18, battleSize = new Vector2(340, 310), mapSize = new Vector2(66, 60) },
+                        baseHP = 140, minAtk = 10, maxAtk = 18, battleSize = new Vector2(430, 390), mapSize = new Vector2(66, 60) },
                     new ProtoEnemy { id = "dragon", enemyName = "ドラゴン", sprite = ProtoPixelArt.Dragon(),
-                        baseHP = 170, minAtk = 12, maxAtk = 20, battleSize = new Vector2(540, 355), mapSize = new Vector2(112, 74) },
+                        baseHP = 170, minAtk = 12, maxAtk = 20, battleSize = new Vector2(700, 460), mapSize = new Vector2(112, 74) },
                 };
             }
             return _all;

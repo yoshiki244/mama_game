@@ -146,10 +146,10 @@ public class BuildScreen : MonoBehaviour
             new Vector2(-330, -270), new Vector2(720, 230), new Color(0.85f, 0.8f, 1f),
             TextAlignmentOptions.Top);
 
-        // マップへ戻るボタン（ビルドはマップのメニューから開く位置づけ）
-        ProtoUI.CreateButton("BackToMapBtn", _root, "マップへ戻る", 26,
+        // メニューへ戻るボタン（ビルドはメニューの1機能という位置づけ）
+        ProtoUI.CreateButton("BackBtn", _root, "メニューへ戻る", 24,
             new Vector2(330, -330), new Vector2(260, 70), new Color(0.7f, 0.3f, 0.45f),
-            () => _main.ShowMap());
+            () => _main.ShowMenu());
     }
 
     void SelectSkill(ProtoSkill s)
