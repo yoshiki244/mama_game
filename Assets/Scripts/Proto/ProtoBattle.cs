@@ -392,10 +392,26 @@ public class ProtoBattle : MonoBehaviour
         return img;
     }
 
-    // 待機中のアイドルアニメ（呼吸のゆれ）
+    // 待機中のアイドルアニメ（呼吸のゆれ）＋Escで逃げる＋ATBゲージ
     void Update()
     {
         if (_root == null || !_root.gameObject.activeSelf) return;
+
+        // Escキーでいつでも逃げる（マップへ戻る）
+        bool escPressed = false;
+#if ENABLE_INPUT_SYSTEM
+        var kbEsc = UnityEngine.InputSystem.Keyboard.current;
+        if (kbEsc != null && kbEsc.escapeKey.wasPressedThisFrame) escPressed = true;
+#endif
+#if ENABLE_LEGACY_INPUT_MANAGER
+        if (!escPressed && Input.GetKeyDown(KeyCode.Escape)) escPressed = true;
+#endif
+        if (escPressed)
+        {
+            _main.ShowMap();
+            return;
+        }
+
         float t = Time.time;
 
         // パーティ全員: 上下＋わずかな伸縮（呼吸）。位相をずらして自然に
