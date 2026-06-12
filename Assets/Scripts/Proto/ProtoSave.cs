@@ -13,12 +13,20 @@ public static class ProtoSave
         public string skillId;
         public int[] xs;
         public int[] ys;
+        public int member; // どのメンバーの盤面か
+    }
+
+    [System.Serializable]
+    public class MemberSave
+    {
+        public int level, exp, maxHP, attack, defense, speed;
     }
 
     [System.Serializable]
     public class SaveData
     {
-        public int level, exp, maxHP, attack, defense, speed, wave;
+        public int level, exp, maxHP, attack, defense, speed, wave; // 旧形式互換（リーダーの値）
+        public List<MemberSave> members = new List<MemberSave>();   // メンバー別ステータス
         public List<PieceSave> pieces = new List<PieceSave>();
     }
 
@@ -34,20 +42,35 @@ public static class ProtoSave
             speed = main.Stats.Speed,
             wave = main.Wave,
         };
-        foreach (var p in main.Panel.Placements)
+
+        // メンバー別ステータス
+        foreach (var s in main.MemberStats)
         {
-            var ps = new PieceSave
+            d.members.Add(new MemberSave
             {
-                skillId = p.skill.id,
-                xs = new int[p.cells.Count],
-                ys = new int[p.cells.Count],
-            };
-            for (int i = 0; i < p.cells.Count; i++)
+                level = s.Level, exp = s.Exp, maxHP = s.MaxHP,
+                attack = s.Attack, defense = s.Defense, speed = s.Speed,
+            });
+        }
+        // 全メンバーの盤面を保存
+        for (int m = 0; m < main.Panels.Count; m++)
+        {
+            foreach (var p in main.Panels[m].Placements)
             {
-                ps.xs[i] = p.cells[i].x;
-                ps.ys[i] = p.cells[i].y;
+                var ps = new PieceSave
+                {
+                    skillId = p.skill.id,
+                    member = m,
+                    xs = new int[p.cells.Count],
+                    ys = new int[p.cells.Count],
+                };
+                for (int i = 0; i < p.cells.Count; i++)
+                {
+                    ps.xs[i] = p.cells[i].x;
+                    ps.ys[i] = p.cells[i].y;
+                }
+                d.pieces.Add(ps);
             }
-            d.pieces.Add(ps);
         }
 
         PlayerPrefs.SetString(Key, JsonUtility.ToJson(d));
@@ -62,22 +85,38 @@ public static class ProtoSave
         var d = JsonUtility.FromJson<SaveData>(PlayerPrefs.GetString(Key));
         if (d == null) return false;
 
-        main.Stats.Level = d.level;
-        main.Stats.Exp = d.exp;
-        main.Stats.MaxHP = d.maxHP;
-        main.Stats.Attack = d.attack;
-        main.Stats.Defense = d.defense;
-        main.Stats.Speed = d.speed;
+        if (d.members != null && d.members.Count > 0)
+        {
+            // 新形式: メンバーごとに復元
+            for (int i = 0; i < d.members.Count && i < main.MemberStats.Count; i++)
+            {
+                var s = main.MemberStats[i];
+                var ms = d.members[i];
+                s.Level = ms.level; s.Exp = ms.exp; s.MaxHP = ms.maxHP;
+                s.Attack = ms.attack; s.Defense = ms.defense; s.Speed = ms.speed;
+            }
+        }
+        else
+        {
+            // 旧形式: リーダーだけ復元
+            main.Stats.Level = d.level;
+            main.Stats.Exp = d.exp;
+            main.Stats.MaxHP = d.maxHP;
+            main.Stats.Attack = d.attack;
+            main.Stats.Defense = d.defense;
+            main.Stats.Speed = d.speed;
+        }
         main.SetWave(d.wave);
 
         foreach (var ps in d.pieces)
         {
             var skill = ProtoSkills.All.Find(s => s.id == ps.skillId);
             if (skill == null) continue;
+            if (ps.member < 0 || ps.member >= main.Panels.Count) continue; // 外したメンバーの盤面は無視
             var cells = new List<Vector2Int>();
             for (int i = 0; i < ps.xs.Length; i++)
                 cells.Add(new Vector2Int(ps.xs[i], ps.ys[i]));
-            main.Panel.PlaceCells(skill, cells);
+            main.Panels[ps.member].PlaceCells(skill, cells);
         }
         return true;
     }

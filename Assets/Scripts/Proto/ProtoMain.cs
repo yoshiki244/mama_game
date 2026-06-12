@@ -5,11 +5,50 @@ using UnityEngine.EventSystems;
 // 空のGameObjectにこれを付けて再生するだけで、カメラ設定・Canvas・全UIを自動生成する。
 public class ProtoMain : MonoBehaviour
 {
-    public PanelModel Panel { get; private set; }
-    public PlayerStats Stats { get; private set; }
+    // メンバーごとの個別ステータス（MemberStats[i] = Party[i] のもの）
+    public System.Collections.Generic.List<PlayerStats> MemberStats { get; private set; }
+        = new System.Collections.Generic.List<PlayerStats>();
+
+    // 互換用: リーダー（MAMA）のステータス
+    public PlayerStats Stats => MemberStats[0];
     public int Wave { get; private set; } = 1;
     public Canvas Canvas { get; private set; }
     public bool BgmEnabled { get; private set; }
+    public bool AtbMode { get; private set; } // true=アクティブタイムバトル / false=ターン制
+
+    // パーティ（1人目はMAMA固定、最大3人）
+    public System.Collections.Generic.List<PartyMember> Party { get; private set; }
+        = new System.Collections.Generic.List<PartyMember>();
+
+    // メンバーごとの盤面（形がキャラで違う）。Panels[i] = Party[i] の盤面
+    public System.Collections.Generic.List<PanelModel> Panels { get; private set; }
+        = new System.Collections.Generic.List<PanelModel>();
+
+    public bool AddPartyMember()
+    {
+        if (Party.Count >= ProtoParty.MaxMembers) return false;
+        Party.Add(ProtoParty.Roster[Party.Count]);
+        Panels.Add(new PanelModel(ProtoParty.BoardMask(Panels.Count)));
+        MemberStats.Add(new PlayerStats()); // 新加入はLv1から
+        PlayerPrefs.SetInt("party", Party.Count);
+        return true;
+    }
+
+    public bool RemovePartyMember()
+    {
+        if (Party.Count <= 1) return false; // リーダーは外せない
+        Party.RemoveAt(Party.Count - 1);
+        Panels.RemoveAt(Panels.Count - 1);
+        MemberStats.RemoveAt(MemberStats.Count - 1);
+        PlayerPrefs.SetInt("party", Party.Count);
+        return true;
+    }
+
+    public void SetAtbMode(bool on)
+    {
+        AtbMode = on;
+        PlayerPrefs.SetInt("atb", on ? 1 : 0);
+    }
 
     BuildScreen _build;
     ProtoBattle _battle;
@@ -21,9 +60,11 @@ public class ProtoMain : MonoBehaviour
 
     public void SetWave(int wave) => Wave = wave;
 
+    // 互換用: リーダー（MAMA）の盤面
+    public PanelModel Panel => Panels[0];
+
     void Awake()
     {
-        Panel = new PanelModel(10, 10);
 
         SetupCamera();
         Canvas = ProtoUI.CreateCanvas();
@@ -36,7 +77,6 @@ public class ProtoMain : MonoBehaviour
         _bgImg.color = new Color(0.85f, 0.9f, 0.9f); // 少し落ち着かせてUIを読みやすく
         _bgImg.raycastTarget = false;
 
-        Stats = new PlayerStats();
 
         _build = gameObject.AddComponent<BuildScreen>();
         _battle = gameObject.AddComponent<ProtoBattle>();
@@ -46,6 +86,19 @@ public class ProtoMain : MonoBehaviour
         _battle.Init(this);
         _map.Init(this);
         _menu.Init(this);
+
+        // 設定の復元
+        AtbMode = PlayerPrefs.GetInt("atb", 0) == 1;
+
+        // パーティの復元（最低1人=MAMA）。盤面もメンバーごとの形で生成
+        // ※セーブの盤面復元より先にやる必要がある
+        int partyCount = Mathf.Clamp(PlayerPrefs.GetInt("party", 1), 1, ProtoParty.MaxMembers);
+        for (int i = 0; i < partyCount; i++)
+        {
+            Party.Add(ProtoParty.Roster[i]);
+            Panels.Add(new PanelModel(ProtoParty.BoardMask(i)));
+            MemberStats.Add(new PlayerStats());
+        }
 
         // セーブデータがあれば復元（ステータス・Wave・盤面）
         ProtoSave.Load(this);

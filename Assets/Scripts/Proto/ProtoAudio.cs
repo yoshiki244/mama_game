@@ -111,6 +111,33 @@ public static class ProtoAudio
         return clip;
     }
 
+    // 敵の攻撃の風切り音（ヒュッ！）
+    public static AudioClip CreateSwing()
+    {
+        const int sampleRate = 44100;
+        const float dur = 0.22f;
+        int total = (int)(sampleRate * dur);
+        var data = new float[total];
+        var rng = new System.Random(9);
+
+        for (int i = 0; i < total; i++)
+        {
+            float p = i / (float)total;
+            float env = Mathf.Sin(p * Mathf.PI);
+            env *= env; // 山なりの音量（スッと出てスッと消える）
+
+            // 風のノイズ＋上昇するうなり
+            float noise = ((float)rng.NextDouble() * 2f - 1f) * 0.16f * env;
+            float f = Mathf.Lerp(280f, 900f, p);
+            float tone = Mathf.Sin(2f * Mathf.PI * f * (i / (float)sampleRate)) * 0.05f * env;
+            data[i] = noise + tone;
+        }
+
+        var clip = AudioClip.Create("SwingSfx", total, 1, sampleRate, false);
+        clip.SetData(data, 0);
+        return clip;
+    }
+
     // ヒット効果音（tier 0=小技 〜 3=クリティカル。強いほど長く・低く・大きい）
     public static AudioClip CreateHitClip(int tier)
     {

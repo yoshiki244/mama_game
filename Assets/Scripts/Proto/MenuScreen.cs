@@ -19,6 +19,7 @@ public class MenuScreen : MonoBehaviour
     // 設定表示
     TextMeshProUGUI _volumeText;
     TextMeshProUGUI _bgmBtnLabel;
+    TextMeshProUGUI _modeBtnLabel;
 
     // 通知
     TextMeshProUGUI _notice;
@@ -29,6 +30,14 @@ public class MenuScreen : MonoBehaviour
     int _selIndex;
     static readonly Color ItemNormal = new Color(0.2f, 0.17f, 0.32f);
     static readonly Color ItemSelected = new Color(0.48f, 0.38f, 0.7f);
+
+    // 設定パネル内のキーボード操作（→で入る / ↑↓で行選択 / ←→で値変更）
+    readonly System.Collections.Generic.List<(Image rowBg, System.Action onLeft, System.Action onRight)> _setRows
+        = new System.Collections.Generic.List<(Image, System.Action, System.Action)>();
+    bool _rightFocus;  // true=設定パネル内を操作中
+    int _setIndex;
+    static readonly Color RowNormal = new Color(0, 0, 0, 0);
+    static readonly Color RowSelected = new Color(0.4f, 0.32f, 0.62f, 0.45f);
 
     public void Init(ProtoMain main)
     {
@@ -44,6 +53,7 @@ public class MenuScreen : MonoBehaviour
         _notice.text = "";
         _selIndex = 0;
         RefreshSelection();
+        SetRightFocus(false);
     }
 
     public void Hide() => _root.gameObject.SetActive(false);
@@ -64,9 +74,10 @@ public class MenuScreen : MonoBehaviour
         ProtoUI.StyleTitle(title, ProtoUI.Gold, 10f);
 
         // ---- 左の項目ボタン列 ----
-        float by = 200;
+        float by = 230;
         CreateMenuButton(panel.transform, "ビルド", ref by, () => _main.ShowBuild());
         CreateMenuButton(panel.transform, "ステータス", ref by, ShowStatusTab);
+        CreateMenuButton(panel.transform, "仲間", ref by, ShowPartyTab);
         CreateMenuButton(panel.transform, "設定", ref by, ShowSettingsTab);
         CreateMenuButton(panel.transform, "セーブ", ref by, SaveGame);
         CreateMenuButton(panel.transform, "閉じる", ref by, () => _main.ShowMap());
@@ -78,6 +89,101 @@ public class MenuScreen : MonoBehaviour
         // ---- 右の内容エリア ----
         BuildStatusContent(panel.transform);
         BuildSettingsContent(panel.transform);
+        BuildPartyContent(panel.transform);
+    }
+
+    // ==================== 仲間 ====================
+
+    RectTransform _partyContent;
+    RectTransform _partyList;
+
+    void BuildPartyContent(Transform parent)
+    {
+        _partyContent = ProtoUI.CreateRect("PartyContent", parent);
+        _partyContent.anchoredPosition = new Vector2(140, -10);
+        _partyContent.sizeDelta = new Vector2(700, 560);
+
+        var title = ProtoUI.CreateText("PartyTitle", _partyContent, "パーティ（最大3人）", 24,
+            new Vector2(0, 240), new Vector2(400, 36));
+        ProtoUI.StyleTitle(title, ProtoUI.Gold, 4f);
+
+        _partyList = ProtoUI.CreateRect("PartyList", _partyContent);
+        _partyList.sizeDelta = new Vector2(700, 360);
+        _partyList.anchoredPosition = new Vector2(0, 30);
+
+        ProtoUI.CreateButton("AddMember", _partyContent, "仲間を増やす", 22,
+            new Vector2(-145, -210), new Vector2(260, 60), new Color(0.3f, 0.45f, 0.3f), AddMember);
+        ProtoUI.CreateButton("RemoveMember", _partyContent, "仲間を外す", 22,
+            new Vector2(145, -210), new Vector2(260, 60), new Color(0.45f, 0.3f, 0.3f), RemoveMember);
+
+        _partyContent.gameObject.SetActive(false);
+    }
+
+    void ShowPartyTab()
+    {
+        _rightFocus = false;
+        _statusContent.gameObject.SetActive(false);
+        _settingsContent.gameObject.SetActive(false);
+        _partyContent.gameObject.SetActive(true);
+        RefreshPartyList();
+    }
+
+    void RefreshPartyList()
+    {
+        foreach (Transform c in _partyList) Destroy(c.gameObject);
+
+        var party = _main.Party;
+        float xs = -(party.Count - 1) * 220f / 2f;
+        for (int i = 0; i < party.Count; i++)
+        {
+            var m = party[i];
+            var slot = ProtoUI.CreatePanel($"Member{i}", _partyList, new Vector2(xs + i * 220f, 0),
+                new Vector2(190, 320), new Color(0.14f, 0.11f, 0.22f));
+            slot.raycastTarget = false;
+
+            var icon = ProtoUI.CreateRect("Icon", slot.transform);
+            icon.anchoredPosition = new Vector2(0, -10);
+            icon.sizeDelta = new Vector2(130, 220);
+            var img = icon.gameObject.AddComponent<Image>();
+            img.sprite = m.BattleSprite();
+            img.preserveAspect = true;
+            img.raycastTarget = false;
+
+            var nameText = ProtoUI.CreateText("Name", slot.transform, m.name, 20,
+                new Vector2(0, 135), new Vector2(180, 30));
+            nameText.fontStyle = TMPro.FontStyles.Bold;
+            nameText.color = Color.Lerp(m.hair, Color.white, 0.3f);
+
+            ProtoUI.CreateText("Tag", slot.transform, i == 0 ? "リーダー" : "仲間", 14,
+                new Vector2(0, -150), new Vector2(180, 24), new Color(0.7f, 0.7f, 0.85f));
+        }
+    }
+
+    void AddMember()
+    {
+        if (_main.AddPartyMember())
+        {
+            _notice.text = $"{_main.Party[_main.Party.Count - 1].name} が仲間になった！";
+            RefreshPartyList();
+        }
+        else
+        {
+            _notice.text = "<color=#FF7070>これ以上仲間にできません（最大3人）</color>";
+        }
+    }
+
+    void RemoveMember()
+    {
+        string lastName = _main.Party[_main.Party.Count - 1].name;
+        if (_main.RemovePartyMember())
+        {
+            _notice.text = $"{lastName} がパーティから離れた…";
+            RefreshPartyList();
+        }
+        else
+        {
+            _notice.text = "<color=#FF7070>リーダー（MAMA）は外せません</color>";
+        }
     }
 
     void CreateMenuButton(Transform parent, string label, ref float y, System.Action onClick)
@@ -90,13 +196,14 @@ public class MenuScreen : MonoBehaviour
         y -= 78;
     }
 
-    // 矢印キーで選択を移動、Enter/Spaceで決定
+    // 矢印キーで選択を移動、Enter/Spaceで決定。
+    // 設定タブ表示中に → を押すとパネル内に入り、↑↓で行選択・←→で値変更・Escで戻る
     void Update()
     {
         if (_root == null || !_root.gameObject.activeSelf) return;
 
         int move = 0;
-        bool submit = false;
+        bool submit = false, left = false, right = false, back = false;
 
 #if ENABLE_INPUT_SYSTEM
         var kb = UnityEngine.InputSystem.Keyboard.current;
@@ -106,6 +213,9 @@ public class MenuScreen : MonoBehaviour
             else if (kb.downArrowKey.wasPressedThisFrame || kb.sKey.wasPressedThisFrame) move = +1;
             if (kb.enterKey.wasPressedThisFrame || kb.numpadEnterKey.wasPressedThisFrame
                 || kb.spaceKey.wasPressedThisFrame) submit = true;
+            if (kb.leftArrowKey.wasPressedThisFrame || kb.aKey.wasPressedThisFrame) left = true;
+            if (kb.rightArrowKey.wasPressedThisFrame || kb.dKey.wasPressedThisFrame) right = true;
+            if (kb.escapeKey.wasPressedThisFrame) back = true;
         }
 #endif
 #if ENABLE_LEGACY_INPUT_MANAGER
@@ -115,8 +225,47 @@ public class MenuScreen : MonoBehaviour
             else if (Input.GetKeyDown(KeyCode.DownArrow) || Input.GetKeyDown(KeyCode.S)) move = +1;
         }
         if (!submit && (Input.GetKeyDown(KeyCode.Return) || Input.GetKeyDown(KeyCode.Space))) submit = true;
+        if (!left && (Input.GetKeyDown(KeyCode.LeftArrow) || Input.GetKeyDown(KeyCode.A))) left = true;
+        if (!right && (Input.GetKeyDown(KeyCode.RightArrow) || Input.GetKeyDown(KeyCode.D))) right = true;
+        if (!back && Input.GetKeyDown(KeyCode.Escape)) back = true;
 #endif
 
+        if (_rightFocus)
+        {
+            // ===== 設定パネル内の操作 =====
+            if (back)
+            {
+                SetRightFocus(false);
+                return;
+            }
+            if (move != 0)
+            {
+                _setIndex = (_setIndex + move + _setRows.Count) % _setRows.Count;
+                RefreshRowHighlight();
+            }
+            if (left) _setRows[_setIndex].onLeft();   // ← 値を下げる/切り替え
+            else if (right) _setRows[_setIndex].onRight(); // → 値を上げる/切り替え
+            else if (submit)
+            {
+                if (_setIndex == _setRows.Count - 1)
+                {
+                    SetRightFocus(false); // 最後の項目でEnter → 左のメニューへ戻る
+                }
+                else
+                {
+                    _setIndex++; // Enter = 次の設定項目へ
+                    RefreshRowHighlight();
+                }
+            }
+            return;
+        }
+
+        // ===== 左のメニュー項目の操作 =====
+        if (right && _settingsContent.gameObject.activeSelf)
+        {
+            SetRightFocus(true); // 設定が開いていれば → でパネル内に入る
+            return;
+        }
         if (move != 0)
         {
             _selIndex = (_selIndex + move + _items.Count) % _items.Count;
@@ -124,6 +273,20 @@ public class MenuScreen : MonoBehaviour
         }
         if (submit && _items.Count > 0)
             _items[_selIndex].action();
+    }
+
+    // 設定パネル内フォーカスの切り替え
+    void SetRightFocus(bool on)
+    {
+        _rightFocus = on;
+        _setIndex = 0;
+        RefreshRowHighlight();
+    }
+
+    void RefreshRowHighlight()
+    {
+        for (int i = 0; i < _setRows.Count; i++)
+            _setRows[i].rowBg.color = (_rightFocus && i == _setIndex) ? RowSelected : RowNormal;
     }
 
     // 選択中の項目を明るく光らせる
@@ -135,22 +298,34 @@ public class MenuScreen : MonoBehaviour
 
     // ==================== ステータス ====================
 
+    int _statusMember; // ステータス表示中のメンバー
+    Image _statusPortrait;
+    TextMeshProUGUI _statusName;
+    RectTransform _statusTabs;
+    readonly System.Collections.Generic.List<Image> _statusTabImgs
+        = new System.Collections.Generic.List<Image>();
+
     void BuildStatusContent(Transform parent)
     {
         _statusContent = ProtoUI.CreateRect("StatusContent", parent);
         _statusContent.anchoredPosition = new Vector2(140, -10);
         _statusContent.sizeDelta = new Vector2(700, 560);
 
+        // メンバー切り替えタブ（上部）
+        _statusTabs = ProtoUI.CreateRect("StatusTabs", _statusContent);
+        _statusTabs.anchoredPosition = new Vector2(0, 245);
+        _statusTabs.sizeDelta = new Vector2(700, 46);
+
         // キャラ立ち絵
         var charRt = ProtoUI.CreateRect("Chara", _statusContent);
-        charRt.anchoredPosition = new Vector2(-230, 0);
+        charRt.anchoredPosition = new Vector2(-230, -20);
         charRt.sizeDelta = new Vector2(190, 280);
-        var charImg = charRt.gameObject.AddComponent<Image>();
-        charImg.sprite = ProtoPixelArt.Mama();
-        charImg.preserveAspect = true;
+        _statusPortrait = charRt.gameObject.AddComponent<Image>();
+        _statusPortrait.sprite = ProtoPixelArt.Mama();
+        _statusPortrait.preserveAspect = true;
 
-        var name = ProtoUI.CreateText("Name", _statusContent, "MAMA", 30, new Vector2(-230, 170), new Vector2(250, 40));
-        ProtoUI.StyleTitle(name, new Color(0.96f, 0.93f, 1f));
+        _statusName = ProtoUI.CreateText("Name", _statusContent, "MAMA", 30, new Vector2(-230, 155), new Vector2(250, 40));
+        ProtoUI.StyleTitle(_statusName, new Color(0.96f, 0.93f, 1f));
 
         // ステータス本文
         _statusText = ProtoUI.CreateText("Stats", _statusContent, "", 24,
@@ -165,10 +340,48 @@ public class MenuScreen : MonoBehaviour
 
     void ShowStatusTab()
     {
+        _rightFocus = false;
         _settingsContent.gameObject.SetActive(false);
+        if (_partyContent != null) _partyContent.gameObject.SetActive(false);
         _statusContent.gameObject.SetActive(true);
 
-        var s = _main.Stats;
+        if (_statusMember >= _main.Party.Count) _statusMember = 0; // 仲間を外した直後の保険
+        RefreshStatusTabs();
+        RefreshStatusView();
+    }
+
+    // メンバー切り替えタブを作り直す（パーティの増減に追従）
+    void RefreshStatusTabs()
+    {
+        foreach (Transform c in _statusTabs) Destroy(c.gameObject);
+        _statusTabImgs.Clear();
+
+        var party = _main.Party;
+        float xs = -(party.Count - 1) * 150f / 2f;
+        for (int i = 0; i < party.Count; i++)
+        {
+            int mi = i;
+            var btn = ProtoUI.CreateButton($"STab_{party[i].name}", _statusTabs, party[i].name, 17,
+                new Vector2(xs + i * 150f, 0), new Vector2(140, 42), new Color(0.2f, 0.17f, 0.32f),
+                () => { _statusMember = mi; RefreshStatusTabs(); RefreshStatusView(); });
+            var label = btn.GetComponentInChildren<TextMeshProUGUI>();
+            label.color = Color.Lerp(party[i].hair, Color.white, 0.3f);
+            var img = (Image)btn.targetGraphic;
+            if (i == _statusMember) img.color = new Color(0.48f, 0.38f, 0.7f);
+            _statusTabImgs.Add(img);
+        }
+    }
+
+    // 選択中メンバーのステータスを表示
+    void RefreshStatusView()
+    {
+        var member = _main.Party[_statusMember];
+        var s = _main.MemberStats[_statusMember];
+
+        _statusPortrait.sprite = member.BattleSprite();
+        _statusName.text = member.name;
+        _statusName.color = Color.Lerp(member.hair, Color.white, 0.3f);
+
         _statusText.text =
             $"レベル　 {s.Level}\n" +
             $"HP　　　 {s.MaxHP}\n" +
@@ -187,6 +400,20 @@ public class MenuScreen : MonoBehaviour
         _settingsContent.anchoredPosition = new Vector2(140, -10);
         _settingsContent.sizeDelta = new Vector2(700, 560);
 
+        // 各行の選択ハイライト用の背景（キーボード操作で光る）
+        _setRows.Clear();
+        var volRow = ProtoUI.CreatePanel("RowVol", _settingsContent, new Vector2(0, 120), new Vector2(600, 64), RowNormal);
+        volRow.raycastTarget = false;
+        _setRows.Add((volRow, () => ChangeVolume(-0.1f), () => ChangeVolume(+0.1f)));
+
+        var bgmRow = ProtoUI.CreatePanel("RowBgm", _settingsContent, new Vector2(0, 20), new Vector2(600, 64), RowNormal);
+        bgmRow.raycastTarget = false;
+        _setRows.Add((bgmRow, ToggleBgm, ToggleBgm));
+
+        var modeRow = ProtoUI.CreatePanel("RowMode", _settingsContent, new Vector2(0, -80), new Vector2(600, 64), RowNormal);
+        modeRow.raycastTarget = false;
+        _setRows.Add((modeRow, ToggleBattleMode, ToggleBattleMode));
+
         // 音量（−/＋ボタン式）
         ProtoUI.CreateText("VolLabel", _settingsContent, "音量", 24, new Vector2(-180, 120), new Vector2(140, 36));
         ProtoUI.CreateButton("VolDown", _settingsContent, "−", 28, new Vector2(-40, 120), new Vector2(64, 56),
@@ -201,16 +428,29 @@ public class MenuScreen : MonoBehaviour
             new Color(0.2f, 0.17f, 0.32f), ToggleBgm);
         _bgmBtnLabel = bgmBtn.GetComponentInChildren<TextMeshProUGUI>();
 
+        // バトル方式（ターン制 / アクティブタイムバトル）
+        ProtoUI.CreateText("ModeLabel", _settingsContent, "バトル方式", 24, new Vector2(-180, -80), new Vector2(180, 36));
+        var modeBtn = ProtoUI.CreateButton("ModeToggle", _settingsContent, "", 20, new Vector2(60, -80), new Vector2(200, 56),
+            new Color(0.2f, 0.17f, 0.32f), ToggleBattleMode);
+        _modeBtnLabel = modeBtn.GetComponentInChildren<TextMeshProUGUI>();
+
         ProtoUI.CreateText("Note", _settingsContent,
-            "※BGMはコード生成の仮チップチューンです", 16,
-            new Vector2(0, -60), new Vector2(500, 30), new Color(0.6f, 0.6f, 0.75f));
+            "→キーで設定の中へ　←→で変更　Enterで次の項目　Escで戻る\n※アクティブ: 敵はゲージが満ちると攻撃（点滅チャレンジ中は停止）", 15,
+            new Vector2(0, -170), new Vector2(580, 60), new Color(0.6f, 0.6f, 0.75f));
 
         _settingsContent.gameObject.SetActive(false);
+    }
+
+    void ToggleBattleMode()
+    {
+        _main.SetAtbMode(!_main.AtbMode);
+        RefreshSettingsView();
     }
 
     void ShowSettingsTab()
     {
         _statusContent.gameObject.SetActive(false);
+        if (_partyContent != null) _partyContent.gameObject.SetActive(false);
         _settingsContent.gameObject.SetActive(true);
         RefreshSettingsView();
     }
@@ -219,6 +459,7 @@ public class MenuScreen : MonoBehaviour
     {
         _volumeText.text = $"{Mathf.RoundToInt(AudioListener.volume * 100)}%";
         _bgmBtnLabel.text = _main.BgmEnabled ? "ON" : "OFF";
+        _modeBtnLabel.text = _main.AtbMode ? "アクティブ" : "ターン制";
     }
 
     void ChangeVolume(float delta)

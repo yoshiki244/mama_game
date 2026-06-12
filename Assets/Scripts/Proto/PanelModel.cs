@@ -17,6 +17,7 @@ public class PanelModel
     }
 
     Placement[,] _grid;
+    bool[,] _valid; // そのマスが盤面として存在するか（キャラごとに形が違う）
     int _nextId = 1;
     public List<Placement> Placements = new List<Placement>();
 
@@ -25,7 +26,23 @@ public class PanelModel
         W = w;
         H = h;
         _grid = new Placement[w, h];
+        _valid = new bool[w, h];
+        for (int x = 0; x < w; x++)
+            for (int y = 0; y < h; y++)
+                _valid[x, y] = true;
     }
+
+    // 形状マスク付きコンストラクタ（trueのマスだけが盤面）
+    public PanelModel(bool[,] mask)
+    {
+        W = mask.GetLength(0);
+        H = mask.GetLength(1);
+        _grid = new Placement[W, H];
+        _valid = mask;
+    }
+
+    public bool IsValid(int x, int y)
+        => x >= 0 && y >= 0 && x < W && y < H && _valid[x, y];
 
     public Placement GetAt(int x, int y) => _grid[x, y];
 
@@ -47,7 +64,7 @@ public class PanelModel
     {
         foreach (var c in Cells(s, anchor, rot))
         {
-            if (c.x < 0 || c.y < 0 || c.x >= W || c.y >= H) return false;
+            if (!IsValid(c.x, c.y)) return false;
             if (_grid[c.x, c.y] != null) return false;
         }
         return true;
@@ -72,7 +89,7 @@ public class PanelModel
     {
         foreach (var c in cells)
         {
-            if (c.x < 0 || c.y < 0 || c.x >= W || c.y >= H) return false;
+            if (!IsValid(c.x, c.y)) return false;
             if (_grid[c.x, c.y] != null) return false;
         }
         return true;
@@ -158,13 +175,24 @@ public class PanelModel
         return d;
     }
 
-    // 山札を生成: 100マス=100枚（GDD推奨の引き切り方式）。null=通常攻撃
+    // 有効マスの総数（どの形でも100になるように設計）
+    public int ValidCount()
+    {
+        int n = 0;
+        for (int x = 0; x < W; x++)
+            for (int y = 0; y < H; y++)
+                if (_valid[x, y]) n++;
+        return n;
+    }
+
+    // 山札を生成: 有効マス=カード（GDD推奨の引き切り方式）。null=通常攻撃
     public List<ProtoSkill> BuildDeck()
     {
         var deck = new List<ProtoSkill>();
         for (int x = 0; x < W; x++)
             for (int y = 0; y < H; y++)
-                deck.Add(_grid[x, y]?.skill);
+                if (_valid[x, y])
+                    deck.Add(_grid[x, y]?.skill);
         return deck;
     }
 }

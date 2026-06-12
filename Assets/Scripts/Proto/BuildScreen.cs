@@ -5,8 +5,9 @@ using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
 
-// ビルド画面: 10x10盤面にピースを配置する（GDD USP①スキルパネルビルド）
-// 左クリック=配置 / 右クリック=撤去 / 回転ボタンでピース回転
+// ビルド画面: メンバーごとの盤面にピースを配置する（GDD USP①スキルパネルビルド）
+// 盤面の形はキャラごとに違う（どれも100マス）。上部タブでメンバーを切り替える。
+// 左クリック=配置 / 右クリック=撤去 / ドラッグ=移動 / クリック選択→Rキー=回転
 public class BuildScreen : MonoBehaviour
 {
     ProtoMain _main;
@@ -22,7 +23,14 @@ public class BuildScreen : MonoBehaviour
     ProtoSkill _selected;
     int _rotation;
     RectTransform _gridRt;
+    Image _boardBg;
     Vector2Int? _boardSel; // 盤面で選択中のピース（ピボットマスで保持）
+
+    // メンバー切り替え
+    int _member;
+    RectTransform _tabsRow;
+    readonly List<Image> _tabImgs = new List<Image>();
+    PanelModel P => _main.Panels[_member];
 
     // ドラッグ移動の状態
     bool _isDragging;
@@ -30,7 +38,7 @@ public class BuildScreen : MonoBehaviour
     List<Vector2Int> _dragOrigCells;
     Vector2Int _dragGrabCell;
 
-    const float CellSize = 40f;
+    float _cellSize = 40f; // 盤面の大きさに合わせて自動調整
     const float CellGap = 3f;
 
     static readonly Color EmptyColor = new Color(0.16f, 0.14f, 0.24f);
@@ -47,7 +55,9 @@ public class BuildScreen : MonoBehaviour
     public void Show()
     {
         _root.gameObject.SetActive(true);
-        _title.text = "ビルド画面";
+        if (_member >= _main.Panels.Count) _member = 0; // 仲間を外した直後の保険
+        RefreshTabs();
+        BuildBoard();
         RefreshBoard();
     }
 
@@ -60,42 +70,19 @@ public class BuildScreen : MonoBehaviour
         _title = ProtoUI.CreateText("Title", _root, "ビルド画面", 34, new Vector2(0, 410), new Vector2(800, 50));
         ProtoUI.StyleTitle(_title, ProtoUI.Gold, 8f);
 
-        // ---- 盤面（左側） ----
-        var board = ProtoUI.CreatePanel("Board", _root, new Vector2(-330, 85),
-            new Vector2(10 * (CellSize + CellGap) + CellGap, 10 * (CellSize + CellGap) + CellGap),
-            new Color(0.08f, 0.07f, 0.14f));
+        // メンバー切り替えタブ（盤面の上）
+        _tabsRow = ProtoUI.CreateRect("Tabs", _root);
+        _tabsRow.anchoredPosition = new Vector2(-330, 345);
+        _tabsRow.sizeDelta = new Vector2(700, 50);
 
-        var grid = ProtoUI.CreateRect("Grid", board.transform);
-        grid.sizeDelta = new Vector2(10 * (CellSize + CellGap), 10 * (CellSize + CellGap));
+        // 盤面の土台（透明の入れ物。マス自体が盤面の見た目になる）
+        _boardBg = ProtoUI.CreatePanel("Board", _root, new Vector2(-330, 85),
+            new Vector2(440, 440), Color.clear);
+        _boardBg.raycastTarget = false;
+        var grid = ProtoUI.CreateRect("Grid", _boardBg.transform);
         _gridRt = grid;
         var layout = grid.gameObject.AddComponent<GridLayoutGroup>();
-        layout.cellSize = new Vector2(CellSize, CellSize);
-        layout.spacing = new Vector2(CellGap, CellGap);
         layout.constraint = GridLayoutGroup.Constraint.FixedColumnCount;
-        layout.constraintCount = 10;
-
-        _cellImages = new Image[10, 10];
-        for (int y = 0; y < 10; y++)
-        {
-            for (int x = 0; x < 10; x++)
-            {
-                int cx = x, cy = y;
-                var cell = ProtoUI.CreatePanel($"Cell_{x}_{y}", grid, Vector2.zero,
-                    new Vector2(CellSize, CellSize), EmptyColor);
-                var handler = cell.gameObject.AddComponent<CellClickHandler>();
-                handler.onClick = e =>
-                {
-                    if (e.button == UnityEngine.EventSystems.PointerEventData.InputButton.Left)
-                        OnCellLeftClick(cx, cy);
-                    else if (e.button == UnityEngine.EventSystems.PointerEventData.InputButton.Right)
-                        OnCellRightClick(cx, cy);
-                };
-                handler.onBeginDrag = e => OnCellBeginDrag(cx, cy);
-                handler.onDrag = OnCellDrag;
-                handler.onEndDrag = OnCellEndDrag;
-                _cellImages[x, y] = cell;
-            }
-        }
 
         // ---- ピース一覧（右側） ----
         ProtoUI.CreateText("TrayTitle", _root, "ピース一覧（クリックで選択）", 22,
@@ -146,16 +133,109 @@ public class BuildScreen : MonoBehaviour
             new Vector2(-330, -270), new Vector2(720, 230), new Color(0.85f, 0.8f, 1f),
             TextAlignmentOptions.Top);
 
-        // メニューへ戻るボタン（ビルドはメニューの1機能という位置づけ）
+        // メニューへ戻るボタン
         ProtoUI.CreateButton("BackBtn", _root, "メニューへ戻る", 24,
             new Vector2(330, -330), new Vector2(260, 70), new Color(0.7f, 0.3f, 0.45f),
             () => _main.ShowMenu());
     }
 
+    // ==================== メンバータブ ====================
+
+    void RefreshTabs()
+    {
+        foreach (Transform c in _tabsRow) Destroy(c.gameObject);
+        _tabImgs.Clear();
+
+        var party = _main.Party;
+        float xs = -(party.Count - 1) * 150f / 2f;
+        for (int i = 0; i < party.Count; i++)
+        {
+            int mi = i;
+            var btn = ProtoUI.CreateButton($"Tab_{party[i].name}", _tabsRow, party[i].name, 18,
+                new Vector2(xs + i * 150f, 0), new Vector2(140, 44), TrayNormal,
+                () => SwitchMember(mi));
+            var label = btn.GetComponentInChildren<TextMeshProUGUI>();
+            label.color = Color.Lerp(party[i].hair, Color.white, 0.3f);
+            _tabImgs.Add((Image)btn.targetGraphic);
+        }
+        UpdateTabHighlight();
+    }
+
+    void UpdateTabHighlight()
+    {
+        for (int i = 0; i < _tabImgs.Count; i++)
+            _tabImgs[i].color = i == _member ? TraySelected : TrayNormal;
+        _title.text = $"ビルド — {_main.Party[_member].name}";
+    }
+
+    void SwitchMember(int index)
+    {
+        _member = index;
+        _boardSel = null;
+        _isDragging = false;
+        UpdateTabHighlight();
+        UpdateSelectedText();
+        BuildBoard();
+        RefreshBoard();
+    }
+
+    // ==================== 盤面の構築（メンバーごとに形が違う） ====================
+
+    void BuildBoard()
+    {
+        foreach (Transform c in _gridRt) Destroy(c.gameObject);
+
+        int w = P.W, h = P.H;
+        _cellSize = 40f; // どの形でもMAMAの盤面と同じマスサイズ
+
+        var layout = _gridRt.GetComponent<GridLayoutGroup>();
+        layout.cellSize = new Vector2(_cellSize, _cellSize);
+        layout.spacing = new Vector2(CellGap, CellGap);
+        layout.constraintCount = w;
+
+        float unit = _cellSize + CellGap;
+        _gridRt.sizeDelta = new Vector2(w * unit, h * unit);
+        ((RectTransform)_boardBg.transform).sizeDelta = new Vector2(w * unit + CellGap * 2, h * unit + CellGap * 2);
+
+        _cellImages = new Image[w, h];
+        for (int y = 0; y < h; y++)
+        {
+            for (int x = 0; x < w; x++)
+            {
+                int cx = x, cy = y;
+                var cell = ProtoUI.CreatePanel($"Cell_{x}_{y}", _gridRt, Vector2.zero,
+                    new Vector2(_cellSize, _cellSize), EmptyColor);
+                _cellImages[x, y] = cell;
+
+                if (!P.IsValid(x, y))
+                {
+                    // 盤面の形の外側: 透明＆クリック不可（グリッド整列のための見えない埋め草）
+                    cell.color = Color.clear;
+                    cell.raycastTarget = false;
+                    continue;
+                }
+
+                var handler = cell.gameObject.AddComponent<CellClickHandler>();
+                handler.onClick = e =>
+                {
+                    if (e.button == UnityEngine.EventSystems.PointerEventData.InputButton.Left)
+                        OnCellLeftClick(cx, cy);
+                    else if (e.button == UnityEngine.EventSystems.PointerEventData.InputButton.Right)
+                        OnCellRightClick(cx, cy);
+                };
+                handler.onBeginDrag = e => OnCellBeginDrag(cx, cy);
+                handler.onDrag = OnCellDrag;
+                handler.onEndDrag = OnCellEndDrag;
+            }
+        }
+    }
+
+    // ==================== 選択・配置・回転 ====================
+
     void SelectSkill(ProtoSkill s)
     {
         _selected = (_selected == s) ? null : s; // 同じピースをもう一度クリックで選択解除
-        _boardSel = null; // トレイを触ったら盤面側の選択は解除
+        _boardSel = null;
         _rotation = 0;
         UpdateSelectedText();
         foreach (var (skill, img, _) in _trayButtons)
@@ -170,10 +250,9 @@ public class BuildScreen : MonoBehaviour
 
     void UpdateSelectedText()
     {
-        // 盤面でピースを選択中ならそちらを優先表示（改行位置を固定した2行表示）
         if (_boardSel.HasValue)
         {
-            var p = _main.Panel.GetAt(_boardSel.Value.x, _boardSel.Value.y);
+            var p = P.GetAt(_boardSel.Value.x, _boardSel.Value.y);
             if (p != null)
             {
                 _selectedText.text = $"選択中: {p.skill.skillName}\nRキーで回転";
@@ -187,13 +266,12 @@ public class BuildScreen : MonoBehaviour
 
     void OnCellLeftClick(int x, int y)
     {
-        var placed = _main.Panel.GetAt(x, y);
+        var placed = P.GetAt(x, y);
 
-        // 配置済みピースをクリック → そのピースを選択（活性化）
         if (placed != null)
         {
-            _boardSel = placed.cells[0]; // ピボットマスで記憶（回転後も追従できる）
-            _selected = null;            // トレイ選択は解除
+            _boardSel = placed.cells[0];
+            _selected = null;
             foreach (var (skill, img, _) in _trayButtons)
                 img.color = TrayNormal;
             UpdateSelectedText();
@@ -201,15 +279,15 @@ public class BuildScreen : MonoBehaviour
             return;
         }
 
-        // 空きマスをクリック → トレイ選択中のピースを配置（盤面選択は解除）
         _boardSel = null;
-        if (_selected != null)
-            _main.Panel.Place(_selected, new Vector2Int(x, y), _rotation);
+        bool placeFailed = _selected != null && !P.Place(_selected, new Vector2Int(x, y), _rotation);
         UpdateSelectedText();
         RefreshBoard();
+
+        if (placeFailed)
+            ShowNotice("ここには置けません！スペースが足りません");
     }
 
-    // Rキー: 盤面で選択中のピースを回転。なければトレイ選択中のピースを回転
     void Update()
     {
         if (_root == null || !_root.gameObject.activeSelf) return;
@@ -225,16 +303,14 @@ public class BuildScreen : MonoBehaviour
         if (rPressed) RotateAny();
     }
 
-    // 回転の共通処理（Rキーと「回転」ボタンの両方から呼ばれる）
     void RotateAny()
     {
         if (_boardSel.HasValue)
         {
             var sel = _boardSel.Value;
-            if (_main.Panel.RotatePlacementAt(sel.x, sel.y))
+            if (P.RotatePlacementAt(sel.x, sel.y))
             {
-                // 回転後のピース（リスト末尾に追加される）を選択し直す
-                var placements = _main.Panel.Placements;
+                var placements = P.Placements;
                 if (placements.Count > 0)
                     _boardSel = placements[placements.Count - 1].cells[0];
                 RefreshBoard();
@@ -267,7 +343,7 @@ public class BuildScreen : MonoBehaviour
 
     void OnCellRightClick(int x, int y)
     {
-        _main.Panel.RemoveAt(x, y);
+        P.RemoveAt(x, y);
         RefreshBoard();
         UpdateSelectedText();
     }
@@ -276,16 +352,16 @@ public class BuildScreen : MonoBehaviour
 
     void OnCellBeginDrag(int x, int y)
     {
-        var p = _main.Panel.GetAt(x, y);
+        var p = P.GetAt(x, y);
         if (p == null) return;
 
         _isDragging = true;
-        _boardSel = null; // ドラッグ開始で選択解除
+        _boardSel = null;
         UpdateSelectedText();
         _dragSkill = p.skill;
         _dragOrigCells = new List<Vector2Int>(p.cells);
         _dragGrabCell = new Vector2Int(x, y);
-        _main.Panel.RemoveAt(x, y); // 一旦盤面から持ち上げる
+        P.RemoveAt(x, y);
         RefreshBoard();
     }
 
@@ -296,15 +372,14 @@ public class BuildScreen : MonoBehaviour
 
         if (!TryGetCellUnderPointer(e, out var cell)) return;
 
-        // 掴んだマスを基準に移動先のマス集合を計算してプレビュー表示
         var delta = cell - _dragGrabCell;
         var candidate = new List<Vector2Int>();
         foreach (var c in _dragOrigCells) candidate.Add(c + delta);
 
-        bool valid = _main.Panel.CanPlaceCells(candidate);
+        bool valid = P.CanPlaceCells(candidate);
         Color preview = valid ? new Color(0.4f, 0.9f, 0.5f) : new Color(0.9f, 0.35f, 0.35f);
         foreach (var c in candidate)
-            if (c.x >= 0 && c.y >= 0 && c.x < 10 && c.y < 10)
+            if (P.IsValid(c.x, c.y))
                 _cellImages[c.x, c.y].color = preview;
     }
 
@@ -319,11 +394,14 @@ public class BuildScreen : MonoBehaviour
             var delta = cell - _dragGrabCell;
             var candidate = new List<Vector2Int>();
             foreach (var c in _dragOrigCells) candidate.Add(c + delta);
-            placed = _main.Panel.PlaceCells(_dragSkill, candidate);
+            placed = P.PlaceCells(_dragSkill, candidate);
         }
 
         if (!placed)
-            _main.Panel.PlaceCells(_dragSkill, _dragOrigCells); // 置けなければ元の場所に戻す
+        {
+            P.PlaceCells(_dragSkill, _dragOrigCells);
+            ShowNotice("そこには動かせません！元の場所に戻しました");
+        }
 
         RefreshBoard();
     }
@@ -339,23 +417,26 @@ public class BuildScreen : MonoBehaviour
                 _gridRt, screenPos, cam, out var local))
             return false;
 
-        float unit = CellSize + CellGap;
-        float gw = 10 * unit, gh = 10 * unit;
+        float unit = _cellSize + CellGap;
+        float gw = P.W * unit, gh = P.H * unit;
         int x = Mathf.FloorToInt((local.x + gw / 2f) / unit);
         int y = Mathf.FloorToInt((gh / 2f - local.y) / unit);
-        if (x < 0 || y < 0 || x >= 10 || y >= 10) return false;
+        if (x < 0 || y < 0 || x >= P.W || y >= P.H) return false;
 
         cell = new Vector2Int(x, y);
         return true;
     }
 
+    // ==================== 表示更新 ====================
+
     void RefreshBoard()
     {
-        var panel = _main.Panel;
-        for (int x = 0; x < 10; x++)
+        var panel = P;
+        for (int x = 0; x < panel.W; x++)
         {
-            for (int y = 0; y < 10; y++)
+            for (int y = 0; y < panel.H; y++)
             {
+                if (!panel.IsValid(x, y)) continue; // 形の外側は透明のまま
                 var p = panel.GetAt(x, y);
                 _cellImages[x, y].color = p == null ? EmptyColor : p.skill.color;
             }
@@ -367,7 +448,7 @@ public class BuildScreen : MonoBehaviour
             var selPlacement = panel.GetAt(_boardSel.Value.x, _boardSel.Value.y);
             if (selPlacement == null)
             {
-                _boardSel = null; // 撤去などで消えていたら選択解除
+                _boardSel = null;
             }
             else
             {
@@ -376,11 +457,12 @@ public class BuildScreen : MonoBehaviour
             }
         }
 
-        // 盤面下に出現確率の内訳を表示（通常攻撃＋配置済みスキルを個別に。スキル名はピース色）
+        // 盤面下に出現確率の内訳を表示
+        int total = panel.ValidCount();
         int occupied = panel.OccupiedCount();
         var counts = panel.CountBySkill();
 
-        var parts = new List<string> { $"通常攻撃: {100 - occupied}%" };
+        var parts = new List<string> { $"通常攻撃: {total - occupied}%" };
         foreach (var skill in ProtoSkills.All)
         {
             if (counts.TryGetValue(skill, out int pct))
@@ -389,6 +471,6 @@ public class BuildScreen : MonoBehaviour
                 parts.Add($"<color=#{hex}>{skill.skillName}: {pct}%</color>");
             }
         }
-        _info.text = $"占有 {occupied}/100 マス\n" + string.Join("\n", parts);
+        _info.text = $"占有 {occupied}/{total} マス\n" + string.Join("\n", parts);
     }
 }

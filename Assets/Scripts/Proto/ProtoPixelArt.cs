@@ -32,6 +32,10 @@ public static class ProtoPixelArt
 
     // バトル用MAMA（30x38）: 銀髪ロング・黒ドレス・シースルー裾・右腕を突き出す構え
     public static Sprite Mama()
+        => Mama(new Color(0.87f, 0.88f, 0.95f), new Color(0.66f, 0.68f, 0.80f), new Color(0.98f, 0.99f, 1f));
+
+    // 髪色を指定できる版（仲間キャラの色違い生成用）
+    public static Sprite Mama(Color hair, Color hairShadow, Color hairLight)
     {
         var rows = new string[]
         {
@@ -75,9 +79,9 @@ public static class ProtoPixelArt
         };
         var palette = new Dictionary<char, Color>
         {
-            { 'H', new Color(0.87f, 0.88f, 0.95f) },        // 髪（銀髪ベース）
-            { 'h', new Color(0.66f, 0.68f, 0.80f) },        // 髪の陰
-            { 'L', new Color(0.98f, 0.99f, 1f) },           // 髪のハイライト
+            { 'H', hair },                                  // 髪（ベース）
+            { 'h', hairShadow },                            // 髪の陰
+            { 'L', hairLight },                             // 髪のハイライト
             { 'S', new Color(1f, 0.88f, 0.78f) },           // 肌
             { 'E', new Color(0.45f, 0.68f, 1f) },           // 瞳（青・明）
             { 'e', new Color(0.18f, 0.32f, 0.65f) },        // 瞳（青・暗＝深み）
@@ -249,6 +253,10 @@ public static class ProtoPixelArt
     // dir: 0=正面（下向き） 1=背面（上向き） 2=左向き ※右向きは左をX反転して使う
     // frame: 0=足をそろえる 1=足を開く（交互に切り替えて歩行アニメに）
     public static Sprite MapMama(int dir, int frame)
+        => MapMama(dir, frame, new Color(0.87f, 0.88f, 0.95f), new Color(0.66f, 0.68f, 0.80f));
+
+    // 髪色を指定できる版（仲間キャラの色違い生成用）
+    public static Sprite MapMama(int dir, int frame, Color hair, Color hairShadow)
     {
         string[] body;
         string[] legs;
@@ -345,8 +353,8 @@ public static class ProtoPixelArt
 
         var palette = new Dictionary<char, Color>
         {
-            { 'H', new Color(0.87f, 0.88f, 0.95f) },        // 髪（銀髪）
-            { 'h', new Color(0.66f, 0.68f, 0.80f) },        // 髪の陰
+            { 'H', hair },                                  // 髪
+            { 'h', hairShadow },                            // 髪の陰
             { 'S', new Color(1f, 0.88f, 0.78f) },           // 肌
             { 'E', new Color(0.35f, 0.6f, 0.95f) },         // 目
             { 'C', new Color(1f, 0.72f, 0.72f) },           // 頬の赤らみ

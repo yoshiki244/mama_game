@@ -26,6 +26,17 @@ public class MapScreen : MonoBehaviour
     Sprite[][] _walkSprites;     // [向き(0正面/1背面/2左)][コマ(0/1)]
     int _facing;                 // 0=下 1=上 2=左 3=右
 
+    // 仲間の隊列追従（プレイヤーの過去位置を辿る）
+    class Follower
+    {
+        public RectTransform rt;
+        public Image img;
+        public Sprite[][] sprites;
+        public Vector2Int gpos;
+    }
+    readonly List<Follower> _followers = new List<Follower>();
+    readonly List<Vector2Int> _trail = new List<Vector2Int>(); // プレイヤーが直前にいたマスの履歴
+
     class MapEnemy
     {
         public ProtoEnemy data;
@@ -51,6 +62,38 @@ public class MapScreen : MonoBehaviour
         _root.gameObject.SetActive(true);
         _busy = false;
         _moving = false;
+        RefreshFollowers(); // パーティが増えていたら追従キャラを作り直す
+    }
+
+    // パーティ2人目以降の追従キャラを生成（プレイヤーと同じ見た目システムの色違い）
+    void RefreshFollowers()
+    {
+        foreach (var f in _followers) Destroy(f.rt.gameObject);
+        _followers.Clear();
+        _trail.Clear();
+
+        var party = _main.Party;
+        for (int i = 1; i < party.Count; i++)
+        {
+            var m = party[i];
+            var sprites = new Sprite[3][];
+            for (int d = 0; d < 3; d++)
+                sprites[d] = new[] { m.MapSprite(d, 0), m.MapSprite(d, 1) };
+
+            var rt = ProtoUI.CreateRect($"Follower_{m.name}", _root);
+            rt.sizeDelta = new Vector2(78, 95);
+            rt.anchoredPosition = GridToAnchored(_gridPos); // 最初はプレイヤーと同じ場所
+            AddShadow(rt, 46f);
+            var img = rt.gameObject.AddComponent<Image>();
+            img.sprite = sprites[0][0];
+            img.preserveAspect = true;
+            img.raycastTarget = false;
+
+            _followers.Add(new Follower { rt = rt, img = img, sprites = sprites, gpos = _gridPos });
+
+            // プレイヤーより手前に描画されないよう、プレイヤーの直前に並べる
+            rt.SetSiblingIndex(_player.GetSiblingIndex());
+        }
     }
 
     public void Hide()
@@ -279,6 +322,24 @@ public class MapScreen : MonoBehaviour
     IEnumerator StepTo(Vector2Int target)
     {
         _moving = true;
+
+        // 隊列の履歴を更新して、仲間たちを1マスずつ前進させる
+        _trail.Insert(0, _gridPos);
+        if (_trail.Count > _followers.Count) _trail.RemoveRange(_followers.Count, _trail.Count - _followers.Count);
+        for (int i = 0; i < _followers.Count && i < _trail.Count; i++)
+        {
+            var f = _followers[i];
+            if (f.gpos != _trail[i])
+            {
+                Vector2Int delta = _trail[i] - f.gpos;
+                int fdir = delta.y < 0 ? 0 : delta.y > 0 ? 1 : delta.x < 0 ? 2 : 3;
+                f.img.sprite = f.sprites[fdir == 3 ? 2 : fdir][1];
+                f.rt.localScale = new Vector3(fdir == 3 ? -1f : 1f, 1f, 1f);
+                f.gpos = _trail[i];
+                StartCoroutine(SlideFollower(f, GridToAnchored(_trail[i]), fdir));
+            }
+        }
+
         Vector2 from = GridToAnchored(_gridPos);
         Vector2 to = GridToAnchored(target);
         _gridPos = target;
@@ -296,6 +357,22 @@ public class MapScreen : MonoBehaviour
         _player.anchoredPosition = to;
         ApplyPlayerSprite(0);
         _moving = false;
+    }
+
+    // 仲間が1マスついてくる移動
+    IEnumerator SlideFollower(Follower f, Vector2 to, int fdir)
+    {
+        Vector2 from = f.rt.anchoredPosition;
+        float t = 0f;
+        const float dur = 0.18f;
+        while (t < dur)
+        {
+            t += Time.deltaTime;
+            f.rt.anchoredPosition = Vector2.Lerp(from, to, t / dur);
+            yield return null;
+        }
+        f.rt.anchoredPosition = to;
+        f.img.sprite = f.sprites[fdir == 3 ? 2 : fdir][0]; // 足をそろえる
     }
 
     // 向きとコマに応じてスプライトを適用（右向きは左向きをX反転）
