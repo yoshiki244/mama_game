@@ -1,4 +1,4 @@
-using UnityEngine;
+﻿using UnityEngine;
 using UnityEngine.UI;
 using System.Collections;
 using System.Collections.Generic;
@@ -248,7 +248,7 @@ public class MapScreen : MonoBehaviour
 
         // ボス配置
         if (area == 1)
-            SpawnEnemyAt(ProtoEnemies.Find("kinggolem"), new Vector2Int(0, 1), isBoss: true);  // 中ボス
+            SpawnEnemyAt(ProtoEnemies.Find("oni"), new Vector2Int(0, 1), isBoss: true);  // 中ボス: 鬼
         if (area == 2)
             SpawnEnemyAt(ProtoEnemies.Find("dragon"), new Vector2Int(0, GridMaxY), isBoss: true); // 階段の頂上にドラゴン
 
@@ -507,15 +507,18 @@ public class MapScreen : MonoBehaviour
 
     IEnumerator SlideFollower(Follower f, Vector2 to, int fdir)
     {
+        if (f.rt == null) yield break;
         Vector2 from = f.rt.anchoredPosition;
         float t = 0f;
         const float dur = 0.18f;
         while (t < dur)
         {
             t += Time.deltaTime;
+            if (f.rt == null) yield break; // パーティ再編成で破棄済みなら中断
             f.rt.anchoredPosition = Vector2.Lerp(from, to, t / dur);
             yield return null;
         }
+        if (f.rt == null) yield break;
         f.rt.anchoredPosition = to;
         f.img.sprite = f.sprites[fdir == 3 ? 2 : fdir][0];
     }
@@ -557,16 +560,18 @@ public class MapScreen : MonoBehaviour
 
     IEnumerator SlideEnemy(RectTransform rt, Vector2 to)
     {
+        if (rt == null) yield break;
         Vector2 from = rt.anchoredPosition;
         float t = 0f;
         const float dur = 0.2f;
         while (t < dur)
         {
             t += Time.deltaTime;
+            if (rt == null) yield break; // エリア移動や撃破で破棄済みなら中断
             rt.anchoredPosition = Vector2.Lerp(from, to, t / dur);
             yield return null;
         }
-        rt.anchoredPosition = to;
+        if (rt != null) rt.anchoredPosition = to;
     }
 
     // エンカウント演出

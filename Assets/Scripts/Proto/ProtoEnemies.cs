@@ -1,4 +1,4 @@
-using UnityEngine;
+﻿using UnityEngine;
 using System.Collections.Generic;
 
 // 敵の技（名前・威力倍率・ヒット数・出やすさ）
@@ -72,7 +72,7 @@ public static class ProtoEnemies
                             new EnemyAttack { name = "ちからをためている", mult = 0f, hits = 0, weight = 8 },
                         } },
                     new ProtoEnemy { id = "dragon", enemyName = "ドラゴン", sprite = ProtoPixelArt.Dragon(),
-                        baseHP = 170, minAtk = 12, maxAtk = 20, battleSize = new Vector2(700, 460), mapSize = new Vector2(112, 74),
+                        baseHP = 170, minAtk = 12, maxAtk = 20, battleSize = new Vector2(720, 440), mapSize = new Vector2(135, 82),
                         atbInterval = 5.5f, flying = true,
                         levelOffset = 9, // 山頂のボス。序盤のレベルでは歯が立たない
                         attacks = new[]
@@ -83,16 +83,16 @@ public static class ProtoEnemies
                             new EnemyAttack { name = "しっぽ振り回し", mult = 0.85f, hits = 2, weight = 15 },
                             new EnemyAttack { name = "天をあおいで咆哮した", mult = 0f, hits = 0, weight = 8 },
                         } },
-                    new ProtoEnemy { id = "kinggolem", enemyName = "キングゴーレム", sprite = ProtoPixelArt.Golem(),
-                        baseHP = 300, minAtk = 16, maxAtk = 24, battleSize = new Vector2(560, 510), mapSize = new Vector2(105, 96),
+                    new ProtoEnemy { id = "oni", enemyName = "オニ", sprite = ProtoPixelArt.Oni(),
+                        baseHP = 300, minAtk = 16, maxAtk = 24, battleSize = new Vector2(460, 530), mapSize = new Vector2(92, 106),
                         atbInterval = 6.0f,
                         levelOffset = 4, // 風雨の森の中ボス
                         attacks = new[]
                         {
-                            new EnemyAttack { name = "なぐりつけ",     mult = 1.0f, hits = 1, weight = 40 },
-                            new EnemyAttack { name = "大地砕き",       mult = 2.0f, hits = 1, weight = 25 },
-                            new EnemyAttack { name = "岩石乱舞",       mult = 0.7f, hits = 3, weight = 20 },
-                            new EnemyAttack { name = "ちからをためている", mult = 0f, hits = 0, weight = 15 },
+                            new EnemyAttack { name = "かなぼう振り回し", mult = 1.0f, hits = 1, weight = 40 },
+                            new EnemyAttack { name = "地獄突き",         mult = 1.9f, hits = 1, weight = 25 },
+                            new EnemyAttack { name = "鬼の連打",         mult = 0.65f, hits = 3, weight = 20 },
+                            new EnemyAttack { name = "雄叫びをあげている", mult = 0f, hits = 0, weight = 15 },
                         } },
                 };
             }

@@ -198,53 +198,103 @@ public static class ProtoPixelArt
         tex.SetPixel(x, y, c);
     }
 
-    // 赤いドラゴン（左=プレイヤー側を向く。角・翼・しっぽ・かぎ爪つき）
+    // ボスドラゴン: 天空神龍スタイル（長い蛇身がとぐろを巻き、大顎を開けて咆哮）
+    // 背中に金の棘の列、金の目、開いた口には牙が並ぶ
     public static Sprite Dragon()
     {
-        // 44x29 高解像度版: 大きな翼・二本角・うろこの陰影・曲がる長いしっぽ
         var rows = new string[]
         {
-            "...................wWWWW...................",
-            "..................wWWWWWW..................",
-            ".................wWWWWWWWW.................",
-            "......HH........wWWWWWWWWWW................",
-            "......dHH......wWWWWWWWWWWWW...............",
-            ".....HHdH.....wWWWWWWWWWWWWWW..............",
-            "....DDDDDD....WWdWWWWWWdWWWWW..............",
-            "...DDDDDDDD...WdWWWWWWWWdWWW...............",
-            "..DDeEEDDDDD..dDDDDDDDDDDDd................",
-            "..DDEEDDDDDDDdDDDDDDDDDDDDDd...............",
-            ".DDDDDDDDDDDDDDDDDDDDDDDDDDDd..............",
-            "DDNDDDDDDDDDDDDDDDDDDDDDDDDDDd.............",
-            "DDDDDDDDdDDDDDDDDDDDDDDDDDDDDDd............",
-            "DDNDDDDDdDDDDDDDDDDDDDDDDDDDDDDd...........",
-            ".DddddDDDDDDDDDDDDDDDDDDDDDDDDDDd..........",
-            "..DDDYYYDDDDDDDDDDDDDDDDDDDDDDDDDd.........",
-            "..DDYYYYYDDDDDDDDDDDDDDDDDDDDDDDDDd........",
-            "..DYYYYYYYDDDDDDDDDDDDDDDDDDDDDDDDDdd......",
-            "..DYYYYYYYYDDDDDDDDDDDDDDDDDDDDDDDDDDd.....",
-            "..DYYYYYYYYDDDDDDDDDDDddddDDDDDDDDDDDDd....",
-            "...DYYYYYYDDDDDDDDDDDd....ddDDDDDDDddd.....",
-            "...DDYYYYDDDDDDDDDDDd.......dddDDdd........",
-            "....DDYYDDDDDDDDDDDd..........ddd..........",
-            "....DDDDDDDDDDDDDDd........................",
-            ".....DDDDDDDDDDDDd.........................",
-            ".....DDdd...ddDDdd.........................",
-            ".....DDd......dDDd.........................",
-            ".....DDd......dDDd.........................",
-            "....HHHd......dHHHd........................",
+            "....................kk....kk....kk.........",
+            "...............kkDDDDDDkkDDDDDDkkDD........",
+            ".............DDDDDDDDDDDDDDDDDDDDDDDD......",
+            "............DDDDddDDDDDDDDddDDDDDDDDDD.....",
+            "...........DDDDD..dddd......dddd..DDDDD....",
+            "..........DDDDD....................DDDDd...",
+            ".........DDDDY.....................YDDDd...",
+            "..hh.....DDDY.......................YDDDd..",
+            "..dhh...DDDDY.......................YDDDD..",
+            "..DDDD..DDDY.........................YDDDDd",
+            ".DDDDDDDDDDY.........................YDDDDD",
+            ".DDeEDDDDDDY..........................YDDDd",
+            ".DDEEDDDDDY...........................dDDDd",
+            "DDDDDDDDDDY...........................dDDDd",
+            "DDDDDDDDDDY..........................dDDDd.",
+            "DDWWWWDDDDY.........................dDDDd..",
+            "DDMMMMWDDDY........................dDDDd...",
+            "DDWMMMMDDDDY.....................dDDDdd....",
+            ".DDWWWDDDDDY....................dDDDd......",
+            "..DDDDDDDDDY...................dDDDd.......",
+            "...DDDDDDDDDY................ddDDDd........",
+            "....DDDDDDDDYY.............ddDDDd..........",
+            ".....DDDDDDDDYYY........dddDDDd............",
+            "......dDDDDDDDDYYYYYYYYDDDDDdd.............",
+            ".......ddDDDDDDDDDDDDDDDDDdd...............",
+            ".........dddDDDDDDDDDDDddd.................",
+            "............ddddddddddd....................",
         };
         var palette = new Dictionary<char, Color>
         {
-            { 'D', new Color(0.78f, 0.30f, 0.22f) },  // 体（赤）
-            { 'd', new Color(0.50f, 0.18f, 0.14f) },  // 体の陰
-            { 'Y', new Color(0.96f, 0.82f, 0.55f) },  // 腹（クリーム色）
-            { 'W', new Color(0.45f, 0.16f, 0.22f) },  // 翼膜
-            { 'w', new Color(0.62f, 0.26f, 0.32f) },  // 翼の縁（明）
-            { 'H', new Color(0.95f, 0.92f, 0.80f) },  // 角・かぎ爪
+            { 'D', new Color(0.80f, 0.22f, 0.18f) },  // 蛇身（深紅）
+            { 'd', new Color(0.50f, 0.12f, 0.10f) },  // 体の陰
+            { 'Y', new Color(0.96f, 0.82f, 0.55f) },  // 腹側のうろこ
+            { 'k', new Color(0.95f, 0.85f, 0.30f) },  // 背中の棘（金）
+            { 'h', new Color(0.95f, 0.92f, 0.80f) },  // 角
             { 'E', new Color(1f, 0.85f, 0.2f) },      // 目（金）
-            { 'e', new Color(0.2f, 0.1f, 0.05f) },    // 瞳
-            { 'N', new Color(0.3f, 0.1f, 0.08f) },    // 鼻孔
+            { 'e', new Color(0.15f, 0.05f, 0.05f) },  // 瞳
+            { 'W', new Color(0.97f, 0.96f, 0.90f) },  // 牙
+            { 'M', new Color(0.30f, 0.04f, 0.06f) },  // 開いた口の中
+        };
+        return FromMap(rows, palette);
+    }
+
+    // 中ボスの鬼: 赤い肌・黒い荒髪・金の角・牙・トラ柄パンツ・金棒
+    public static Sprite Oni()
+    {
+        var rows = new string[]
+        {
+            ".....KKK....KKK...........",
+            "....KKKKKKKKKKKK..........",
+            "...KKYKKKKKKYKKK..........",
+            "...KYYKKKKKKYYKK..........",
+            "...KKKKKKKKKKKKK..........",
+            "..KKRRRRRRRRRRKK..........",
+            "..KRRRRRRRRRRRRK..........",
+            "..KRKKWRRRRWKKRK..........",
+            "..KRWPWRRRRWPWRK..........",
+            "..RRRRRRRRRRRRRR..........",
+            "..RRRrrRRRRrrRRR..........",
+            "..RRRFRRRRRRFRRR..........",
+            "..RRRrrrrrrrrRRR..........",
+            "...RRRRRRRRRRRR...........",
+            "...RRRRRRRRRRRR.......CC..",
+            ".RRRRRRRRRRRRRRRR.....CC..",
+            "RRRRRRRRRRRRRRRRRR....CC..",
+            "RRrRRRRRRRRRRRRrRR....CC..",
+            "RRrRRRRRRRRRRRRrRRR...CC..",
+            "RRr.RRRRRRRRRR.rRRRRRRCC..",
+            "RRr.RRRRRRRRRR....RRRRCC..",
+            ".....YYYYYYYYYY.......cc..",
+            "....YYBYYBYYBYYY......cc..",
+            "....YBYYBYYBYYBY......cc..",
+            "....YYYYYYYYYYYY..........",
+            "....RRRR....RRRR..........",
+            "....RRRR....RRRR..........",
+            "....RRRR....RRRR..........",
+            "...RRRRR....RRRRR.........",
+            "...rRRRR....rRRRR.........",
+        };
+        var palette = new Dictionary<char, Color>
+        {
+            { 'K', new Color(0.15f, 0.12f, 0.13f) },  // 荒れた黒髪
+            { 'Y', new Color(0.95f, 0.78f, 0.20f) },  // 角・トラ柄パンツ（金/黄）
+            { 'B', new Color(0.12f, 0.10f, 0.10f) },  // トラ柄の黒縞
+            { 'R', new Color(0.82f, 0.28f, 0.20f) },  // 赤い肌
+            { 'r', new Color(0.58f, 0.17f, 0.12f) },  // 肌の陰
+            { 'W', new Color(0.97f, 0.96f, 0.92f) },  // 白目
+            { 'P', new Color(0.10f, 0.08f, 0.08f) },  // 瞳（鋭い）
+            { 'F', new Color(0.97f, 0.96f, 0.92f) },  // 牙
+            { 'C', new Color(0.55f, 0.42f, 0.28f) },  // 金棒
+            { 'c', new Color(0.38f, 0.28f, 0.18f) },  // 金棒の陰
         };
         return FromMap(rows, palette);
     }

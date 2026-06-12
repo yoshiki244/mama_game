@@ -75,10 +75,10 @@ public class MenuScreen : MonoBehaviour
 
         // ---- 左の項目ボタン列（開いたとき最初に表示されるステータスを先頭に） ----
         float by = 230;
-        CreateMenuButton(panel.transform, "ステータス", ref by, ShowStatusTab);
+        CreateMenuButton(panel.transform, "ステータス", ref by, ShowStatusTab, ShowStatusTab);
         CreateMenuButton(panel.transform, "ビルド", ref by, () => _main.ShowBuild());
-        CreateMenuButton(panel.transform, "仲間", ref by, ShowPartyTab);
-        CreateMenuButton(panel.transform, "設定", ref by, ShowSettingsTab);
+        CreateMenuButton(panel.transform, "仲間", ref by, ShowPartyTab, ShowPartyTab);
+        CreateMenuButton(panel.transform, "設定", ref by, ShowSettingsTab, ShowSettingsTab);
         CreateMenuButton(panel.transform, "セーブ", ref by, SaveGame);
         CreateMenuButton(panel.transform, "閉じる", ref by, () => _main.ShowMap());
 
@@ -188,13 +188,18 @@ public class MenuScreen : MonoBehaviour
         }
     }
 
-    void CreateMenuButton(Transform parent, string label, ref float y, System.Action onClick)
+    // onPreview: 矢印で選んだだけで右側に表示する内容（タブ系の項目のみ）
+    readonly System.Collections.Generic.List<System.Action> _previews
+        = new System.Collections.Generic.List<System.Action>();
+
+    void CreateMenuButton(Transform parent, string label, ref float y, System.Action onClick, System.Action onPreview = null)
     {
         int index = _items.Count;
         var btn = ProtoUI.CreateButton($"Menu_{label}", parent, label, 22,
             new Vector2(-380, y), new Vector2(260, 62), ItemNormal,
             () => { _selIndex = index; RefreshSelection(); onClick(); });
         _items.Add(((Image)btn.targetGraphic, onClick));
+        _previews.Add(onPreview);
         y -= 78;
     }
 
@@ -279,6 +284,9 @@ public class MenuScreen : MonoBehaviour
         {
             _selIndex = (_selIndex + move + _items.Count) % _items.Count;
             RefreshSelection();
+            // 選んだだけで右側に詳細を表示（ビルド/セーブ/閉じるは何もしない）
+            if (_selIndex < _previews.Count && _previews[_selIndex] != null)
+                _previews[_selIndex]();
         }
         if (submit && _items.Count > 0)
             _items[_selIndex].action();
