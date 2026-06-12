@@ -11,6 +11,7 @@ public class ProtoMain : MonoBehaviour
 
     BuildScreen _build;
     ProtoBattle _battle;
+    MapScreen _map;
     UnityEngine.UI.Image _bgImg;
 
     void Awake()
@@ -30,30 +31,46 @@ public class ProtoMain : MonoBehaviour
 
         _build = gameObject.AddComponent<BuildScreen>();
         _battle = gameObject.AddComponent<ProtoBattle>();
+        _map = gameObject.AddComponent<MapScreen>();
         _build.Init(this);
         _battle.Init(this);
+        _map.Init(this);
     }
 
-    void Start() => ShowBuild();
+    void Start() => ShowMap();
 
+    // マップ画面（ゲームのホーム。ここから歩いてエンカウント）
+    public void ShowMap()
+    {
+        _bgImg.enabled = false; // マップは自前の背景を持つ
+        _battle.Hide();
+        _build.Hide();
+        _map.Show();
+    }
+
+    // ビルド画面（キャラに紐づくステータス編集。マップのメニューから開く）
     public void ShowBuild()
     {
-        _bgImg.enabled = false; // ビルド画面は暗い背景
+        _bgImg.enabled = false;
         _battle.Hide();
+        _map.Hide();
         _build.Show();
     }
 
-    public void StartBattle()
+    // バトル開始（マップでぶつかった敵のデータを渡す）
+    public void StartBattle(ProtoEnemy enemy)
     {
         _bgImg.enabled = true; // バトルは自然背景
         _build.Hide();
-        _battle.Begin();
+        _map.Hide();
+        _battle.Begin(enemy);
     }
 
     public void OnBattleWon()
     {
         Wave++;
-        ShowBuild();
+        _map.OnEnemyDefeated(); // 倒した敵をマップから消して補充
+        ShowMap();
     }
 
     void SetupCamera()

@@ -38,45 +38,64 @@ public static class ProtoPixelArt
         // ・黒ドレスで銀髪とのコントラストを確保（同化問題の解消）
         // ・髪は頭→肩→太もも付近まで途切れず流れる超ロング
         // ・前髪はギザギザの不揃いな毛先
+        // 36x53 高解像度かわいい版
+        // ・大きなキラキラ瞳（まつ毛k＋虹彩E/e＋白ハイライトO の4層）
+        // ・ふんわり丸い輪郭＋ギザギザ前髪＋腰下までの銀髪ロング
+        // ・黒ドレス＋シースルー裾、両腕は体に沿わせた柔らかい立ち姿
         var rows = new string[]
         {
-            "...........HHHHHHHH...........",
-            ".........HHHHHHHHHHHH.........",
-            "........HHHHHHHHHHHHHH........",
-            "........HHHLHHHHHHLHHH........",
-            ".......hHHHHHHHHHHHHHHh.......",
-            ".......hHHHSHHHHSHHHHHh.......",
-            ".......hHHSSSHHSSSHHHHh.......",
-            ".......hHSSSSSSSSSSSHHh.......",
-            ".......hHSkkSSSSkkSSHHh.......",
-            ".......hHSeESSSSeESSHHh.......",
-            ".......hHSCSSSSSSCSSHHh.......",
-            ".......hHSSSSMMSSSSSHHh.......",
-            ".......hHHSSSSSSSSSHHHh.......",
-            "......hHHHSSSSSSSHHHHh........",
-            "......hHHHHSSSSSSHHHHh........",
-            ".....hHHHHHWWWWWHHHHHHh.......",
-            ".....hHHSSWWWWWWWHHHHhSSSS....",
-            ".....hHHSSWWWWWWWWHhSSSSSSS...",
-            ".....hHHSSWWwWWwWWHHHHh.......",
-            ".....hHHSSWWWWWHHHHHHHh.......",
-            ".....hHHSSwWWWwHHHHHHHh.......",
-            "......hHSSSWWWWWWHHHHh........",
-            "..........WWWWWWWW............",
-            "..........VWWWWWWV............",
-            ".........VVWWWWWWVV...........",
-            ".........VVwWWWWwVV...........",
-            "........VVVWWWWWVVV...........",
-            "........VVVVVVVVVVV...........",
-            "........VVVVVVVVVVVV..........",
-            "........VVVVVVVVVVVV..........",
-            "........SSS......SSS..........",
-            "........SSS......SSS..........",
-            ".........SS.......SS..........",
-            ".........SS.......SS..........",
-            ".........SS.......SS..........",
-            "........BBB......BBB..........",
-            "........bBB......bBB..........",
+            "..............HHHHHHHH..............",
+            "...........HHHHHHHHHHHHHH...........",
+            ".........HHHHHHHHHHHHHHHHHH.........",
+            "........HHHHHLLHHHHHHHHHHHHH........",
+            ".......HHHHLLHHHHHHHHHHHHHHHH.......",
+            "......hHHHLLHHHHHHHHHHHHHHHHHh......",
+            "......hHHHHHHHHHHHHHHHHHHHHHHh......",
+            "......hHHHHSHHHHHSSHHHHHSHHHHh......",
+            "......hHHHSSSHHHSSSSHHHSSSHHHh......",
+            ".....hHHSSSSSSSSSSSSSSSSSSSHHHh.....",
+            ".....hHHSSkSSSSSSSSSSSSSSSkSSHHh....",
+            ".....hHSSSkkkkkSSSSSkkkkkSSSHHh.....",
+            ".....hHSSSSkEekSSSSSkEekSSSSHHh.....",
+            ".....hHSSSSSkkSSSSSSSkkSSSSSHHh.....",
+            ".....hHSSSSSSSSSSSSSSSSSSSSSHHh.....",
+            ".....hHSSCCSSSSSSSSSSSSSCCSSHHh.....",
+            ".....hHSSCCSSSMSSSSSMSSSCCSSHHh.....",
+            ".....hHSSSSSSSSMMMMMSSSSSSSSHHh.....",
+            "......hHSSSSSSSSSSSSSSSSSSSHHh......",
+            "......hHHSSSSSSSSSSSSSSSSSHHHh......",
+            ".......hHHSSSSSSSSSSSSSSSHHHh.......",
+            "........hHHHSSSSSSSSSSSHHHHh........",
+            ".......hHHHHHHSSSSSSSHHHHHh.........",
+            ".......hHHHHHHHSSSSSHHHHHHh.........",
+            "......hHHHHHHWWWWWWWWWHHHHHh........",
+            "......hHHHHHWWWWWWWWWWWHHHHh........",
+            "......hHHHHSSWWWWWWWWWSSHhSSSS......",
+            "......hHHHHSSWWWwWWWwWWSHhSSSSSS....",
+            "......hHHHHSSWWWWWWWWWSSHHHHh.......",
+            "......hHHHHSSWWWWWWWWWSSHHHHh.......",
+            "......hHHHHSSwWWWWWWWwSSHHHHh.......",
+            ".....hHHHHHHSSWWWWWWWSSHHHHHh.......",
+            ".....hHHHHHHSSWWWWWWWSSHHHHHh.......",
+            ".....hHHHHHHHHwWWWwHHHHHHHHh........",
+            "....hHHHHHHHHVWWWWWVHHHHHHHh........",
+            "....hHHHHHHVVWWWWWVVHHHHHHHh........",
+            "....hHHHHHVVVwWWWwVVVHHHHHh.........",
+            "....hHHHHVVVVWWWWWVVVVHHHHh.........",
+            "....hHHHVVVVVWWWWWVVVVVHHHh.........",
+            ".....hHHVVVVVVVVVVVVVVHHHh..........",
+            ".....hHHVVVVVVVVVVVVVVVHh...........",
+            ".....hhVVVVVVVVVVVVVVVVhh...........",
+            ".....hhvVVVVVVVVVVVVVvhh............",
+            "............SSS.....SSS.............",
+            "............SSS.....SSS.............",
+            ".............SS.....SS..............",
+            ".............SS.....SS..............",
+            ".............SS.....SS..............",
+            ".............SS.....SS..............",
+            "............BBB.....BBB.............",
+            "...........BBBB.....BBBB............",
+            "...........bBBB.....bBBB............",
         };
         var palette = new Dictionary<char, Color>
         {
@@ -87,6 +106,7 @@ public static class ProtoPixelArt
             { 'E', new Color(0.45f, 0.68f, 1f) },           // 瞳（青・明）
             { 'e', new Color(0.18f, 0.32f, 0.65f) },        // 瞳（青・暗＝深み）
             { 'k', new Color(0.32f, 0.28f, 0.36f) },        // まつ毛（柔らかい目元）
+            { 'O', new Color(1f, 1f, 1f) },                 // 瞳のキラキラハイライト
             { 'C', new Color(1f, 0.72f, 0.72f) },           // 頬の赤らみ
             { 'M', new Color(0.9f, 0.55f, 0.55f) },         // 口（微笑み）
             { 'W', new Color(0.13f, 0.12f, 0.18f) },        // ドレス（黒）
@@ -202,29 +222,38 @@ public static class ProtoPixelArt
     // 赤いドラゴン（左=プレイヤー側を向く。角・翼・しっぽ・かぎ爪つき）
     public static Sprite Dragon()
     {
+        // 44x29 高解像度版: 大きな翼・二本角・うろこの陰影・曲がる長いしっぽ
         var rows = new string[]
         {
-            "..............wWWW..............",
-            ".............wWWWWW............",
-            "....HH......wWWWWWWW...........",
-            "....dH.....wWWWWWWWWW..........",
-            "...DDDDD...wWWWWWWWWWW.........",
-            "..DDDDDDD..WWdWWWWWdWW.........",
-            ".DDeEDDDDD.dDDDDDDDDDd.........",
-            ".DDDDDDDDDDDDDDDDDDDDDd........",
-            "DDNDDDDDDDDDDDDDDDDDDDDd.......",
-            "DDDDDDDdDDDDDDDDDDDDDDDDd......",
-            ".DdddDDDDDDDDDDDDDDDDDDDDdd....",
-            "..DDYYYDDDDDDDDDDDDDDDDDDDDd...",
-            "..DYYYYYDDDDDDDDDDDDDDDDDDDDdd.",
-            "..DYYYYYYDDDDDDDDDDDDDDDDDDDDd.",
-            "...DYYYYYDDDDDDDDdddDDDDDDDDd..",
-            "...DDYYYDDDDDDDDd...ddDDDDdd...",
-            "....DDDDDDDDDDDd......dddd.....",
-            "....DDDDDDDDDDd................",
-            "....DDdd..ddDDdd...............",
-            "....DDd....dDDd................",
-            "...HHHd....dHHHd...............",
+            "...................wWWWW...................",
+            "..................wWWWWWW..................",
+            ".................wWWWWWWWW.................",
+            "......HH........wWWWWWWWWWW................",
+            "......dHH......wWWWWWWWWWWWW...............",
+            ".....HHdH.....wWWWWWWWWWWWWWW..............",
+            "....DDDDDD....WWdWWWWWWdWWWWW..............",
+            "...DDDDDDDD...WdWWWWWWWWdWWW...............",
+            "..DDeEEDDDDD..dDDDDDDDDDDDd................",
+            "..DDEEDDDDDDDdDDDDDDDDDDDDDd...............",
+            ".DDDDDDDDDDDDDDDDDDDDDDDDDDDd..............",
+            "DDNDDDDDDDDDDDDDDDDDDDDDDDDDDd.............",
+            "DDDDDDDDdDDDDDDDDDDDDDDDDDDDDDd............",
+            "DDNDDDDDdDDDDDDDDDDDDDDDDDDDDDDd...........",
+            ".DddddDDDDDDDDDDDDDDDDDDDDDDDDDDd..........",
+            "..DDDYYYDDDDDDDDDDDDDDDDDDDDDDDDDd.........",
+            "..DDYYYYYDDDDDDDDDDDDDDDDDDDDDDDDDd........",
+            "..DYYYYYYYDDDDDDDDDDDDDDDDDDDDDDDDDdd......",
+            "..DYYYYYYYYDDDDDDDDDDDDDDDDDDDDDDDDDDd.....",
+            "..DYYYYYYYYDDDDDDDDDDDddddDDDDDDDDDDDDd....",
+            "...DYYYYYYDDDDDDDDDDDd....ddDDDDDDDddd.....",
+            "...DDYYYYDDDDDDDDDDDd.......dddDDdd........",
+            "....DDYYDDDDDDDDDDDd..........ddd..........",
+            "....DDDDDDDDDDDDDDd........................",
+            ".....DDDDDDDDDDDDd.........................",
+            ".....DDdd...ddDDdd.........................",
+            ".....DDd......dDDd.........................",
+            ".....DDd......dDDd.........................",
+            "....HHHd......dHHHd........................",
         };
         var palette = new Dictionary<char, Color>
         {
@@ -237,6 +266,235 @@ public static class ProtoPixelArt
             { 'E', new Color(1f, 0.85f, 0.2f) },      // 目（金）
             { 'e', new Color(0.2f, 0.1f, 0.05f) },    // 瞳
             { 'N', new Color(0.3f, 0.1f, 0.08f) },    // 鼻孔
+        };
+        return FromMap(rows, palette);
+    }
+
+    // マップ歩行用のMAMAミニスプライト（14x18）
+    // dir: 0=正面（下向き） 1=背面（上向き） 2=左向き ※右向きは左をX反転して使う
+    // frame: 0=足をそろえる 1=足を開く（交互に切り替えて歩行アニメに）
+    public static Sprite MapMama(int dir, int frame)
+    {
+        string[] body;
+        string[] legs;
+
+        if (dir == 0) // 正面
+        {
+            body = new[]
+            {
+                "....HHHHHH....",
+                "...HHHHHHHH...",
+                "..HHHHHHHHHH..",
+                "..HHSSSSSSHH..",
+                "..HHSESSESHH..",
+                "..HHSSSSSSHH..",
+                "..HHHSSSSHHH..",
+                "..HHWWWWWWHH..",
+                "..HHWWWWWWHH..",
+                "..hHWWWWWWHh..",
+                "..hHWWWWWWHh..",
+                "...hWWWWWWh...",
+                "....WWWWWW....",
+                "....WWWWWW....",
+            };
+        }
+        else if (dir == 1) // 背面（髪が背中に流れる）
+        {
+            body = new[]
+            {
+                "....HHHHHH....",
+                "...HHHHHHHH...",
+                "..HHHHHHHHHH..",
+                "..HHHHHHHHHH..",
+                "..HHHHHHHHHH..",
+                "..HHHHHHHHHH..",
+                "..HHHHHHHHHH..",
+                "..HHHHHHHHHH..",
+                "..HHHHHHHHHH..",
+                "..hHHHHHHHHh..",
+                "..hHWHHHHWHh..",
+                "...hWHHHHWh...",
+                "....WHHHHW....",
+                "....WWHHWW....",
+            };
+        }
+        else // 左向き（横顔）
+        {
+            body = new[]
+            {
+                "....HHHHHH....",
+                "...HHHHHHHH...",
+                "..HHHHHHHHHH..",
+                "..HSSSSHHHHH..",
+                "..HSESSHHHHH..",
+                "..HSSSSHHHHH..",
+                "..HHSSSHHHHH..",
+                "..HHWWWWWHHH..",
+                "..HHWWWWWHHh..",
+                "..hHWWWWWHHh..",
+                "..hHWWWWWHh...",
+                "...hWWWWWh....",
+                "....WWWWW.....",
+                "....WWWWW.....",
+            };
+        }
+
+        if (dir == 2) // 横向きの足
+        {
+            legs = frame == 0
+                ? new[] { ".....SSS......", ".....SSS......", ".....BBB......", ".............." }
+                : new[] { "....SS..S.....", "....SS..S.....", "....BB..B.....", ".............." };
+        }
+        else // 正面・背面の足
+        {
+            legs = frame == 0
+                ? new[] { "....SS..SS....", "....SS..SS....", "....BB..BB....", ".............." }
+                : new[] { "...SS....SS...", "...SS....SS...", "...BB....BB...", ".............." };
+        }
+
+        var rows = new string[body.Length + legs.Length];
+        body.CopyTo(rows, 0);
+        legs.CopyTo(rows, body.Length);
+
+        var palette = new Dictionary<char, Color>
+        {
+            { 'H', new Color(0.87f, 0.88f, 0.95f) },  // 髪（銀髪）
+            { 'h', new Color(0.66f, 0.68f, 0.80f) },  // 髪の陰
+            { 'S', new Color(1f, 0.88f, 0.78f) },     // 肌
+            { 'E', new Color(0.35f, 0.6f, 0.95f) },   // 目
+            { 'W', new Color(0.13f, 0.12f, 0.18f) },  // ドレス（黒）
+            { 'B', new Color(0.72f, 0.52f, 0.34f) },  // 靴
+        };
+        return FromMap(rows, palette);
+    }
+
+    // 見下ろし型フィールド（ポケモン風）: 市松模様の草タイル＋花＋木（上から見た樹冠）
+    // tree[tx,ty] = true のタイルに木を描く（ty は上から数える）
+    public static Sprite TopDownField(int tilesX, int tilesY, bool[,] tree, int seed)
+    {
+        const int px = 8; // 1タイル=8ピクセル
+        int w = tilesX * px, h = tilesY * px;
+        var tex = new Texture2D(w, h, TextureFormat.RGBA32, false);
+        tex.filterMode = FilterMode.Point;
+        var rng = new System.Random(seed);
+
+        // 草タイル（2色の市松模様＋まだらノイズ）
+        for (int ty = 0; ty < tilesY; ty++)
+        {
+            for (int tx = 0; tx < tilesX; tx++)
+            {
+                var baseCol = ((tx + ty) % 2 == 0)
+                    ? new Color(0.46f, 0.73f, 0.42f)
+                    : new Color(0.42f, 0.69f, 0.38f);
+                for (int y = 0; y < px; y++)
+                {
+                    for (int x = 0; x < px; x++)
+                    {
+                        var c = baseCol;
+                        double r = rng.NextDouble();
+                        if (r < 0.06) c *= 0.92f;
+                        else if (r > 0.97) c *= 1.06f;
+                        tex.SetPixel(tx * px + x, h - 1 - (ty * px + y), c);
+                    }
+                }
+                // 草の刻み（ちょんちょんと生えてる感じ）
+                if (rng.NextDouble() < 0.5)
+                    tex.SetPixel(tx * px + rng.Next(1, 7), h - 1 - (ty * px + rng.Next(4, 7)), baseCol * 0.82f);
+            }
+        }
+
+        // 花を散らす（木のないタイルだけ）
+        for (int i = 0; i < tilesX * tilesY / 6; i++)
+        {
+            int tx = rng.Next(tilesX), ty = rng.Next(tilesY);
+            if (tree[tx, ty]) continue;
+            Color fc = rng.Next(3) switch
+            {
+                0 => new Color(1f, 0.8f, 0.85f),
+                1 => new Color(1f, 0.95f, 0.6f),
+                _ => Color.white,
+            };
+            tex.SetPixel(tx * px + rng.Next(2, 6), h - 1 - (ty * px + rng.Next(2, 6)), fc);
+        }
+
+        // 木（上から見たこんもり樹冠）
+        for (int ty = 0; ty < tilesY; ty++)
+        {
+            for (int tx = 0; tx < tilesX; tx++)
+            {
+                if (!tree[tx, ty]) continue;
+                int cx = tx * px + px / 2;
+                int cy = h - 1 - (ty * px + px / 2);
+                DrawCircle(tex, cx, cy, 3, new Color(0.16f, 0.42f, 0.20f));
+                DrawCircle(tex, cx - 1, cy + 1, 2, new Color(0.22f, 0.52f, 0.26f));
+                tex.SetPixel(cx - 1, cy + 2, new Color(0.34f, 0.64f, 0.36f));
+            }
+        }
+
+        tex.Apply();
+        return Sprite.Create(tex, new Rect(0, 0, w, h), new Vector2(0.5f, 0.5f), 16f);
+    }
+
+    // 紫のコウモリ（大きな翼・金色の目・牙）
+    public static Sprite Bat()
+    {
+        var rows = new string[]
+        {
+            ".WW................WW.",
+            ".WWWW............WWWW.",
+            ".WWWWWW........WWWWWW.",
+            "..WWWWWWW....WWWWWWW..",
+            "..WWWWWWWBBBBWWWWWWW..",
+            "...WWWWWBBBBBBWWWWW...",
+            "....WWWBEBBBBEBWWW....",
+            ".....WWBBBBBBBBWW.....",
+            "......WBBFBBFBBW......",
+            ".......BBBBBBBB.......",
+            "........BB..BB........",
+        };
+        var palette = new Dictionary<char, Color>
+        {
+            { 'W', new Color(0.45f, 0.30f, 0.60f) },  // 翼
+            { 'B', new Color(0.28f, 0.18f, 0.38f) },  // 体
+            { 'E', new Color(1f, 0.85f, 0.3f) },      // 目（金）
+            { 'F', new Color(0.95f, 0.95f, 0.9f) },   // 牙
+        };
+        return FromMap(rows, palette);
+    }
+
+    // 岩のゴーレム（光る青い目・体のヒビ）
+    public static Sprite Golem()
+    {
+        var rows = new string[]
+        {
+            "......GGGGGGGGG.......",
+            ".....GGGGGGGGGGG......",
+            "....GGLGGGGGGGGGG.....",
+            "....GGGEEGGGGEEGG.....",
+            "....GGGEEGGGGEEGG.....",
+            ".....GGGGGggGGGG......",
+            "..GGGGGGGGGGGGGGGG....",
+            ".GGGGGGGGGGGGGGGGGG...",
+            "GGGgGGGGGGGGGGGGgGGG..",
+            "GGGg.GGGGGGGGGGG.gGGG.",
+            "GGg..GGGGcGGGGGG..gGG.",
+            "GGg..GGGGcGGGGGG..gGG.",
+            "GGg..GGGGGGGGGGG..gGG.",
+            ".gg..GGGGGGGGGGG..gg..",
+            "......GGGGgGGGG.......",
+            ".....GGGGGgGGGGG......",
+            ".....GGGG...GGGG......",
+            ".....GGGG...GGGG......",
+            "....gGGGg...gGGGg.....",
+            "....ggggg...ggggg.....",
+        };
+        var palette = new Dictionary<char, Color>
+        {
+            { 'G', new Color(0.55f, 0.55f, 0.60f) },  // 岩
+            { 'g', new Color(0.38f, 0.38f, 0.44f) },  // 岩の陰
+            { 'L', new Color(0.72f, 0.72f, 0.78f) },  // ハイライト
+            { 'E', new Color(0.4f, 1f, 1f) },         // 光る目（シアン）
+            { 'c', new Color(0.25f, 0.25f, 0.3f) },   // ヒビ
         };
         return FromMap(rows, palette);
     }

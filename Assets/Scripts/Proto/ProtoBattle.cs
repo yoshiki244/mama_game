@@ -50,28 +50,37 @@ public class ProtoBattle : MonoBehaviour
         // 進行中のターン処理・チャレンジ・エフェクトをすべて止めてから隠す
         // （途中でビルドへ戻っても、次のBegin()で完全リセットされる）
         StopAllCoroutines();
+        Time.timeScale = 1f; // ヒットストップ中に戻ってもスローのまま固まらないように
         _inputLocked = false;
         _root.gameObject.SetActive(false);
     }
 
-    public void Begin()
+    ProtoEnemy _enemy; // 今戦っている敵
+
+    public void Begin(ProtoEnemy enemy)
     {
+        _enemy = enemy;
         _root.gameObject.SetActive(true);
         _resultRoot.gameObject.SetActive(false);
         _challengeRoot.gameObject.SetActive(false);
 
         _playerMaxHP = 120;
         _playerHP = _playerMaxHP;
-        _enemyMaxHP = 100 + 50 * (_main.Wave - 1); // Waveごとに敵が強くなる
+        _enemyMaxHP = enemy.baseHP + 40 * (_main.Wave - 1); // 敵ごとの基礎HP＋Wave補正
         _enemyHP = _enemyMaxHP;
-        _enemyName.text = $"ドラゴン Lv{_main.Wave}";
+        _enemyName.text = $"{enemy.enemyName} Lv{_main.Wave}";
+
+        // 敵の見た目を差し替え
+        _slimeImg.sprite = enemy.sprite;
+        _slimeRt.sizeDelta = enemy.battleSize;
+        _enemyInner.sizeDelta = enemy.battleSize;
 
         _deck = Shuffle(_main.Panel.BuildDeck());
         _hand.Clear();
         for (int i = 0; i < HandSize; i++) _hand.Add(Draw());
 
         _inputLocked = false;
-        RefreshAll();
+        RefreshAll(dealAnimation: true);
         _message.text = "あなたのターン！カードを選ぼう！";
     }
 
@@ -110,14 +119,14 @@ public class ProtoBattle : MonoBehaviour
         _deckText = ProtoUI.CreateText("Deck", _root, "", 21, new Vector2(0, 408), new Vector2(500, 34));
         ProtoUI.StyleTitle(_deckText, ProtoUI.Gold, 3f);
 
-        // ビルドへ戻るボタン（戦闘は破棄してやり直し）
-        ProtoUI.CreateButton("RetreatBtn", _root, "← ビルドへ戻る", 16,
+        // 逃走ボタン（戦闘を破棄してマップへ戻る）
+        ProtoUI.CreateButton("RetreatBtn", _root, "← 逃げる", 16,
             new Vector2(-690, -410), new Vector2(180, 46), new Color(0.25f, 0.22f, 0.38f),
-            () => _main.ShowBuild());
+            () => _main.ShowMap());
 
         // キャラクター（ドット絵）。外側=モーション用 / 内側=アイドルアニメ用 の2層構造
-        _mamaImg = CreateCharacterSprite("MamaSprite", ProtoPixelArt.Mama(), new Vector2(-470, 40), new Vector2(400, 475));
-        _slimeImg = CreateCharacterSprite("DragonSprite", ProtoPixelArt.Dragon(), new Vector2(460, 70), new Vector2(480, 330));
+        _mamaImg = CreateCharacterSprite("MamaSprite", ProtoPixelArt.Mama(), new Vector2(-470, 40), new Vector2(350, 515));
+        _slimeImg = CreateCharacterSprite("DragonSprite", ProtoPixelArt.Dragon(), new Vector2(460, 70), new Vector2(540, 355));
         _mamaRt = (RectTransform)_mamaImg.transform.parent;
         _slimeRt = (RectTransform)_slimeImg.transform.parent;
         _mamaInner = (RectTransform)_mamaImg.transform;
@@ -157,9 +166,9 @@ public class ProtoBattle : MonoBehaviour
         rdim.color = new Color(0, 0, 0, 0.8f);
         _resultText = ProtoUI.CreateText("RText", _resultRoot, "", 60, new Vector2(0, 60), new Vector2(800, 90));
         ProtoUI.StyleTitle(_resultText, ProtoUI.Gold, 10f);
-        ProtoUI.CreateButton("BackBtn", _resultRoot, "ビルド画面へ", 24,
+        ProtoUI.CreateButton("BackBtn", _resultRoot, "マップへ戻る", 24,
             new Vector2(0, -60), new Vector2(280, 64), new Color(0.35f, 0.3f, 0.55f),
-            () => { if (_enemyHP <= 0) _main.OnBattleWon(); else _main.ShowBuild(); });
+            () => { if (_enemyHP <= 0) _main.OnBattleWon(); else _main.ShowMap(); });
     }
 
     // ==================== ドロー ====================
@@ -186,14 +195,14 @@ public class ProtoBattle : MonoBehaviour
 
     // ==================== 表示更新 ====================
 
-    void RefreshAll()
+    void RefreshAll(bool dealAnimation = false)
     {
         ProtoUI.SetGauge(_playerFill, (float)_playerHP / _playerMaxHP, GaugeWidth);
         ProtoUI.SetGauge(_enemyFill, (float)_enemyHP / _enemyMaxHP, GaugeWidth);
         _playerHPText.text = $"{_playerHP}/{_playerMaxHP}";
         _enemyHPText.text = $"{_enemyHP}/{_enemyMaxHP}";
         _deckText.text = $"— Wave {_main.Wave} —";
-        RefreshHand();
+        RefreshHand(dealAnimation);
     }
 
     Image _mamaImg, _slimeImg;
@@ -617,8 +626,9 @@ public class ProtoBattle : MonoBehaviour
 
     // 命中演出ひとまとめ。技のマス数が大きいほど派手になる（GDD: 大型ピース=高威力の三位一体）
     // skill=null は通常攻撃/敵攻撃（最小エフェクト）
-    IEnumerator Impact(RectTransform target, Image targetImg, ProtoSkill skill, bool critical)
+    IEnumerator Impact(RectTransform target, Image targetImg, ProtoSkill skill, int damage, float multiplier)
     {
+        bool critical = multiplier >= 2f;
         int size = skill?.Size ?? 1;
         Color burstColor = skill?.color ?? Color.white;
 
@@ -654,11 +664,136 @@ public class ProtoBattle : MonoBehaviour
         SpawnBurst(target.anchoredPosition, burstColor, count, radius);
         StartCoroutine(FlashSprite(targetImg, critical ? new Color(1f, 0.8f, 0.3f) : new Color(1f, 0.45f, 0.45f)));
 
-        // クリティカルは少し遅れて二段目の爆発
-        if (critical)
+        // 倍率に応じた追加演出（強いほど重く・派手に）
+        if (multiplier >= 2f)
+        {
+            yield return HitStop(0.18f); // 長いヒットストップ
             StartCoroutine(DelayedBurst(target.anchoredPosition, burstColor, count / 2, radius * 0.8f, 0.15f));
+        }
+        else if (multiplier >= 1.5f)
+        {
+            yield return HitStop(0.08f); // 短いヒットストップ
+        }
+
+        // ダメージ数値ポップアップ（キャラの身長に応じて頭上に表示）
+        Vector2 popupPos = target.anchoredPosition + new Vector2(0, target.sizeDelta.y * 0.5f + 40f);
+        StartCoroutine(DamagePopup(popupPos, damage, multiplier));
 
         yield return Shake(target, shakeAmp, shakeDur);
+    }
+
+    // ヒットストップ: 一瞬だけ時間を超スローにして打撃の重みを出す
+    IEnumerator HitStop(float realSeconds)
+    {
+        Time.timeScale = 0.05f;
+        yield return new WaitForSecondsRealtime(realSeconds);
+        Time.timeScale = 1f;
+    }
+
+    // ダメージ数値ポップアップ。倍率でサイズ・色・動きが4段階に変わる
+    //   100%: 白・小さくポン
+    //   120%: 黄色・少し大きく
+    //   150%: 橙グラデ＋影・大きくバウンス
+    //   200%: 金→赤橙グラデ＋影・特大で叩きつけバウンス
+    IEnumerator DamagePopup(Vector2 pos, int damage, float multiplier)
+    {
+        float fontSize;
+        float popScale;
+        float life;
+        bool useShadow;
+        bool useGradient;
+        TMPro.VertexGradient gradient = default;
+        Color flatColor = Color.white;
+
+        if (multiplier >= 2f)
+        {
+            fontSize = 96; popScale = 2.8f; life = 0.85f; useShadow = true; useGradient = true;
+            gradient = new TMPro.VertexGradient(
+                new Color(1f, 0.98f, 0.80f), new Color(1f, 0.95f, 0.65f),
+                new Color(1f, 0.55f, 0.12f), new Color(0.95f, 0.38f, 0.08f));
+        }
+        else if (multiplier >= 1.5f)
+        {
+            fontSize = 70; popScale = 2.0f; life = 0.7f; useShadow = true; useGradient = true;
+            gradient = new TMPro.VertexGradient(
+                new Color(1f, 0.95f, 0.7f), new Color(1f, 0.9f, 0.6f),
+                new Color(1f, 0.7f, 0.25f), new Color(1f, 0.6f, 0.2f));
+        }
+        else if (multiplier >= 1.2f)
+        {
+            fontSize = 56; popScale = 1.6f; life = 0.6f; useShadow = true; useGradient = false;
+            flatColor = new Color(1f, 0.92f, 0.45f);
+        }
+        else
+        {
+            fontSize = 46; popScale = 1.3f; life = 0.55f; useShadow = true; useGradient = false;
+            flatColor = Color.white;
+        }
+
+        // コンテナ（呼び出し側で頭上の位置が計算済み。横だけ毎回少しランダムにずらす）
+        var holder = ProtoUI.CreateRect("DamagePopup", _root);
+        holder.anchoredPosition = pos + new Vector2(Random.Range(-35f, 35f), 0);
+        holder.sizeDelta = new Vector2(500, 120);
+        var group = holder.gameObject.AddComponent<CanvasGroup>();
+        group.blocksRaycasts = false;
+
+        string text = damage.ToString();
+
+        if (useShadow)
+        {
+            // 影の色: グラデ系は暗赤、白/黄系はほぼ黒（どんな背景・キャラの上でも沈まない）
+            var shadowColor = useGradient ? new Color(0.3f, 0.05f, 0.02f) : new Color(0.05f, 0.04f, 0.1f);
+            var shadow = ProtoUI.CreateText("Shadow", holder, text, fontSize,
+                new Vector2(5, -5), new Vector2(500, 120), shadowColor);
+            shadow.fontStyle = TMPro.FontStyles.Bold;
+            shadow.characterSpacing = 4f;
+            shadow.raycastTarget = false;
+        }
+
+        var main = ProtoUI.CreateText("Main", holder, text, fontSize,
+            Vector2.zero, new Vector2(500, 120), flatColor);
+        main.fontStyle = TMPro.FontStyles.Bold;
+        main.characterSpacing = 4f;
+        main.raycastTarget = false;
+        main.outlineWidth = 0.28f; // 全段階で太めの縁取り
+        main.outlineColor = useGradient
+            ? new Color32(60, 15, 5, 255)   // グラデ系: 焦げ茶
+            : new Color32(10, 8, 24, 255);  // 白/黄系: ほぼ黒
+        if (useGradient)
+        {
+            main.enableVertexGradient = true;
+            main.colorGradient = gradient;
+        }
+
+        // 叩きつけ登場（行きすぎて戻るバウンス）
+        float t = 0f;
+        while (t < 0.12f)
+        {
+            t += Time.deltaTime;
+            holder.localScale = Vector3.one * Mathf.Lerp(popScale, 0.92f, Mathf.SmoothStep(0, 1, t / 0.12f));
+            yield return null;
+        }
+        t = 0f;
+        while (t < 0.08f)
+        {
+            t += Time.deltaTime;
+            holder.localScale = Vector3.one * Mathf.Lerp(0.92f, 1f, t / 0.08f);
+            yield return null;
+        }
+
+        yield return new WaitForSeconds(life * 0.5f);
+
+        // 上に流れながらフェードアウト
+        t = 0f;
+        float fade = life * 0.5f;
+        while (t < fade)
+        {
+            t += Time.deltaTime;
+            group.alpha = 1f - t / fade;
+            holder.anchoredPosition += new Vector2(0, Time.deltaTime * 120f);
+            yield return null;
+        }
+        Destroy(holder.gameObject);
     }
 
     // 着弾点で拡大しながら消える衝撃波リング
@@ -714,7 +849,7 @@ public class ProtoBattle : MonoBehaviour
         Destroy(flash.gameObject);
     }
 
-    void RefreshHand()
+    void RefreshHand(bool dealAnimation = false)
     {
         foreach (Transform child in _handArea) Destroy(child.gameObject);
 
@@ -723,8 +858,38 @@ public class ProtoBattle : MonoBehaviour
         {
             int idx = i;
             var skill = _hand[i];
-            var card = CreateCardUI(skill, new Vector2(xs + i * 230f, 0), () => OnCardClicked(idx));
+            Vector2 finalPos = new Vector2(xs + i * 230f, 0);
+            var btn = CreateCardUI(skill, finalPos, () => OnCardClicked(idx));
+
+            if (dealAnimation)
+                StartCoroutine(DealCard((RectTransform)btn.transform, finalPos, i * 0.1f));
         }
+    }
+
+    // カードが山札（画面右下）から滑り込んでくる配布演出
+    IEnumerator DealCard(RectTransform rt, Vector2 finalPos, float delay)
+    {
+        Vector2 startPos = finalPos + new Vector2(550, -260);
+        rt.anchoredPosition = startPos;
+        rt.localScale = Vector3.one * 0.3f;
+        rt.localRotation = Quaternion.Euler(0, 0, -25f);
+
+        yield return new WaitForSeconds(delay);
+
+        float t = 0f;
+        const float dur = 0.22f;
+        while (t < dur)
+        {
+            t += Time.deltaTime;
+            float p = Mathf.SmoothStep(0, 1, t / dur);
+            rt.anchoredPosition = Vector2.Lerp(startPos, finalPos, p);
+            rt.localScale = Vector3.one * Mathf.Lerp(0.3f, 1f, p);
+            rt.localRotation = Quaternion.Euler(0, 0, Mathf.Lerp(-25f, 0f, p));
+            yield return null;
+        }
+        rt.anchoredPosition = finalPos;
+        rt.localScale = Vector3.one;
+        rt.localRotation = Quaternion.identity;
     }
 
     // トレーディングカード風のカードUI（金フレーム＋名前帯＋アート枠＋威力帯）
@@ -833,12 +998,12 @@ public class ProtoBattle : MonoBehaviour
             yield return new WaitForSeconds(0.5f);
         }
 
-        // 技ごとの攻撃モーション → ヒットエフェクト
+        // 技ごとの攻撃モーション → ヒットエフェクト（ダメージ数値付き）
         bool isCritical = multiplier >= 2f;
-        yield return AttackMotionFor(skill);
-        yield return Impact(_slimeRt, _slimeImg, skill, isCritical);
-
         int damage = Mathf.RoundToInt(basePower * multiplier);
+        yield return AttackMotionFor(skill);
+        yield return Impact(_slimeRt, _slimeImg, skill, damage, multiplier);
+
         _enemyHP = Mathf.Max(0, _enemyHP - damage);
         string critTag = isCritical ? "クリティカル！" : "";
         _message.text = $"{critTag}{(skill == null ? "通常攻撃" : skill.skillName)}で {damage} ダメージ！";
@@ -853,16 +1018,15 @@ public class ProtoBattle : MonoBehaviour
         }
 
         // 敵のターン
-        _message.text = "ドラゴンのターン…";
+        _message.text = $"{_enemy.enemyName}のターン…";
         yield return new WaitForSeconds(0.9f);
 
-        // 敵の攻撃モーション → 被弾エフェクト
+        // 敵の攻撃モーション → 被弾エフェクト（ダメージ数値付き）
+        int enemyDamage = Random.Range(_enemy.minAtk, _enemy.maxAtk + 1) + 3 * (_main.Wave - 1);
         yield return Lunge(_slimeRt, new Vector2(-150, 0));
-        yield return Impact(_mamaRt, _mamaImg, null, false);
-
-        int enemyDamage = Random.Range(8, 17) + 4 * (_main.Wave - 1);
+        yield return Impact(_mamaRt, _mamaImg, null, enemyDamage, 1f);
         _playerHP = Mathf.Max(0, _playerHP - enemyDamage);
-        _message.text = $"ドラゴンの攻撃！MAMAは {enemyDamage} のダメージ！";
+        _message.text = $"{_enemy.enemyName}の攻撃！MAMAは {enemyDamage} のダメージ！";
         RefreshAll();
         yield return new WaitForSeconds(1f);
 
@@ -876,7 +1040,7 @@ public class ProtoBattle : MonoBehaviour
         // 手札補充して次のターンへ
         _hand.Add(Draw());
         _inputLocked = false;
-        RefreshAll();
+        RefreshAll(dealAnimation: true);
         _message.text = "あなたのターン！カードを選ぼう！";
     }
 
