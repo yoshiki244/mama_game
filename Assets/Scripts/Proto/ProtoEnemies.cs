@@ -16,6 +16,7 @@ public class ProtoEnemy
     public string id;
     public string enemyName;
     public Sprite sprite;
+    public Sprite mapSpriteOverride; // マップ用に別の絵を使いたい時（未設定ならsprite）
     public int baseHP;
     public int minAtk, maxAtk;
     public Vector2 battleSize;   // バトル画面での大きさ
@@ -71,7 +72,7 @@ public static class ProtoEnemies
                             new EnemyAttack { name = "岩とばし",       mult = 0.85f, hits = 1, weight = 12 },
                             new EnemyAttack { name = "ちからをためている", mult = 0f, hits = 0, weight = 8 },
                         } },
-                    new ProtoEnemy { id = "dragon", enemyName = "ドラゴン", sprite = ProtoPixelArt.Dragon(),
+                    new ProtoEnemy { id = "dragon", enemyName = "ドラゴン", sprite = ProtoPixelArt.Dragon(), mapSpriteOverride = ProtoPixelArt.DragonFront(),
                         baseHP = 170, minAtk = 12, maxAtk = 20, battleSize = new Vector2(720, 440), mapSize = new Vector2(135, 82),
                         atbInterval = 5.5f, flying = true,
                         levelOffset = 9, // 山頂のボス。序盤のレベルでは歯が立たない

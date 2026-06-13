@@ -371,7 +371,7 @@ public class MapScreen : MonoBehaviour
         rt.anchoredPosition = GridToAnchored(g);
         AddShadow(rt, rt.sizeDelta.x * 0.6f);
         var img = rt.gameObject.AddComponent<Image>();
-        img.sprite = data.sprite;
+        img.sprite = data.mapSpriteOverride != null ? data.mapSpriteOverride : data.sprite; // 正面向きがあれば優先
         img.preserveAspect = true;
         rt.SetSiblingIndex(_player.GetSiblingIndex()); // プレイヤーやオーバーレイより後ろに
 

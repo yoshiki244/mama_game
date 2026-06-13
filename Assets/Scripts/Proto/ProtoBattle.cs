@@ -221,7 +221,7 @@ public class ProtoBattle : MonoBehaviour
         // 手札エリア
         _handArea = ProtoUI.CreateRect("Hand", _root);
         _handArea.anchoredPosition = new Vector2(0, -300);
-        _handArea.sizeDelta = new Vector2(1200, 220);
+        _handArea.sizeDelta = new Vector2(1760, 220);
 
         // ---- 点滅チャレンジ用オーバーレイ ----
         _challengeRoot = ProtoUI.CreateFullScreen("Challenge", _root);
@@ -1085,12 +1085,12 @@ public class ProtoBattle : MonoBehaviour
         foreach (Transform child in _handArea) Destroy(child.gameObject);
         if (_hands.Count == 0) return;
 
-        // 人数に応じてカードを縮小し、メンバーごとの列に分ける
+        // 人数に応じてカードを縮小し、メンバーごとの列に分ける（画面幅いっぱいを使う）
         int n = _hands.Count;
-        float scale = n == 1 ? 1f : n == 2 ? 0.86f : 0.7f; // キャラを横並び小型化したぶんカードを大きく
-        float cardW = 230f * scale;
+        float scale = n == 1 ? 1f : n == 2 ? 0.95f : 0.85f; // 3人でも文字が読めるよう縮小を抑える
+        float cardW = 205f * scale;  // カード間隔（やや詰める）
         float colW = cardW * HandSize;
-        float colGap = 36f;
+        float colGap = 22f;
         float totalW = n * colW + (n - 1) * colGap;
         float startX = -totalW / 2f + colW / 2f;
         var party = _main.Party;
@@ -1205,8 +1205,11 @@ public class ProtoBattle : MonoBehaviour
         var header = ProtoUI.CreatePanel("Header", inner.transform, new Vector2(0, 110), new Vector2(178, 36),
             Color.Lerp(accent, Color.black, 0.6f));
         header.raycastTarget = false;
-        var nameText = ProtoUI.CreateText("Name", header.transform, cardName, 14, Vector2.zero, new Vector2(174, 36));
+        var nameText = ProtoUI.CreateText("Name", header.transform, cardName, 20, Vector2.zero, new Vector2(172, 34));
         nameText.fontStyle = TMPro.FontStyles.Bold;
+        nameText.enableAutoSizing = true;     // 枠に収まる最大サイズに自動調整
+        nameText.fontSizeMin = 10;
+        nameText.fontSizeMax = 20;
 
         // マス数バッジ（小さな金縁）
         var badgeFrame = ProtoUI.CreatePanel("BadgeFrame", inner.transform, new Vector2(0, 78), new Vector2(80, 24),

@@ -198,49 +198,82 @@ public static class ProtoPixelArt
         tex.SetPixel(x, y, c);
     }
 
-    // ボスドラゴン: 黒褐色のウェスタンドラゴン
-    // 大きく広げた両翼・角のある頭・牙・オレンジの目・腹のうろこ・棘付きの長い尾・四足のかぎ爪
+    // ボスドラゴン（バトル用・横向き）: 緑の竜が二本足で立ち、片翼を立てた姿（左を向く）
     public static Sprite Dragon()
     {
         var rows = new string[]
         {
-            "..........wWW...........WWw................",
-            ".........wWWWW.........WWWWw...............",
-            "........wWWWWWW.......WWWWWWw..............",
-            "..HH....wWWWWWWW.....WWWWWWWw..............",
-            "..dHH...wWWwWWWWW...WWWWWwWWw..............",
-            ".HHdH...wWWWWwWWWW.WWWWwWWWWw..............",
-            ".DDDDD..wWWWWWWwWWWWWwWWWWWWw..............",
-            ".DDDDDD.wWWWWWWWWWWWWWWWWWWw...............",
-            ".DEeDDDD.wWWWWWWWWWWWWWWWWw................",
-            ".DDDDDDDd.wWWWWWWWWWWWWWWw.................",
-            ".DWWDDDDDd..dDDDDDDDDDd....................",
-            "..DDdDDDDDdDDDDDDDDDDDDDd..................",
-            "...dDDDDDDDDDDDDDDDDDDDDDDd................",
-            "....dDDYYDDDDDDDDDDDDDDDDDDd...............",
-            "......DYYYDDDDDDDdDDDDDDDDDDdd.............",
-            "......DYYYDDDDDDDDDDDDDDDDDDDDdd....HH.....",
-            "......DYYYDDDDDDDDDDDDDDDDDDDDDDdd..dHH....",
-            ".....DDYYDDDDDDDDDDDDDDDDDDDDDDDDDddHH.....",
-            ".....DDDDDDDdd...dDDDDDDD..ddDDDDDDDdd.....",
-            "....DDDDDDd........dDDDDDD....ddDDDdd......",
-            "....DDDDDd..........dDDDDDd.....ddd........",
-            "...DDDDDd............dDDDDd................",
-            "...DDDDd..............dDDDd................",
-            "...DDDd................dDDd................",
-            "..HDDDd................dDDHd...............",
-            "..HHDd..................dHHd...............",
+            ".....HH...................dddd............",
+            "....dGGd...............ddWWWWWdd..........",
+            "...dGGGGd............ddWWWWWWWWWdd........",
+            "..dGGEGGd..........dmWWWWWWWWWWWWdd.......",
+            "..dGGGGGd........dmWWWWWWWWWWmWWWWWd......",
+            "..dGGGGGGd......dmWWWWWWWmWWWWWWmWWd......",
+            "...dGGGGGd....dmGWWWWWmWWWWWWmWWWdd.......",
+            "...dGGGGGGd..dGGGWWWmWWWWmWWWdd...........",
+            "....dGGGGGd.dGGGGGmWWmWWWdd...............",
+            ".....dGGGGddGGGGGGGGGGGd..................",
+            "......dGGGGGGGGGGGGGGGGGd.................",
+            "......dGGGGGGGGGGGGGGGGGGd................",
+            ".....dGGGGLLLLLLLGGGGGGGGGd...............",
+            ".....dGGGLLLLLLLLLGGGGGGGGGd..............",
+            ".....dGGGLLLLLLLLLGGGGGGGGGGdd............",
+            ".....dGGGGLLLLLLLGGGGGGGGGGGGGdd..........",
+            "......dGGGGLLLLLGGGGGGGdGGGGGGGGdd........",
+            "......dGGGGGGGGGGGGGGd...ddGGGGGGGd.......",
+            ".......dGGGGGGGGGGGGd......ddGGGGGd.......",
+            ".......dGGGGGGGGGGGd.........dGGGGd.......",
+            "........dGGGdGGGGGd...........ddGd........",
+            "........dGGd.dGGGGd.............d.........",
+            ".......dGGd..dGGGGd.......................",
+            "......dGGd...dGGGd........................",
+            ".....dGGGd..dGGGGd........................",
+            ".....dddd...dddddd........................",
         };
         var palette = new Dictionary<char, Color>
         {
-            { 'D', new Color(0.33f, 0.27f, 0.24f) },  // 体（黒褐色）
-            { 'd', new Color(0.20f, 0.16f, 0.14f) },  // 体の陰
-            { 'Y', new Color(0.52f, 0.43f, 0.36f) },  // 胸・腹のうろこ（明るめ）
-            { 'W', new Color(0.24f, 0.19f, 0.18f) },  // 翼膜（暗い）
-            { 'w', new Color(0.42f, 0.34f, 0.30f) },  // 翼の骨・縁
-            { 'H', new Color(0.60f, 0.55f, 0.48f) },  // 角・尾の棘・かぎ爪
-            { 'E', new Color(1f, 0.62f, 0.15f) },     // 目（オレンジに燃える）
-            { 'e', new Color(0.15f, 0.08f, 0.04f) },  // 瞳
+            { 'G', new Color(0.42f, 0.62f, 0.40f) },  // 体（緑）
+            { 'd', new Color(0.16f, 0.30f, 0.18f) },  // 輪郭・陰（濃い緑）
+            { 'L', new Color(0.64f, 0.78f, 0.50f) },  // 腹（明るい黄緑）
+            { 'W', new Color(0.86f, 0.88f, 0.62f) },  // 翼膜（淡い黄緑）
+            { 'm', new Color(0.30f, 0.50f, 0.30f) },  // 翼の骨・縁
+            { 'H', new Color(0.95f, 0.82f, 0.42f) },  // 角（黄）
+            { 'E', new Color(0.10f, 0.20f, 0.12f) },  // 目
+        };
+        return FromMap(rows, palette);
+    }
+
+    // ボスドラゴン（マップ用・正面向き）: こちらを向いて翼を左右に広げた姿
+    public static Sprite DragonFront()
+    {
+        var rows = new string[]
+        {
+            ".....H.........H.....",
+            ".....dd.......dd.....",
+            "....dGGdddddddGGd....",
+            "...dGGGEGGGGEGGGd....",
+            "...dGGGGGGGGGGGGd....",
+            "..WdGGGGGGGGGGGGdW...",
+            ".WWdGGGGGGGGGGGGdWW..",
+            "WWWdGGGGLLLLGGGGdWWW.",
+            "WWWdGGGLLLLLLGGGdWWW.",
+            ".WWdGGGLLLLLLGGGGdW..",
+            "..dGGGGLLLLLLGGGGd...",
+            "..dGGGGGGGGGGGGGGd...",
+            "...dGGGGGGGGGGGGd....",
+            "...dGGdGGGGGGdGGd....",
+            "...dGd..dGGd..dGd....",
+            "..dGGd..dGGd..dGGd...",
+            "..dddd..dddd..dddd...",
+        };
+        var palette = new Dictionary<char, Color>
+        {
+            { 'G', new Color(0.42f, 0.62f, 0.40f) },
+            { 'd', new Color(0.16f, 0.30f, 0.18f) },
+            { 'L', new Color(0.64f, 0.78f, 0.50f) },
+            { 'W', new Color(0.86f, 0.88f, 0.62f) },
+            { 'H', new Color(0.95f, 0.82f, 0.42f) },
+            { 'E', new Color(0.10f, 0.20f, 0.12f) },
         };
         return FromMap(rows, palette);
     }
