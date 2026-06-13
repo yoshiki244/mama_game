@@ -45,18 +45,12 @@ public static class ProtoSkills
 
     public static readonly List<ProtoSkill> All = new List<ProtoSkill>
     {
-        // 1マス: 低威力・確実
-        new ProtoSkill("cook",   "マザーフレア",         30,  new Color(1f, 0.65f, 0.45f),
-            V(0,0)),
-        // 2マス: I型
-        new ProtoSkill("clip",   "クリップスティンガー", 45,  new Color(0.55f, 0.95f, 0.6f),
-            V(0,0), V(1,0)),
-        // 3マス: L型（角に引っかかる）
-        new ProtoSkill("towel",  "アクアスラッシュ",     60,  new Color(0.5f, 0.8f, 1f),
-            V(0,0), V(0,1), V(1,1)),
         // 4マス: S型（隙間ができやすい厄介形状）
         new ProtoSkill("vacuum", "サイクロンバースト",   80,  new Color(1f, 0.95f, 0.5f),
             V(1,0), V(2,0), V(0,1), V(1,1)),
+        // 4マス: T型（初期所持）
+        new ProtoSkill("blade",  "クロスエッジ",         85,  new Color(0.55f, 0.95f, 0.7f),
+            V(0,0), V(1,0), V(2,0), V(1,1)),
         // 5マス: F型ペントミノ（パズル界屈指の収まりの悪さ）
         new ProtoSkill("scold",  "ジャッジメントボイス", 110, new Color(1f, 0.55f, 0.8f),
             V(1,0), V(2,0), V(0,1), V(1,1), V(1,2)),
@@ -87,7 +81,26 @@ public static class ProtoSkills
             V(0,0), V(1,0), V(2,0), V(3,0), V(4,0), V(0,1), V(1,1), V(2,1), V(3,1), V(4,1),
             V(0,2), V(1,2), V(2,2), V(3,2), V(4,2), V(0,3), V(1,3), V(2,3), V(3,3), V(4,3),
             V(0,4), V(1,4), V(2,4), V(3,4), V(4,4)),
+
+        // --- 追加ピース ---
+        // 4マス: 田型（O）※初期所持
+        new ProtoSkill("quartz", "クォーツプリズム",      85,  new Color(0.8f, 0.7f, 1f),
+            V(0,0), V(1,0), V(0,1), V(1,1)),
+        // 7マス: 十字＋（中型の高威力）
+        new ProtoSkill("tempest", "テンペストエッジ",     150, new Color(0.5f, 0.95f, 0.85f),
+            V(1,0), V(0,1), V(1,1), V(2,1), V(1,2), V(0,2), V(2,2)),
     };
 
     public const int NormalAttackPower = 10; // 空白マス=通常攻撃
+
+    // 初期所持ピース（4マスを3種類）
+    public static readonly string[] InitialOwned = { "vacuum", "blade", "quartz" };
+
+    // 敵を倒すごとに解放されるピース（すべて5マス以上・後半ほど大型）
+    public static readonly string[] UnlockOrder =
+    {
+        "heal", "scold", "buff", "tempest", "apron", "meikyo", "vermilion", "catastrophe",
+    };
+
+    public static ProtoSkill Find(string id) => All.Find(s => s.id == id);
 }

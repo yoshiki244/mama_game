@@ -1,5 +1,6 @@
 ﻿using UnityEngine;
 using UnityEngine.EventSystems;
+using System.Collections.Generic;
 
 // プリプロ版の起動スクリプト。
 // 空のGameObjectにこれを付けて再生するだけで、カメラ設定・Canvas・全UIを自動生成する。
@@ -22,6 +23,35 @@ public class ProtoMain : MonoBehaviour
     public int  FlashThreshold { get; private set; } // 順次点滅の発動マス数（10 or 15）
     public float ChainCritMult { get; private set; } // 通電クリティカル倍率
     public float FlashCritMult { get; private set; } // 順次点滅クリティカル倍率
+
+    // ===== 所持ピース（敵撃破ごとに解放される）=====
+    public List<string> OwnedSkillIds { get; private set; } = new List<string>();
+
+    public List<ProtoSkill> OwnedSkills()
+    {
+        var list = new List<ProtoSkill>();
+        foreach (var id in OwnedSkillIds)
+        {
+            var s = ProtoSkills.Find(id);
+            if (s != null) list.Add(s);
+        }
+        return list;
+    }
+
+    // 解放順の次のピースを1つ解放する。すべて解放済みなら null
+    public ProtoSkill UnlockNextSkill()
+    {
+        foreach (var id in ProtoSkills.UnlockOrder)
+        {
+            if (!OwnedSkillIds.Contains(id))
+            {
+                OwnedSkillIds.Add(id);
+                PlayerPrefs.SetString("owned", string.Join(",", OwnedSkillIds));
+                return ProtoSkills.Find(id);
+            }
+        }
+        return null;
+    }
 
     // パーティ（1人目はMAMA固定、最大3人）
     public System.Collections.Generic.List<PartyMember> Party { get; private set; }
@@ -102,6 +132,18 @@ public class ProtoMain : MonoBehaviour
         FlashThreshold = PlayerPrefs.GetInt("flashTh", 10);
         ChainCritMult = PlayerPrefs.GetFloat("chainMult", 1.3f);
         FlashCritMult = PlayerPrefs.GetFloat("flashMult", 1.3f);
+
+        // 所持ピースの復元（無ければ初期所持=2マス・3マスのみ）
+        OwnedSkillIds.Clear();
+        string ownedStr = PlayerPrefs.GetString("owned", "");
+        if (!string.IsNullOrEmpty(ownedStr))
+        {
+            foreach (var id in ownedStr.Split(','))
+                if (!string.IsNullOrEmpty(id) && ProtoSkills.Find(id) != null)
+                    OwnedSkillIds.Add(id);
+        }
+        if (OwnedSkillIds.Count == 0)
+            OwnedSkillIds.AddRange(ProtoSkills.InitialOwned);
 
         // パーティの復元（最低1人=MAMA）。盤面もメンバーごとの形で生成
         // ※セーブの盤面復元より先にやる必要がある

@@ -23,6 +23,8 @@ public class BuildScreen : MonoBehaviour
     ProtoSkill _selected;
     int _rotation;
     RectTransform _gridRt;
+    RectTransform _trayContent; // スクロールするピース一覧の中身
+    ScrollRect _trayScroll;
     Image _boardBg;
     Vector2Int? _boardSel; // 盤面で選択中のピース（ピボットマスで保持）
 
@@ -57,8 +59,61 @@ public class BuildScreen : MonoBehaviour
         _root.gameObject.SetActive(true);
         if (_member >= _main.Panels.Count) _member = 0; // 仲間を外した直後の保険
         RefreshTabs();
+        RefreshTray();   // 所持ピースが増えている可能性があるので再構築
         BuildBoard();
         RefreshBoard();
+    }
+
+    // 所持ピースの一覧を作り直す（敵撃破で増える）
+    void RefreshTray()
+    {
+        foreach (Transform c in _trayContent) Destroy(c.gameObject);
+        _trayButtons.Clear();
+
+        var owned = _main.OwnedSkills();
+        const float rowH = 56f, pad = 6f;
+        _trayContent.sizeDelta = new Vector2(0, owned.Count * rowH + pad * 2);
+
+        for (int i = 0; i < owned.Count; i++)
+        {
+            var s = owned[i];
+            float iy = -(pad + rowH / 2f + i * rowH); // contentの上端からの相対位置
+            var img = ProtoUI.CreatePanel($"Tray_{s.id}", _trayContent, new Vector2(0, iy),
+                new Vector2(430, 48), s == _selected ? TraySelected : TrayNormal);
+            // 上端基準にして、contentの一番上から下へ並べる
+            var irt = img.rectTransform;
+            irt.anchorMin = irt.anchorMax = new Vector2(0.5f, 1f);
+            irt.pivot = new Vector2(0.5f, 1f);
+            irt.anchoredPosition = new Vector2(0, iy);
+            var btn = img.gameObject.AddComponent<Button>();
+            btn.targetGraphic = img;
+            btn.onClick.AddListener(() => SelectSkill(s));
+
+            // ピース形状のミニプレビュー（行の左端に実際の形を表示）
+            float cs = 8f, cgap = 1f;
+            int minX = s.shape.Min(v => v.x), minY = s.shape.Min(v => v.y);
+            int maxX = s.shape.Max(v => v.x), maxY = s.shape.Max(v => v.y);
+            float ox = -195f - (maxX - minX) * (cs + cgap) / 2f;
+            float oy = (maxY - minY) * (cs + cgap) / 2f;
+            foreach (var v in s.shape)
+            {
+                ProtoUI.CreatePanel("Mas", img.transform,
+                    new Vector2(ox + (v.x - minX) * (cs + cgap), oy - (v.y - minY) * (cs + cgap)),
+                    new Vector2(cs, cs), s.color).raycastTarget = false;
+            }
+            var label = ProtoUI.CreateText("Label", img.transform,
+                $"{s.skillName}　{s.Size}マス / 威力 {s.power}", 16,
+                new Vector2(40, 0), new Vector2(330, 48), Color.white, TextAlignmentOptions.Left);
+
+            _trayButtons.Add((s, img, label));
+        }
+
+        // スクロール位置を一番上に戻す（増減後に下に張り付くのを防ぐ）
+        if (_trayScroll != null)
+        {
+            Canvas.ForceUpdateCanvases();
+            _trayScroll.verticalNormalizedPosition = 1f;
+        }
     }
 
     public void Hide() => _root.gameObject.SetActive(false);
@@ -84,49 +139,42 @@ public class BuildScreen : MonoBehaviour
         var layout = grid.gameObject.AddComponent<GridLayoutGroup>();
         layout.constraint = GridLayoutGroup.Constraint.FixedColumnCount;
 
-        // ---- ピース一覧（右側） ----
-        ProtoUI.CreateText("TrayTitle", _root, "ピース一覧（クリックで選択）", 22,
-            new Vector2(330, 330), new Vector2(420, 30));
+        // ---- ピース一覧（右側・スクロール可能） ----
+        ProtoUI.CreateText("TrayTitle", _root, "所持ピース（クリックで選択）", 22,
+            new Vector2(330, 335), new Vector2(440, 30));
 
-        float ty = 280;
-        foreach (var skill in ProtoSkills.All)
-        {
-            var s = skill;
-            var img = ProtoUI.CreatePanel($"Tray_{s.id}", _root, new Vector2(330, ty),
-                new Vector2(420, 48), TrayNormal);
-            var btn = img.gameObject.AddComponent<Button>();
-            btn.targetGraphic = img;
-            btn.onClick.AddListener(() => SelectSkill(s));
+        // スクロールビュー（所持ピースが増えても見切れない）
+        var viewport = ProtoUI.CreateRect("TrayViewport", _root);
+        viewport.anchoredPosition = new Vector2(330, 95);
+        viewport.sizeDelta = new Vector2(460, 440);
+        var vpImg = viewport.gameObject.AddComponent<Image>();
+        vpImg.color = new Color(0.08f, 0.06f, 0.14f, 0.55f);
+        viewport.gameObject.AddComponent<RectMask2D>();
+        var sr = viewport.gameObject.AddComponent<ScrollRect>();
+        sr.horizontal = false;
+        sr.vertical = true;
+        sr.viewport = viewport;
+        sr.scrollSensitivity = 28f;
+        sr.movementType = ScrollRect.MovementType.Clamped;
 
-            // ピース形状のミニプレビュー（行の左端に実際の形を表示）
-            float cs = 8f, cgap = 1f;
-            int minX = s.shape.Min(v => v.x), minY = s.shape.Min(v => v.y);
-            int maxX = s.shape.Max(v => v.x), maxY = s.shape.Max(v => v.y);
-            float ox = -190f - (maxX - minX) * (cs + cgap) / 2f;
-            float oy = (maxY - minY) * (cs + cgap) / 2f;
-            foreach (var v in s.shape)
-            {
-                ProtoUI.CreatePanel("Mas", img.transform,
-                    new Vector2(ox + (v.x - minX) * (cs + cgap), oy - (v.y - minY) * (cs + cgap)),
-                    new Vector2(cs, cs), s.color).raycastTarget = false;
-            }
-            var label = ProtoUI.CreateText("Label", img.transform,
-                $"{s.skillName}　{s.Size}マス / 威力 {s.power}", 16,
-                new Vector2(45, 0), new Vector2(325, 48), Color.white, TextAlignmentOptions.Left);
+        _trayContent = ProtoUI.CreateRect("TrayContent", viewport);
+        _trayContent.anchorMin = new Vector2(0f, 1f);   // 上端で横ストレッチ（ScrollRect標準）
+        _trayContent.anchorMax = new Vector2(1f, 1f);
+        _trayContent.pivot = new Vector2(0.5f, 1f);
+        _trayContent.anchoredPosition = Vector2.zero;
+        _trayContent.sizeDelta = new Vector2(0, 10);
+        sr.content = _trayContent;
+        _trayScroll = sr;
 
-            _trayButtons.Add((s, img, label));
-            ty -= 56;
-        }
-
-        // 選択中表示と回転ボタン
+        // 選択中表示と回転ボタン（スクロールビューの下に固定）
         _selectedText = ProtoUI.CreateText("Selected", _root, "ピース未選択", 18,
-            new Vector2(230, ty - 10), new Vector2(300, 50));
+            new Vector2(230, -175), new Vector2(300, 50));
         ProtoUI.CreateButton("RotateBtn", _root, "回転", 20,
-            new Vector2(470, ty - 10), new Vector2(120, 44), new Color(0.3f, 0.25f, 0.45f), RotateAny);
+            new Vector2(470, -175), new Vector2(120, 44), new Color(0.3f, 0.25f, 0.45f), RotateAny);
 
         // 操作ヒント
         ProtoUI.CreateText("Hint", _root, "ピース選択→盤面でマウス移動するとプレビュー表示／左クリックで確定\n右クリック=撤去　ドラッグ=移動　盤面のピースをクリックで選択→Rキーで回転\n1マス=出現率1%　空白マスは「通常攻撃」になる", 14,
-            new Vector2(330, ty - 75), new Vector2(460, 70), new Color(0.7f, 0.7f, 0.8f));
+            new Vector2(330, -245), new Vector2(460, 70), new Color(0.7f, 0.7f, 0.8f));
 
         // 出現確率の内訳（盤面の下。スキルごとに1行・上揃え）
         _info = ProtoUI.CreateText("Info", _root, "", 17,

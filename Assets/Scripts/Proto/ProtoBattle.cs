@@ -32,7 +32,7 @@ public class ProtoBattle : MonoBehaviour
     TextMeshProUGUI _resultText;
 
     const float GaugeWidth = 320f;
-    const int HandSize = 3;
+    const int HandSize = 5;
     const float FlashDuration = 0.5f;   // 単発フラッシュ（光過敏性対応: 3回/秒以下）
     const float AnswerTime = 3f;
 
@@ -544,13 +544,16 @@ public class ProtoBattle : MonoBehaviour
         }
         switch (skill.id)
         {
-            case "cook":   yield return MotionFlare(skill); break;
-            case "clip":   yield return MotionStinger(skill); break;
-            case "towel":  yield return MotionSlash(skill); break;
-            case "vacuum": yield return MotionCyclone(skill); break;
-            case "scold":  yield return MotionVoice(skill); break;
-            case "apron":  yield return MotionAsura(skill); break;
-            default:       yield return Lunge(_actorRt, new Vector2(150, 0)); break;
+            case "quartz":     yield return MotionFlare(skill); break;
+            case "tempest":    yield return MotionStinger(skill); break;
+            case "blade":      yield return MotionSlash(skill); break;
+            case "vacuum":     yield return MotionCyclone(skill); break;
+            case "scold":      yield return MotionVoice(skill); break;
+            case "apron":      yield return MotionAsura(skill); break;
+            case "meikyo":     yield return MotionVoice(skill); break;
+            case "vermilion":  yield return MotionAsura(skill); break;
+            case "catastrophe":yield return MotionAsura(skill); break;
+            default:           yield return Lunge(_actorRt, new Vector2(150, 0)); break;
         }
     }
 
