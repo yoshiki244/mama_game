@@ -1,0 +1,287 @@
+﻿<!DOCTYPE html><html lang="ja"><head><meta charset="UTF-8"><style>
+body{font-family:"Yu Gothic UI","Meiryo",sans-serif;line-height:1.75;color:#222;max-width:900px;margin:0 auto;padding:24px;}
+h1{border-bottom:3px solid #8662c7;padding-bottom:8px;color:#4a2d7a;}
+h2{border-left:6px solid #8662c7;padding-left:10px;margin-top:34px;color:#4a2d7a;page-break-after:avoid;}
+h3{color:#6a4aa0;margin-top:20px;page-break-after:avoid;}
+table{border-collapse:collapse;width:100%;margin:10px 0;font-size:12.5px;}
+th,td{border:1px solid #bbb;padding:5px 9px;text-align:left;vertical-align:top;}
+th{background:#efe8fa;}tr:nth-child(even){background:#f7f4fc;}
+code{background:#f0ecf7;padding:1px 5px;border-radius:3px;font-size:12px;}
+blockquote{background:#fdf6e3;border-left:5px solid #e0b84a;padding:6px 14px;margin:10px 0;}
+hr{border:none;border-top:1px solid #ddd;margin:18px 0;}
+ul{margin:6px 0;}
+</style></head><body><h1>Project M プロトタイプ ソースコード 詳細解説</h1>
+
+<p>各ファイルを<b>メソッド（関数）単位</b>まで掘り下げて解説します。</p>
+<p>「概要を知りたい」なら <code>ソースコード解説.md</code> を、「中で実際どう動くか知りたい」ならこの資料を読んでください。</p>
+
+<hr>
+
+<h2>読む前に：C#とUnityの最低限の言葉</h2>
+
+<table>
+<tr><th>言葉</th><th>意味（ざっくり）</th></tr>
+<tr><td>クラス</td><td>1つの「係」。ファイル＝クラスとほぼ同じ</td></tr>
+<tr><td>メソッド（関数）</td><td>係ができる「動作」。<code>void 名前() { ... }</code> の形</td></tr>
+<tr><td>変数 / フィールド</td><td>係が覚えておく「メモ」。<code>_</code> 始まりは内部メモの慣習</td></tr>
+<tr><td><code>public</code> / <code>private</code></td><td>外から呼べる / そのファイル内だけ</td></tr>
+<tr><td><code>void</code></td><td>「結果を返さない動作」。<code>bool</code> なら成否を返す</td></tr>
+<tr><td><code>IEnumerator</code> ＋ <code>yield</code></td><td><b>時間のかかる処理</b>。<code>yield return 待つ</code> で途中で一時停止できる（演出の要）</td></tr>
+<tr><td><code>List&lt;T&gt;</code></td><td>同じ種類のものを並べた「箱」。<code>Add</code>で追加</td></tr>
+<tr><td>イベント <code>Action</code></td><td>「○○が起きたら呼んでね」の予約</td></tr>
+</table>
+
+<hr>
+
+<h2>ProtoMain.cs — 司令塔</h2>
+
+<p>ゲームに1個だけ存在。<code>Awake()</code>（Unityが起動時に1回呼ぶ）で全部を組み立てる。</p>
+
+<h3>主なフィールド（覚えていること）</h3>
+<ul>
+<li><code>Party</code>（List）＝今のパーティ。<code>Panels</code>＝各員の盤面。<code>MemberStats</code>＝各員の成長。<b>3つは同じ人数・同じ順番</b>で並ぶ</li>
+<li><code>Wave</code>＝進行度（敵の強さに使う）。<code>AtbMode</code>／<code>BgmEnabled</code>＝設定</li>
+</ul>
+
+<h3>主なメソッド</h3>
+<table>
+<tr><th>メソッド</th><th>何をする</th></tr>
+<tr><td><code>Awake()</code></td><td>カメラ→Canvas→4画面→パーティ復元→セーブ読込→BGM生成、の順で初期化</td></tr>
+<tr><td><code>AddPartyMember()</code> / <code>RemovePartyMember()</code></td><td>仲間を増減。<b>Party・Panels・MemberStatsの3つを同時に</b>増減させるのがポイント（ズレると事故る）</td></tr>
+<tr><td><code>ShowMap/ShowMenu/ShowBuild()</code></td><td>他画面を<code>Hide()</code>して目的画面を<code>Show()</code>。<b>画面はDestroyせず表示ON/OFFで切り替える</b>ので高速</td></tr>
+<tr><td><code>StartBattle(enemy)</code></td><td>バトル開始。<code>enemy.levelOffset&gt;0</code>ならボス曲、それ以外は通常バトル曲を鳴らす</td></tr>
+<tr><td><code>OnBattleWon()</code></td><td>Wave+1 → 倒した敵をマップから消す → マップへ戻る</td></tr>
+<tr><td><code>PlayBgm(clip)</code></td><td>同じ曲なら何もしない。<b>起動初期化中(clip=null)は無視</b>するガード入り（ここが抜けてて起動バグになった）</td></tr>
+</table>
+
+<blockquote>💡 <b>設計の核</b>：他のファイルは全部 <code>_main</code>（ProtoMain）を握っていて、<code>_main.Party</code> や <code>_main.StartBattle()</code> 経由で連携する。ProtoMainがハブ。</blockquote>
+
+<hr>
+
+<h2>PanelModel.cs — 盤面の帳簿係（純粋データ）</h2>
+
+<p>10×10などの盤面で「どこに何のピースがあるか」だけを管理。<b>見た目は一切持たない</b>ので、ビルド画面でもバトルの山札生成でも同じものを使い回せる。</p>
+
+<h3>中の構造</h3>
+<ul>
+<li><code>Placement</code>（内部クラス）＝置かれたピース1個分。「どのスキルか＋占有マスのリスト」</li>
+<li><code>_grid[x,y]</code>＝各マスに置かれたPlacement（無ければnull）</li>
+<li><code>_valid[x,y]</code>＝そのマスが盤面として存在するか（<b>キャラごとに形が違うため</b>）</li>
+</ul>
+
+<h3>主なメソッド</h3>
+<table>
+<tr><th>メソッド</th><th>何をする</th></tr>
+<tr><td><code>PanelModel(bool[,] mask)</code></td><td>形状マスク付きで生成。trueのマスだけが有効（三角形・ひし形を作れる）</td></tr>
+<tr><td><code>IsValid(x,y)</code></td><td>そのマスが盤面内かつ存在するか</td></tr>
+<tr><td><code>Rotate(v, rot)</code>（static）</td><td>座標を90度回す数学処理。<code>(x,y)→(y,-x)</code> を rot 回</td></tr>
+<tr><td><code>CanPlace(skill, anchor, rot)</code></td><td>はみ出し・他ピースとの重なりをチェック</td></tr>
+<tr><td><code>Place(...)</code> / <code>RemoveAt(x,y)</code></td><td>配置 / 撤去</td></tr>
+<tr><td><code>RotatePlacementAt(x,y)</code></td><td>置いてあるピースをその場回転。<b>盤外にはみ出たら内側へ自動スライド</b>して救済</td></tr>
+<tr><td><code>OccupiedCount()</code> / <code>ValidCount()</code></td><td>埋まったマス数 / 有効マス総数（どの形も100）</td></tr>
+<tr><td><code>BuildDeck()</code></td><td><b>有効マスを上から順に並べて山札にする</b>。ピースのあるマス＝そのスキル、空きマス＝null（通常攻撃）</td></tr>
+</table>
+
+<blockquote>💡 「1マス＝1枚のカード」がここで実現されている。盤面を組む＝デッキを組む、というGDDの核。</blockquote>
+
+<hr>
+
+<h2>PlayerStats.cs — 履歴書</h2>
+
+<p>シンプル。レベル・EXP・HP・攻撃・防御・素早さを持つ。</p>
+
+<table>
+<tr><th>メソッド</th><th>何をする</th></tr>
+<tr><td><code>GainExp(amount)</code></td><td>EXPを足し、<code>ExpToNext</code>（=Level×50）を超えたら<code>LevelUp()</code>。<b>1回で複数レベル上がることもある</b>ので while ループ。レベルが上がったら true を返す</td></tr>
+<tr><td><code>LevelUp()</code></td><td>Level+1、HP+10・攻撃+2・防御+1・素早さ+1</td></tr>
+</table>
+
+<hr>
+
+<h2>ProtoSkills.cs / ProtoEnemies.cs / ProtoParty.cs — 図鑑類</h2>
+
+<p>データを並べるだけのファイル。<b>ここを編集するのがゲームバランス調整の基本。</b></p>
+
+<h3>ProtoSkills</h3>
+<ul>
+<li><code>ProtoSkill</code>＝名前・威力・色・<code>shape</code>（マスの並び＝ポリオミノ形状）</li>
+<li><code>All</code>＝6種のリスト。<code>shape</code>の <code>V(x,y)</code> がマス1つ。形が複雑なほど点滅チャレンジが難しい</li>
+</ul>
+
+<h3>ProtoEnemies</h3>
+<ul>
+<li><code>EnemyAttack</code>＝技1つ（名前・倍率・ヒット数・抽選の重み）</li>
+<li><code>ProtoEnemy</code>＝HP・攻撃力・サイズ・<code>flying</code>（飛行=影なし）・<code>levelOffset</code>（ボスの格上げ）・技5種</li>
+<li><code>PickAttack(enemy)</code>＝<b>重み付き抽選</b>。weightの合計から乱数を引いて技を選ぶ</li>
+<li><code>RandomEnemy(area)</code>＝エリアごとに出る敵を変える（草原は弱敵、山頂はゴーレムのみ等）</li>
+</ul>
+
+<h3>ProtoParty</h3>
+<ul>
+<li><code>Roster</code>＝MAMA/アカネ/ソラ（髪色のみ違う）</li>
+<li><code>BoardMask(memberIndex)</code>＝<b>各キャラの盤面形状を生成</b>。<code>widths</code>配列（各行のマス数）から bool[,] を作る。例：アカネは{1,3,5…19}でピラミッド型＝合計100</li>
+</ul>
+
+<hr>
+
+<h2>ProtoSave.cs — 金庫番</h2>
+
+<p><code>SaveData</code>（保存する内容の設計図）を JSON 文字列にして <code>PlayerPrefs</code>（端末内の保存領域）へ。</p>
+
+<table>
+<tr><th>メソッド</th><th>何をする</th></tr>
+<tr><td><code>Save(main)</code></td><td>全員のステータス＋全員の盤面配置＋Waveを集めてJSON化して保存</td></tr>
+<tr><td><code>Load(main)</code></td><td>JSONを読み戻す。<code>members</code>があれば新形式、無ければ旧形式（リーダーのみ）として復元＝<b>昔のセーブも壊れない互換処理</b></td></tr>
+</table>
+
+<blockquote>⚠️ ピースは <code>member</code>（誰の盤面か）も一緒に保存。外したメンバーの盤面データは読込時に無視。</blockquote>
+
+<hr>
+
+<h2>ProtoUI.cs — 大道具係（共通部品）</h2>
+
+<p>「ボタンを1個作る」を毎回20行書くのは大変なので、<b>1行で作れる関数</b>にまとめた道具箱。<code>static</code>なので誰でも <code>ProtoUI.CreateButton(...)</code> と呼べる。</p>
+
+<table>
+<tr><th>メソッド</th><th>何を作る</th></tr>
+<tr><td><code>CreateCanvas()</code></td><td>UIの土台。画面サイズ追従の設定込み</td></tr>
+<tr><td><code>CreatePanel(...)</code></td><td>色付きの四角（背景・帯・マスなどに使う万能部品）</td></tr>
+<tr><td><code>CreateText(...)</code></td><td>文字。<b>全テキストに黒縁取りを自動付与</b>するのでどんな背景でも読める</td></tr>
+<tr><td><code>CreateButton(...)</code></td><td>押せるボタン（クリックで指定の動作）</td></tr>
+<tr><td><code>CreateGauge(...)</code> / <code>SetGauge(...)</code></td><td>HPバー等。SetGaugeで割合に応じて伸縮</td></tr>
+<tr><td><code>CreateInputField(...)</code></td><td>数字入力欄（点滅チャレンジ用）</td></tr>
+<tr><td><code>StyleTitle(...)</code></td><td>見出しを金色・太字・字間広めに（高級感の統一）</td></tr>
+</table>
+
+<p>末尾の <code>CellClickHandler</code>＝マスの「左/右クリック・ドラッグ」を区別して受け取る部品（ビルド画面で使用）。</p>
+
+<hr>
+
+<h2>ProtoPixelArt.cs — お抱え絵師</h2>
+
+<p>画像ファイルを使わず、<b>文字マップから画像を生成</b>する。</p>
+
+<h3>仕組みの心臓 <code>FromMap(rows, palette)</code></h3>
+<p><code>rows</code>＝<code>"..HHSS.."</code> のような文字の行。1文字＝1ドット。<code>palette</code>＝文字→色の対応表。</p>
+<p>これを1ピクセルずつ<code>Texture2D</code>に書き込んでSprite（画像）にする。<b>未定義の文字はマゼンタ</b>で表示＝書き間違い発見器。</p>
+
+<h3>絵を作るメソッド</h3>
+<table>
+<tr><th>メソッド</th><th>何の絵</th></tr>
+<tr><td><code>Mama()</code> / <code>Mama(色...)</code></td><td>MAMA。色違い版で仲間（アカネ/ソラ）も生成</td></tr>
+<tr><td><code>MapMama(dir, frame, 色...)</code></td><td>マップ歩行用ミニキャラ（4方向×2コマ）</td></tr>
+<tr><td><code>Dragon()</code> / <code>Oni()</code> / <code>Bat()</code> / <code>Golem()</code> / <code>Slime()</code></td><td>敵5種</td></tr>
+<tr><td><code>NatureBackground()</code></td><td>バトルの横スクロール背景（空・木・花）</td></tr>
+<tr><td><code>TopDownField(...,theme,path)</code></td><td>見下ろしマップタイル。<b>theme</b>で草原/森/山頂を切替、<b>path</b>で石の階段を描く</td></tr>
+</table>
+
+<hr>
+
+<h2>ProtoAudio.cs — お抱え作曲家</h2>
+
+<p>これも素材ファイル不使用。<b>音の波形を数式で計算</b>して<code>AudioClip</code>を作る。</p>
+
+<table>
+<tr><th>メソッド</th><th>何の音</th></tr>
+<tr><td><code>CreateBgm()</code></td><td>フィールド曲（長調・のどか）</td></tr>
+<tr><td><code>CreateBattleBgm()</code></td><td>通常バトル（短調・2倍速・ドラム）</td></tr>
+<tr><td><code>CreateBossBgm()</code></td><td>ボス戦（重厚な行進曲）</td></tr>
+<tr><td><code>CreateStormBgm()</code></td><td>嵐の山頂（不穏なドローン）</td></tr>
+<tr><td><code>CreateThunder()</code> / <code>CreateSwing()</code> / <code>CreateHitClip(tier)</code></td><td>雷鳴／風切り音／ヒット音4段階</td></tr>
+</table>
+
+<blockquote>仕組み：<code>Mathf.Sin(2π×周波数×時間)</code>＝サイン波、<code>Mathf.Sign(...)</code>＝矩形波（ファミコン音）、<code>Random</code>＝ノイズ（打撃・雷）。<code>melody</code>配列の周波数を並べてメロディにしている。</blockquote>
+
+<hr>
+
+<h2>MapScreen.cs — フィールドの管理人</h2>
+
+<h3>状態を持つフィールド</h3>
+<ul>
+<li><code>_area</code>（0草原/1森/2山頂）、<code>_gridPos</code>（プレイヤーのマス）、<code>_facing</code>（向き）</li>
+<li><code>_enemies</code>（マップ上の敵）、<code>_trees</code>（通行不可マス）、<code>_followers</code>（追従する仲間）</li>
+</ul>
+
+<h3>主なメソッド</h3>
+<table>
+<tr><th>メソッド</th><th>何をする</th></tr>
+<tr><td><code>LoadArea(area, spawnAt)</code></td><td><b>エリアまるごと組み替え</b>：敵を消す→地形(木/岩/階段)生成→環境(雨/雷/暗さ)設定→敵とボス配置→BGM切替</td></tr>
+<tr><td><code>Update()</code></td><td>毎フレーム：雨・雷を動かす→入力を読む→移動 or エリア移動 or エンカウント判定</td></tr>
+<tr><td><code>StepTo(target)</code>（IEnumerator）</td><td>1マス歩くアニメ。同時に<b>仲間を隊列で1マス前進</b>させる（<code>_trail</code>＝過去位置の履歴を辿る）</td></tr>
+<tr><td><code>UpdateEnemies()</code></td><td>敵が数秒ごとに1マス徘徊。プレイヤーに踏み込むと向こうからエンカウント</td></tr>
+<tr><td><code>UpdateLightning()</code> / <code>LightningStrike()</code></td><td>エリア3で数秒おきに稲妻＋雷鳴＋画面フラッシュ</td></tr>
+<tr><td><code>Encounter(enemy)</code>（IEnumerator）</td><td>「！」を出して<code>StartBattle</code>へ</td></tr>
+<tr><td><code>Hide()</code></td><td>画面を隠す。<b><code>StopAllCoroutines()</code>＋雷の残骸掃除</b>（演出中に閉じてもゴミが残らない）</td></tr>
+</table>
+
+<blockquote>⚠️ コルーチンが途中で止まると破棄済みオブジェクトを触る → <code>if (rt == null) yield break;</code> のガードが各所に入っている（MissingReferenceException対策）。</blockquote>
+
+<hr>
+
+<h2>BuildScreen.cs — パズル盤の店主</h2>
+
+<p><code>P</code>（=<code>_main.Panels[_member]</code>）＝今編集中メンバーの盤面。タブで<code>_member</code>を切り替える。</p>
+
+<table>
+<tr><th>メソッド</th><th>何をする</th></tr>
+<tr><td><code>BuildBoard()</code></td><td>メンバーの盤面の形に合わせてマスのマス目を生成。形の外（無効マス）は透明＆クリック不可</td></tr>
+<tr><td><code>OnCellLeftClick(x,y)</code></td><td>置いてあれば選択、空きなら選択中ピースを配置。<b>置けなければエラー表示</b></td></tr>
+<tr><td><code>OnCellBeginDrag/Drag/EndDrag</code></td><td>ドラッグ移動。移動先を緑(置ける)/赤(置けない)でプレビュー、ダメなら元へ戻す</td></tr>
+<tr><td><code>RotateAny()</code></td><td>盤面で選択中のピース、なければトレイのピースを回転</td></tr>
+<tr><td><code>RefreshBoard()</code></td><td>盤面の色塗りと、下部の出現率内訳（通常攻撃○%＋各スキル）を更新</td></tr>
+</table>
+
+<hr>
+
+<h2>MenuScreen.cs — 受付窓口</h2>
+
+<table>
+<tr><th>メソッド</th><th>何をする</th></tr>
+<tr><td><code>Update()</code></td><td>矢印で項目移動。<b>選んだだけで右に詳細表示</b>(<code>_previews</code>)。設定内は→で入り←→で値変更・Enterで次へ</td></tr>
+<tr><td><code>ShowStatusTab()</code> / <code>RefreshStatusView()</code></td><td>メンバータブで各員のステータス・立ち絵を表示</td></tr>
+<tr><td><code>ShowPartyTab()</code> / <code>AddMember()</code> / <code>RemoveMember()</code></td><td>仲間の確認と←→での増減</td></tr>
+<tr><td><code>BuildSettingsContent()</code></td><td>音量・BGM・バトル方式（ターン制/ATB）の行を作る</td></tr>
+<tr><td><code>SaveGame()</code></td><td><code>ProtoSave.Save</code>を呼ぶ</td></tr>
+</table>
+
+<hr>
+
+<h2>ProtoBattle.cs — バトルの審判＋演出家（最大ファイル）</h2>
+
+<h3>状態</h3>
+<ul>
+<li><code>_enemy</code>（敵）、<code>_effWave</code>（敵の実効レベル=Wave+levelOffset）</li>
+<li><code>_hands</code>（メンバーごとの手札）、<code>_decks</code>（メンバーごとの山札）、<code>_acted</code>（行動済みか）</li>
+<li><code>_memberHP</code>（メンバー個別HP）、<code>_atb</code>（ATBか）、<code>_atbTimer</code>（敵ゲージ）</li>
+</ul>
+
+<h3>流れの主なメソッド</h3>
+<table>
+<tr><th>メソッド</th><th>何をする</th></tr>
+<tr><td><code>Begin(enemy)</code></td><td>バトル開始。HP計算・メンバー生成・山札と手札作成・敵の見た目差替・接地/影</td></tr>
+<tr><td><code>Update()</code></td><td>アイドルアニメ（呼吸）＋ATBの敵ゲージを進める＋Escで逃走</td></tr>
+<tr><td><code>OnCardClicked(member, index)</code> → <code>PlayCard(...)</code></td><td>カード使用。スキルなら点滅チャレンジ→倍率→ダメージ→演出</td></tr>
+<tr><td><code>RunChallenge(skill)</code>（IEnumerator）</td><td>ピースのマスを光らせ→数字入力を待ち→ズレで倍率決定（0=200%)</td></tr>
+<tr><td><code>AttackMotionFor(skill)</code></td><td>技ごとの専用モーション（火球/居合/急降下…）に分岐</td></tr>
+<tr><td><code>Impact(...)</code></td><td>ヒット時：エフェクト＋ヒット音＋ダメージ数値＋シェイク。倍率で派手さが変わる</td></tr>
+<tr><td><code>EnemyAttackSequence()</code></td><td>敵の攻撃。技抽選→連続ヒット→<b>狙われた本人の防御/回避</b>で計算→個別HP減少</td></tr>
+<tr><td><code>AtbEnemyAct()</code></td><td>ATBでゲージ満タン時の敵攻撃</td></tr>
+</table>
+
+<blockquote>💡 演出が連続して順番に流れるのは、ほぼ全部 <code>IEnumerator</code>＋<code>yield return new WaitForSeconds(...)</code> の力。「光らせる→0.5秒待つ→消す→入力待ち…」を1本の流れで書けている。</blockquote>
+
+<hr>
+
+<h2>まとめ：機能を足したいときの動き方</h2>
+
+<table>
+<tr><th>足したいもの</th><th>触る場所</th><th>画面側の改修</th></tr>
+<tr><td>新しい敵</td><td>ProtoEnemies.All に1行＋ProtoPixelArtに絵</td><td>不要</td></tr>
+<tr><td>新しい技</td><td>ProtoSkills.All に1行</td><td>不要（モーションを凝るならProtoBattleに追加分岐）</td></tr>
+<tr><td>新しい仲間</td><td>ProtoParty.Roster＋BoardMask</td><td>不要</td></tr>
+<tr><td>新しいエリア</td><td>MapScreenのLoadArea/配色/出現テーブル</td><td>LoadArea内で完結</td></tr>
+<tr><td>新しいBGM</td><td>ProtoAudioにCreate関数＋ProtoMainで呼ぶ</td><td>不要</td></tr>
+</table>
+
+<p><b>データとロジックが分離しているので、多くの拡張は「図鑑に1行」で済む。</b> これがこのプロトの一番おいしい設計です。</p>
+</body></html>
