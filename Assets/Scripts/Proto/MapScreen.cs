@@ -92,7 +92,20 @@ public class MapScreen : MonoBehaviour
     {
         StopAllCoroutines();
         _moving = false;
+        CleanupLightning(); // 雷の演出中に閉じても残骸が残らないように
         _root.gameObject.SetActive(false);
+    }
+
+    // 稲妻と画面フラッシュの残骸を片付ける（コルーチンが途中で止まった時用）
+    void CleanupLightning()
+    {
+        if (_lightningFlash != null) _lightningFlash.color = Color.clear;
+        if (_root == null) return;
+        for (int i = _root.childCount - 1; i >= 0; i--)
+        {
+            var child = _root.GetChild(i);
+            if (child.name.StartsWith("Bolt")) Destroy(child.gameObject);
+        }
     }
 
     // バトル勝利時: 倒した敵を消す。ボスは補充しない

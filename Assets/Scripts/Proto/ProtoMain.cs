@@ -56,7 +56,7 @@ public class ProtoMain : MonoBehaviour
     MenuScreen _menu;
     UnityEngine.UI.Image _bgImg;
     AudioSource _bgmSource;
-    AudioClip _fieldBgm, _battleBgm, _stormBgm;
+    AudioClip _fieldBgm, _battleBgm, _stormBgm, _bossBgm;
 
     public void SetWave(int wave) => Wave = wave;
 
@@ -108,6 +108,7 @@ public class ProtoMain : MonoBehaviour
         _fieldBgm = ProtoAudio.CreateBgm();
         _battleBgm = ProtoAudio.CreateBattleBgm();
         _stormBgm = ProtoAudio.CreateStormBgm();
+        _bossBgm = ProtoAudio.CreateBossBgm();
         _bgmSource = gameObject.AddComponent<AudioSource>();
         _bgmSource.clip = _fieldBgm;
         _bgmSource.loop = true;
@@ -156,8 +157,7 @@ public class ProtoMain : MonoBehaviour
         _battle.Hide();
         _build.Hide();
         _menu.Hide();
-        _map.Show();
-        PlayBgm(_fieldBgm);
+        _map.Show(); // 中で現在エリアに応じたBGM（草原=フィールド/山頂=嵐）を再生する
     }
 
     // ビルド画面（メニューから開く）
@@ -177,7 +177,8 @@ public class ProtoMain : MonoBehaviour
         _build.Hide();
         _map.Hide();
         _battle.Begin(enemy);
-        PlayBgm(_battleBgm); // 迫力のあるバトル曲へ
+        // ボス（鬼・ドラゴンなど levelOffset を持つ強敵）はシリアスな専用BGM
+        PlayBgm(enemy.levelOffset > 0 ? _bossBgm : _battleBgm);
     }
 
     public void OnBattleWon()

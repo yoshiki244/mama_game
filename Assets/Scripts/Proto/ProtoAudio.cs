@@ -111,6 +111,67 @@ public static class ProtoAudio
         return clip;
     }
 
+    // ボス戦BGM: 重厚な短調・行進曲調。低音のリフ＋鳴り続けるドローン＋ドラムで威圧感
+    public static AudioClip CreateBossBgm()
+    {
+        const int sampleRate = 44100;
+        const float noteDur = 0.20f; // 速めで畳みかける
+
+        // Cマイナーの不穏な下降リフ（重々しいボステーマの定番進行）
+        float[] melody =
+        {
+            261.63f, 261.63f, 311.13f, 261.63f, 246.94f, 246.94f, 233.08f, 207.65f, // C C Eb C B Bb Ab(下降)
+            261.63f, 261.63f, 311.13f, 392.00f, 369.99f, 311.13f, 261.63f, 246.94f, // 駆け上がって落ちる
+            277.18f, 277.18f, 329.63f, 277.18f, 261.63f, 246.94f, 233.08f, 220.00f,
+            207.65f, 233.08f, 246.94f, 261.63f, 311.13f, 261.63f, 207.65f, 196.00f, // 締めの沈み込み
+        };
+        // ドラムを刻むベース（Cのペダル音＋たまに半音下）
+        float[] bass = { 65.41f, 65.41f, 65.41f, 61.74f };
+
+        int samplesPerNote = (int)(sampleRate * noteDur);
+        int total = samplesPerNote * melody.Length;
+        var data = new float[total];
+        var rng = new System.Random(5);
+
+        for (int n = 0; n < melody.Length; n++)
+        {
+            float freq = melody[n];
+            float bassFreq = bass[(n / 8) % bass.Length];
+            bool kick = n % 2 == 0;       // 重い4つ打ち
+            bool snare = n % 8 == 4;      // 小節の中央にスネア
+
+            for (int s = 0; s < samplesPerNote; s++)
+            {
+                int idx = n * samplesPerNote + s;
+                float t = (float)idx / sampleRate;
+                float p = s / (float)samplesPerNote;
+                float env = Mathf.Exp(-3.5f * p);
+
+                // メロディ: 鋭い矩形波
+                float square = Mathf.Sign(Mathf.Sin(2f * Mathf.PI * freq * t)) * 0.05f * env;
+                // ベース: 矩形波で重く刻む
+                float bassSq = Mathf.Sign(Mathf.Sin(2f * Mathf.PI * bassFreq * t)) * 0.06f * Mathf.Exp(-1.5f * p);
+                // 不穏なドローン（5度を低く重ねる）
+                float drone = Mathf.Sin(2f * Mathf.PI * bassFreq * 1.5f * t) * 0.025f;
+
+                float drum = 0f;
+                if (kick && s < sampleRate * 0.045f)
+                {
+                    float kp = s / (sampleRate * 0.045f);
+                    drum += Mathf.Sin(2f * Mathf.PI * (110f - 70f * kp) * t) * 0.14f * (1f - kp);
+                }
+                if (snare && s < sampleRate * 0.04f)
+                    drum += ((float)rng.NextDouble() * 2f - 1f) * 0.09f * (1f - s / (sampleRate * 0.04f));
+
+                data[idx] = square + bassSq + drone + drum;
+            }
+        }
+
+        var clip = AudioClip.Create("ProtoBossBgm", total, 1, sampleRate, false);
+        clip.SetData(data, 0);
+        return clip;
+    }
+
     // 嵐の山頂BGM: 短調のドローン＋半音のきしみで不穏に（ボスエリア用）
     public static AudioClip CreateStormBgm()
     {
