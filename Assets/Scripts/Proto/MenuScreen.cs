@@ -19,7 +19,8 @@ public class MenuScreen : MonoBehaviour
     // 設定表示
     TextMeshProUGUI _volumeText;
     TextMeshProUGUI _bgmBtnLabel;
-    TextMeshProUGUI _modeBtnLabel;
+    // プロト検証用設定の値表示
+    TextMeshProUGUI _chainBtnLabel, _chainAdjLabel, _flashBtnLabel, _flashThLabel, _chainMultLabel, _flashMultLabel;
 
     // 通知
     TextMeshProUGUI _notice;
@@ -417,52 +418,59 @@ public class MenuScreen : MonoBehaviour
         _settingsContent.anchoredPosition = new Vector2(140, -10);
         _settingsContent.sizeDelta = new Vector2(700, 560);
 
-        // 各行の選択ハイライト用の背景（キーボード操作で光る）
         _setRows.Clear();
-        var volRow = ProtoUI.CreatePanel("RowVol", _settingsContent, new Vector2(0, 120), new Vector2(600, 64), RowNormal);
-        volRow.raycastTarget = false;
-        _setRows.Add((volRow, () => ChangeVolume(-0.1f), () => ChangeVolume(+0.1f)));
+        float y = 232f;        // 行の開始Y
+        const float step = 52f; // 行間
+        var btnCol = new Color(0.2f, 0.17f, 0.32f);
 
-        var bgmRow = ProtoUI.CreatePanel("RowBgm", _settingsContent, new Vector2(0, 20), new Vector2(600, 64), RowNormal);
-        bgmRow.raycastTarget = false;
-        _setRows.Add((bgmRow, ToggleBgm, ToggleBgm));
+        // 各行の生成ヘルパー: ラベル＋値表示ボタン（−/＋付き）。onLeft/onRightはキーボード操作用
+        TextMeshProUGUI Row(string id, string label, System.Action onLeft, System.Action onRight, bool withPlusMinus)
+        {
+            var row = ProtoUI.CreatePanel($"Row{id}", _settingsContent, new Vector2(0, y), new Vector2(620, 46), RowNormal);
+            row.raycastTarget = false;
+            _setRows.Add((row, onLeft, onRight));
 
-        var modeRow = ProtoUI.CreatePanel("RowMode", _settingsContent, new Vector2(0, -80), new Vector2(600, 64), RowNormal);
-        modeRow.raycastTarget = false;
-        _setRows.Add((modeRow, ToggleBattleMode, ToggleBattleMode));
+            ProtoUI.CreateText($"L{id}", _settingsContent, label, 20, new Vector2(-200, y), new Vector2(220, 34),
+                Color.white, TextAlignmentOptions.Left);
 
-        // 音量（−/＋ボタン式）
-        ProtoUI.CreateText("VolLabel", _settingsContent, "音量", 24, new Vector2(-180, 120), new Vector2(140, 36));
-        ProtoUI.CreateButton("VolDown", _settingsContent, "−", 28, new Vector2(-40, 120), new Vector2(64, 56),
-            new Color(0.2f, 0.17f, 0.32f), () => ChangeVolume(-0.1f));
-        _volumeText = ProtoUI.CreateText("VolValue", _settingsContent, "", 24, new Vector2(60, 120), new Vector2(120, 36));
-        ProtoUI.CreateButton("VolUp", _settingsContent, "＋", 28, new Vector2(160, 120), new Vector2(64, 56),
-            new Color(0.2f, 0.17f, 0.32f), () => ChangeVolume(+0.1f));
+            if (withPlusMinus)
+            {
+                ProtoUI.CreateButton($"Dn{id}", _settingsContent, "−", 24, new Vector2(70, y), new Vector2(48, 40), btnCol, onLeft);
+                ProtoUI.CreateButton($"Up{id}", _settingsContent, "＋", 24, new Vector2(240, y), new Vector2(48, 40), btnCol, onRight);
+                var val = ProtoUI.CreateText($"V{id}", _settingsContent, "", 20, new Vector2(155, y), new Vector2(120, 34));
+                y -= step;
+                return val;
+            }
+            else
+            {
+                var btn = ProtoUI.CreateButton($"B{id}", _settingsContent, "", 20, new Vector2(150, y), new Vector2(190, 40), btnCol, onRight);
+                y -= step;
+                return btn.GetComponentInChildren<TextMeshProUGUI>();
+            }
+        }
 
-        // BGM ON/OFF
-        ProtoUI.CreateText("BgmLabel", _settingsContent, "BGM", 24, new Vector2(-180, 20), new Vector2(140, 36));
-        var bgmBtn = ProtoUI.CreateButton("BgmToggle", _settingsContent, "", 22, new Vector2(60, 20), new Vector2(160, 56),
-            new Color(0.2f, 0.17f, 0.32f), ToggleBgm);
-        _bgmBtnLabel = bgmBtn.GetComponentInChildren<TextMeshProUGUI>();
-
-        // バトル方式（ターン制 / アクティブタイムバトル）
-        ProtoUI.CreateText("ModeLabel", _settingsContent, "バトル方式", 24, new Vector2(-180, -80), new Vector2(180, 36));
-        var modeBtn = ProtoUI.CreateButton("ModeToggle", _settingsContent, "", 20, new Vector2(60, -80), new Vector2(200, 56),
-            new Color(0.2f, 0.17f, 0.32f), ToggleBattleMode);
-        _modeBtnLabel = modeBtn.GetComponentInChildren<TextMeshProUGUI>();
+        _volumeText     = Row("Vol",   "音量",        () => ChangeVolume(-0.1f), () => ChangeVolume(+0.1f), true);
+        _bgmBtnLabel    = Row("Bgm",   "BGM",         ToggleBgm, ToggleBgm, false);
+        _chainBtnLabel  = Row("Chain", "通電連鎖",     ToggleChain, ToggleChain, false);
+        _chainAdjLabel  = Row("Adj",   "通電の隣接",   ToggleChainAdj, ToggleChainAdj, false);
+        _flashBtnLabel  = Row("Flash", "順次点滅",     ToggleFlash, ToggleFlash, false);
+        _flashThLabel   = Row("FlTh",  "点滅発動条件", ToggleFlashTh, ToggleFlashTh, false);
+        _chainMultLabel = Row("CMul",  "通電クリ倍率", () => ChangeChainMult(-0.05f), () => ChangeChainMult(+0.05f), true);
+        _flashMultLabel = Row("FMul",  "点滅クリ倍率", () => ChangeFlashMult(-0.05f), () => ChangeFlashMult(+0.05f), true);
 
         ProtoUI.CreateText("Note", _settingsContent,
-            "→キーで設定の中へ　←→で変更　Enterで次の項目　Escで戻る\n※アクティブ: 敵はゲージが満ちると攻撃（点滅チャレンジ中は停止）", 15,
-            new Vector2(0, -170), new Vector2(580, 60), new Color(0.6f, 0.6f, 0.75f));
+            "→キーで設定の中へ　←→で変更　Enterで次の項目　Escで戻る", 14,
+            new Vector2(0, y - 8), new Vector2(600, 40), new Color(0.6f, 0.6f, 0.75f));
 
         _settingsContent.gameObject.SetActive(false);
     }
 
-    void ToggleBattleMode()
-    {
-        _main.SetAtbMode(!_main.AtbMode);
-        RefreshSettingsView();
-    }
+    void ToggleChain()    { _main.SetChainEnabled(!_main.ChainEnabled); RefreshSettingsView(); }
+    void ToggleChainAdj() { _main.SetChainCorner(!_main.ChainCorner); RefreshSettingsView(); }
+    void ToggleFlash()    { _main.SetFlashEnabled(!_main.FlashEnabled); RefreshSettingsView(); }
+    void ToggleFlashTh()  { _main.SetFlashThreshold(_main.FlashThreshold == 10 ? 15 : 10); RefreshSettingsView(); }
+    void ChangeChainMult(float d) { _main.SetChainCritMult(_main.ChainCritMult + d); RefreshSettingsView(); }
+    void ChangeFlashMult(float d) { _main.SetFlashCritMult(_main.FlashCritMult + d); RefreshSettingsView(); }
 
     void ShowSettingsTab()
     {
@@ -476,7 +484,12 @@ public class MenuScreen : MonoBehaviour
     {
         _volumeText.text = $"{Mathf.RoundToInt(AudioListener.volume * 100)}%";
         _bgmBtnLabel.text = _main.BgmEnabled ? "ON" : "OFF";
-        _modeBtnLabel.text = _main.AtbMode ? "アクティブ" : "ターン制";
+        _chainBtnLabel.text = _main.ChainEnabled ? "ON" : "OFF";
+        _chainAdjLabel.text = _main.ChainCorner ? "頂点接" : "辺接";
+        _flashBtnLabel.text = _main.FlashEnabled ? "ON" : "OFF";
+        _flashThLabel.text = $"{_main.FlashThreshold}マス以上";
+        _chainMultLabel.text = $"{_main.ChainCritMult:0.00}倍";
+        _flashMultLabel.text = $"{_main.FlashCritMult:0.00}倍";
     }
 
     void ChangeVolume(float delta)

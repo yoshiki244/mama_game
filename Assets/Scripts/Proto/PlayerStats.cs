@@ -8,7 +8,7 @@ public class PlayerStats
     public int Exp = 0;
 
     public int MaxHP = 120;
-    public int Attack = 10;   // カード威力に加算される
+    public int Attack = 6;    // カード威力に加算される（敵強化に合わせて低めに設定）
     public int Defense = 5;   // 被ダメージを軽減
     public int Speed = 5;     // 回避率に影響（Speed×2 %）
 

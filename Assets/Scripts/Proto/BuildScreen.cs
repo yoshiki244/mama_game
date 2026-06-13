@@ -125,7 +125,7 @@ public class BuildScreen : MonoBehaviour
             new Vector2(470, ty - 10), new Vector2(120, 44), new Color(0.3f, 0.25f, 0.45f), RotateAny);
 
         // 操作ヒント
-        ProtoUI.CreateText("Hint", _root, "左クリック=配置　右クリック=撤去　ドラッグ=移動\n盤面のピースをクリックで選択（光る）→ Rキーで回転\n1マス=出現率1%　空白マスは「通常攻撃」になる", 14,
+        ProtoUI.CreateText("Hint", _root, "ピース選択→盤面でマウス移動するとプレビュー表示／左クリックで確定\n右クリック=撤去　ドラッグ=移動　盤面のピースをクリックで選択→Rキーで回転\n1マス=出現率1%　空白マスは「通常攻撃」になる", 14,
             new Vector2(330, ty - 75), new Vector2(460, 70), new Color(0.7f, 0.7f, 0.8f));
 
         // 出現確率の内訳（盤面の下。スキルごとに1行・上揃え）
@@ -301,6 +301,64 @@ public class BuildScreen : MonoBehaviour
         if (!rPressed && Input.GetKeyDown(KeyCode.R)) rPressed = true;
 #endif
         if (rPressed) RotateAny();
+
+        UpdateHoverPreview();
+    }
+
+    bool _hoverShown; // 前フレームでゴーストを描いたか（描いた時だけ盤面を戻す）
+
+    // ピース選択中、マウス位置に配置ゴーストを表示する（左クリックで確定＝OnCellLeftClick）
+    void UpdateHoverPreview()
+    {
+        // 配置候補を出すのは「トレイから選択中」かつ「ドラッグ中でない」ときだけ
+        if (_selected == null || _isDragging)
+        {
+            if (_hoverShown) { RefreshBoard(); _hoverShown = false; }
+            return;
+        }
+
+        if (!TryGetPointerPos(out var screenPos) ||
+            !TryGetCellAtScreenPoint(screenPos, null, out var cell))
+        {
+            if (_hoverShown) { RefreshBoard(); _hoverShown = false; }
+            return;
+        }
+
+        // 盤面を一旦描き直してから候補マスを上描き（ドラッグ移動のプレビューと同じ流儀）
+        RefreshBoard();
+        _hoverShown = true;
+
+        var candidate = new List<Vector2Int>();
+        foreach (var c in P.Cells(_selected, new Vector2Int(cell.x, cell.y), _rotation))
+            candidate.Add(c);
+
+        bool valid = P.CanPlace(_selected, new Vector2Int(cell.x, cell.y), _rotation);
+        Color baseCol = valid ? new Color(0.4f, 0.9f, 0.5f) : new Color(0.9f, 0.35f, 0.35f);
+        // 置けるマスは選択ピースの色寄り・置けないマスは赤系。半透明っぽく明るめに乗せる
+        foreach (var c in candidate)
+            if (P.IsValid(c.x, c.y) && P.GetAt(c.x, c.y) == null)
+                _cellImages[c.x, c.y].color = valid
+                    ? Color.Lerp(_selected.color, baseCol, 0.5f)
+                    : baseCol;
+    }
+
+    // マウス/タッチのスクリーン座標を取得（Input System / 旧Input 両対応）
+    bool TryGetPointerPos(out Vector2 pos)
+    {
+        pos = default;
+#if ENABLE_INPUT_SYSTEM
+        var mouse = UnityEngine.InputSystem.Mouse.current;
+        if (mouse != null) { pos = mouse.position.ReadValue(); return true; }
+        var touch = UnityEngine.InputSystem.Touchscreen.current;
+        if (touch != null && touch.primaryTouch.press.isPressed)
+        { pos = touch.primaryTouch.position.ReadValue(); return true; }
+#endif
+#if ENABLE_LEGACY_INPUT_MANAGER
+        pos = Input.mousePosition;
+        return true;
+#else
+        return pos != default;
+#endif
     }
 
     void RotateAny()

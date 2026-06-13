@@ -14,7 +14,14 @@ public class ProtoMain : MonoBehaviour
     public int Wave { get; private set; } = 1;
     public Canvas Canvas { get; private set; }
     public bool BgmEnabled { get; private set; }
-    public bool AtbMode { get; private set; } // true=アクティブタイムバトル / false=ターン制
+
+    // ===== プロト検証用の戦闘設定（PlayerPrefsで永続化）=====
+    public bool ChainEnabled { get; private set; }   // 通電連鎖 ON/OFF
+    public bool ChainCorner { get; private set; }    // true=頂点対角接（ブロックス式）/ false=辺隣接
+    public bool FlashEnabled { get; private set; }   // 順次点滅チャレンジ ON/OFF
+    public int  FlashThreshold { get; private set; } // 順次点滅の発動マス数（10 or 15）
+    public float ChainCritMult { get; private set; } // 通電クリティカル倍率
+    public float FlashCritMult { get; private set; } // 順次点滅クリティカル倍率
 
     // パーティ（1人目はMAMA固定、最大3人）
     public System.Collections.Generic.List<PartyMember> Party { get; private set; }
@@ -44,11 +51,12 @@ public class ProtoMain : MonoBehaviour
         return true;
     }
 
-    public void SetAtbMode(bool on)
-    {
-        AtbMode = on;
-        PlayerPrefs.SetInt("atb", on ? 1 : 0);
-    }
+    public void SetChainEnabled(bool on)   { ChainEnabled = on; PlayerPrefs.SetInt("chain", on ? 1 : 0); }
+    public void SetChainCorner(bool on)    { ChainCorner = on;  PlayerPrefs.SetInt("chainCorner", on ? 1 : 0); }
+    public void SetFlashEnabled(bool on)   { FlashEnabled = on; PlayerPrefs.SetInt("flash", on ? 1 : 0); }
+    public void SetFlashThreshold(int n)   { FlashThreshold = n; PlayerPrefs.SetInt("flashTh", n); }
+    public void SetChainCritMult(float m)  { ChainCritMult = Mathf.Clamp(m, 1.0f, 2.0f); PlayerPrefs.SetFloat("chainMult", ChainCritMult); }
+    public void SetFlashCritMult(float m)  { FlashCritMult = Mathf.Clamp(m, 1.0f, 2.0f); PlayerPrefs.SetFloat("flashMult", FlashCritMult); }
 
     BuildScreen _build;
     ProtoBattle _battle;
@@ -87,8 +95,13 @@ public class ProtoMain : MonoBehaviour
         _map.Init(this);
         _menu.Init(this);
 
-        // 設定の復元
-        AtbMode = PlayerPrefs.GetInt("atb", 0) == 1;
+        // 設定の復元（プロト検証用の戦闘設定）
+        ChainEnabled = PlayerPrefs.GetInt("chain", 1) == 1;
+        ChainCorner  = PlayerPrefs.GetInt("chainCorner", 0) == 1;
+        FlashEnabled = PlayerPrefs.GetInt("flash", 1) == 1;
+        FlashThreshold = PlayerPrefs.GetInt("flashTh", 10);
+        ChainCritMult = PlayerPrefs.GetFloat("chainMult", 1.3f);
+        FlashCritMult = PlayerPrefs.GetFloat("flashMult", 1.3f);
 
         // パーティの復元（最低1人=MAMA）。盤面もメンバーごとの形で生成
         // ※セーブの盤面復元より先にやる必要がある

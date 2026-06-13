@@ -43,8 +43,6 @@ public class ProtoBattle : MonoBehaviour
     List<List<ProtoSkill>> _hands = new List<List<ProtoSkill>>(); // メンバーごとの手札（各3枚）
     bool[] _acted; // ターン制: そのメンバーが行動済みか
     bool _inputLocked;
-    int _challengeAnswer; // -1=時間切れ, それ以外=選んだ数
-    bool _challengeDone;
 
     AudioSource _sfx;
     AudioClip[] _hitClips;
@@ -76,31 +74,27 @@ public class ProtoBattle : MonoBehaviour
         StopAllCoroutines();
         Time.timeScale = 1f; // ヒットストップ中に戻ってもスローのまま固まらないように
         _inputLocked = false;
-        _enemyActing = false;
         _root.gameObject.SetActive(false);
     }
 
     ProtoEnemy _enemy; // 今戦っている敵
     int _effWave;      // 敵の実効レベル（Wave + ボスのレベル補正）
 
-    // --- ATB（アクティブタイムバトル）---
-    bool _atb;            // 設定でON/OFF
-    float _atbTimer;      // 敵の攻撃ゲージ
-    bool _enemyActing;    // 敵の攻撃演出中
-    Image _atbFill, _atbBg;
-    TextMeshProUGUI _atbLabel;
     RectTransform _enemyShadow; // 地上の敵の足元の影（飛行する敵にはつけない）
-    const float AtbGaugeWidth = 250f;
+
+    // --- 通電連鎖の状態 ---
+    // メンバーごとに「充電された配置」の集合（戦闘中のみ。戦闘開始でクリア）
+    List<HashSet<PanelModel.Placement>> _charged = new List<HashSet<PanelModel.Placement>>();
+    // 通電起点の選択結果
+    PanelModel.Placement _chainSource;
+    bool _chainWasCharged;
+
+    // --- 一時バフの状態（メンバー別・残ターン付き）---
+    int[] _buffAtk, _buffDef, _buffTurns;
 
     public void Begin(ProtoEnemy enemy)
     {
         _enemy = enemy;
-        _atb = _main.AtbMode;
-        _atbTimer = 0f;
-        _enemyActing = false;
-        _atbBg.gameObject.SetActive(_atb);
-        _atbLabel.gameObject.SetActive(_atb);
-        ProtoUI.SetGauge(_atbFill, 0f, AtbGaugeWidth);
 
         _root.gameObject.SetActive(true);
         _resultRoot.gameObject.SetActive(false);
@@ -143,19 +137,26 @@ public class ProtoBattle : MonoBehaviour
         _decks.Clear();
         _hands.Clear();
         _acted = new bool[_main.Party.Count];
+
+        // 通電・バフ状態を初期化（戦闘ごとにリセット）
+        _charged.Clear();
+        int pn = _main.Party.Count;
+        _buffAtk = new int[pn];
+        _buffDef = new int[pn];
+        _buffTurns = new int[pn];
+
         for (int m = 0; m < _main.Party.Count; m++)
         {
             _decks.Add(Shuffle(_main.Panels[m].BuildDeck()));
             var hand = new List<ProtoSkill>();
             for (int i = 0; i < HandSize; i++) hand.Add(Draw(m));
             _hands.Add(hand);
+            _charged.Add(new HashSet<PanelModel.Placement>());
         }
 
         _inputLocked = false;
         RefreshAll(dealAnimation: true);
-        _message.text = _atb
-            ? "カードを選ぼう！（敵はゲージが満ちると攻撃してくる！）"
-            : "あなたのターン！カードを選ぼう！";
+        _message.text = "あなたのターン！カードを選ぼう！";
     }
 
     // ==================== UI構築 ====================
@@ -185,13 +186,6 @@ public class ProtoBattle : MonoBehaviour
             new Color(0.15f, 0.12f, 0.2f), new Color(1f, 0.35f, 0.35f), out _enemyFill);
         _enemyHPText = ProtoUI.CreateText("EHP", _root, "", 17, new Vector2(560, 370), new Vector2(300, 26));
         _enemyHPText.fontStyle = TMPro.FontStyles.Bold;
-
-        // ATBモード用: 敵の攻撃ゲージ（HPバーのすぐ下に独立した行で表示）
-        _atbLabel = ProtoUI.CreateText("AtbLabel", _root, "次の攻撃", 15,
-            new Vector2(405, 350), new Vector2(110, 22), new Color(1f, 0.8f, 0.45f));
-        _atbLabel.fontStyle = TMPro.FontStyles.Bold;
-        _atbBg = ProtoUI.CreateGauge("AtbGauge", _root, new Vector2(595, 350), new Vector2(AtbGaugeWidth, 16),
-            new Color(0.1f, 0.08f, 0.15f), new Color(1f, 0.78f, 0.2f), out _atbFill);
 
         // Wave＆山札カウンタ（上部中央）
         _deckText = ProtoUI.CreateText("Deck", _root, "", 21, new Vector2(0, 408), new Vector2(500, 34));
@@ -232,7 +226,7 @@ public class ProtoBattle : MonoBehaviour
         _pieceArea = ProtoUI.CreateRect("PieceArea", _challengeRoot);
         _pieceArea.anchoredPosition = new Vector2(0, 40);
         _challengeInput = ProtoUI.CreateInputField("AnswerInput", _challengeRoot, new Vector2(0, -200), new Vector2(240, 70), 32);
-        _challengeInput.onSubmit.AddListener(OnChallengeSubmit);
+        _challengeInput.gameObject.SetActive(false); // 旧:数値入力。順次点滅では使わない
         ProtoUI.CreateGauge("Timer", _challengeRoot, new Vector2(0, -290), new Vector2(500, 14),
             new Color(0.2f, 0.18f, 0.28f), new Color(1f, 0.85f, 0.3f), out _timerFill);
 
@@ -394,7 +388,7 @@ public class ProtoBattle : MonoBehaviour
         return img;
     }
 
-    // 待機中のアイドルアニメ（呼吸のゆれ）＋Escで逃げる＋ATBゲージ
+    // 待機中のアイドルアニメ（呼吸のゆれ）＋Escで逃げる
     void Update()
     {
         if (_root == null || !_root.gameObject.activeSelf) return;
@@ -428,45 +422,6 @@ public class ProtoBattle : MonoBehaviour
             // 敵: ふわふわ浮遊（位相をずらして同期感をなくす）
             _enemyInner.anchoredPosition = new Vector2(0, Mathf.Sin(t * 2.1f + 1.7f) * 9f);
         }
-
-        // ===== ATB: 敵の攻撃ゲージを進める =====
-        // 止まる条件: 点滅チャレンジ中 / 自分の行動中 / 敵の行動中 / 勝敗決定後
-        if (_atb && _enemy != null
-            && !_challengeRoot.gameObject.activeSelf
-            && !_resultRoot.gameObject.activeSelf
-            && !_inputLocked && !_enemyActing
-            && _playerHP > 0 && _enemyHP > 0)
-        {
-            _atbTimer += Time.deltaTime;
-            ProtoUI.SetGauge(_atbFill, _atbTimer / _enemy.atbInterval, AtbGaugeWidth);
-            if (_atbTimer >= _enemy.atbInterval)
-                StartCoroutine(AtbEnemyAct());
-        }
-    }
-
-    // ATB: ゲージが満ちた敵の攻撃
-    IEnumerator AtbEnemyAct()
-    {
-        _enemyActing = true;
-        _inputLocked = true;
-        RefreshHand();
-
-        yield return EnemyAttackSequence();
-
-        _atbTimer = 0f;
-        ProtoUI.SetGauge(_atbFill, 0f, AtbGaugeWidth);
-
-        if (_playerHP <= 0)
-        {
-            ShowDefeat();
-            _enemyActing = false;
-            yield break;
-        }
-
-        _inputLocked = false;
-        RefreshHand();
-        _enemyActing = false;
-        _message.text = "カードを選ぼう！";
     }
 
     // ==================== モーション＆エフェクト ====================
@@ -1125,7 +1080,7 @@ public class ProtoBattle : MonoBehaviour
 
             // メンバー名のヘッダー（行動済み/戦闘不能で表示が変わる）
             bool downed = _memberHP != null && m < _memberHP.Length && _memberHP[m] <= 0;
-            bool actedDone = !_atb && _acted != null && _acted[m];
+            bool actedDone = _acted != null && _acted[m];
             string headerText = downed ? $"{party[m].name}（戦闘不能）"
                 : actedDone ? $"{party[m].name}（行動済み）" : party[m].name;
             var header = ProtoUI.CreateText($"Header{m}", _handArea, headerText, 18,
@@ -1140,7 +1095,11 @@ public class ProtoBattle : MonoBehaviour
             {
                 int mi = m, idx = i;
                 Vector2 finalPos = new Vector2(xs + i * cardW, 0);
-                var btn = CreateCardUI(hand[i], finalPos, () => OnCardClicked(mi, idx));
+                // 通電ON時、このカードのスキルに充電済みの配置があれば⚡バッジを出す
+                bool charged = _main.ChainEnabled && hand[i] != null
+                    && _charged != null && m < _charged.Count
+                    && _main.Panels[m].Placements.Exists(p => p.skill == hand[i] && _charged[m].Contains(p));
+                var btn = CreateCardUI(hand[i], finalPos, () => OnCardClicked(mi, idx), charged);
                 btn.transform.localScale = Vector3.one * scale;
                 btn.interactable = !_inputLocked && !actedDone && !downed;
 
@@ -1177,15 +1136,15 @@ public class ProtoBattle : MonoBehaviour
     }
 
     // トレーディングカード風のカードUI（金フレーム＋名前帯＋アート枠＋威力帯）
-    Button CreateCardUI(ProtoSkill skill, Vector2 pos, System.Action onClick)
+    Button CreateCardUI(ProtoSkill skill, Vector2 pos, System.Action onClick, bool charged = false)
     {
         string cardName = skill == null ? "通常攻撃" : skill.skillName;
         int power = skill == null ? ProtoSkills.NormalAttackPower : skill.power;
         Color accent = skill == null ? new Color(0.5f, 0.5f, 0.58f) : skill.color;
 
-        // 外枠（金フレーム）
+        // 外枠（金フレーム。充電中は黄色く光る縁取りに）
         var frame = ProtoUI.CreatePanel("Card", _handArea, pos, new Vector2(200, 272),
-            new Color(0.66f, 0.55f, 0.34f));
+            charged ? new Color(1f, 0.85f, 0.3f) : new Color(0.66f, 0.55f, 0.34f));
         var btn = frame.gameObject.AddComponent<Button>();
         btn.targetGraphic = frame;
         btn.onClick.AddListener(() => onClick());
@@ -1253,6 +1212,17 @@ public class ProtoBattle : MonoBehaviour
         var powerText = ProtoUI.CreateText("Power", footer.transform, $"威力 {power}", 17, Vector2.zero, new Vector2(174, 30));
         ProtoUI.StyleTitle(powerText, ProtoUI.Gold, 2f);
 
+        // 充電中バッジ（通電連鎖：使うとクリティカル）
+        if (charged)
+        {
+            var chargeBadge = ProtoUI.CreatePanel("ChargeBadge", frame.transform, new Vector2(0, 150), new Vector2(150, 26),
+                new Color(0.95f, 0.8f, 0.2f));
+            chargeBadge.raycastTarget = false;
+            var bt = ProtoUI.CreateText("ChargeText", chargeBadge.transform, "⚡充電中", 16, Vector2.zero, new Vector2(150, 26),
+                new Color(0.2f, 0.12f, 0f));
+            bt.fontStyle = TMPro.FontStyles.Bold;
+        }
+
         return btn;
     }
 
@@ -1262,7 +1232,7 @@ public class ProtoBattle : MonoBehaviour
     {
         if (_inputLocked) return;
         if (_memberHP != null && _memberHP[member] <= 0) return; // 戦闘不能メンバーは動けない
-        if (!_atb && _acted[member]) return; // ターン制: 行動済みメンバーは選べない
+        if (_acted[member]) return; // 行動済みメンバーは選べない
         _inputLocked = true;
         RefreshHand();
         StartCoroutine(PlayCard(member, index));
@@ -1277,13 +1247,25 @@ public class ProtoBattle : MonoBehaviour
         var skill = _hands[member][index];
         _hands[member].RemoveAt(index);
 
-        float multiplier = 1f;
+        float chainMult = 1f, flashMult = 1f;
+        _chainSource = null; _chainWasCharged = false;
         int basePower = skill == null ? ProtoSkills.NormalAttackPower : skill.power;
 
         if (skill != null)
         {
-            yield return RunChallenge(skill);
-            multiplier = _challengeMultiplier;
+            // ① 通電連鎖: 起点ピースを決定（充電済みならクリティカル）
+            if (_main.ChainEnabled)
+            {
+                yield return SelectChainSource(member, skill);
+                if (_chainWasCharged) chainMult = _main.ChainCritMult;
+            }
+
+            // ② 順次点滅チャレンジ: 発動条件を満たす大型ピースのみ
+            if (_main.FlashEnabled && skill.Size >= _main.FlashThreshold)
+            {
+                yield return RunChallenge(skill);
+                flashMult = _challengeMultiplier;
+            }
         }
         else
         {
@@ -1291,10 +1273,27 @@ public class ProtoBattle : MonoBehaviour
             yield return new WaitForSeconds(0.5f);
         }
 
+        float multiplier = chainMult * flashMult;
+        bool isCritical = multiplier > 1.01f;
+
+        // 回復・バフは敵を攻撃しない別処理へ分岐
+        if (skill != null && skill.kind == SkillKind.Heal)
+        {
+            yield return ResolveHeal(member, skill, multiplier);
+            yield return AfterAction(member, skill);
+            yield break;
+        }
+        if (skill != null && skill.kind == SkillKind.Buff)
+        {
+            yield return ResolveBuff(member, skill);
+            yield return AfterAction(member, skill);
+            yield break;
+        }
+
         // 技ごとの攻撃モーション → ヒットエフェクト（ダメージ数値付き）
-        // ダメージ = (カード威力 + 行動メンバーの攻撃力) × 倍率
-        bool isCritical = multiplier >= 2f;
-        int damage = Mathf.RoundToInt((basePower + _main.MemberStats[member].Attack) * multiplier);
+        // ダメージ = (カード威力 + 行動メンバーの攻撃力 + バフ) × 倍率
+        int atkStat = _main.MemberStats[member].Attack + (_buffAtk != null ? _buffAtk[member] : 0);
+        int damage = Mathf.RoundToInt((basePower + atkStat) * multiplier);
         yield return AttackMotionFor(skill);
         yield return Impact(_slimeRt, _slimeImg, skill, damage, multiplier);
 
@@ -1324,18 +1323,17 @@ public class ProtoBattle : MonoBehaviour
             yield break;
         }
 
-        if (_atb)
-        {
-            // ATBモード: 敵のターンはなし（敵はタイマーで勝手に攻撃してくる）
-            // 使ったメンバーの手札だけ補充する
-            _hands[member].Add(Draw(member));
-            _inputLocked = false;
-            RefreshAll();
-            _message.text = "カードを選ぼう！（敵はゲージが満ちると攻撃してくる！）";
-            yield break;
-        }
+        yield return AfterAction(member, skill);
+    }
 
-        // ターン制: このメンバーは行動済みに。まだ動けるメンバー（生存＆未行動）がいれば続行
+    // カード1枚の解決後の共通処理（攻撃/回復/バフ共通）:
+    // 通電の伝播 → このメンバーを行動済みに → 全員行動したら敵のターン → 補充
+    IEnumerator AfterAction(int member, ProtoSkill skill)
+    {
+        // 通電の伝播（充電を消費し、起点ピースの隣接を充電）
+        ApplyChainPropagation(member);
+
+        // このメンバーは行動済みに。まだ動けるメンバー（生存＆未行動）がいれば続行
         _acted[member] = true;
         bool allActed = true;
         for (int m = 0; m < _acted.Length; m++)
@@ -1360,6 +1358,9 @@ public class ProtoBattle : MonoBehaviour
             yield break;
         }
 
+        // ターン経過: バフの残ターンを減らす
+        TickBuffs();
+
         // 全員の手札を補充して次のターンへ
         for (int m = 0; m < _hands.Count; m++)
         {
@@ -1369,6 +1370,189 @@ public class ProtoBattle : MonoBehaviour
         _inputLocked = false;
         RefreshAll(dealAnimation: true);
         _message.text = "あなたのターン！カードを選ぼう！";
+    }
+
+    // ==================== 回復・バフ・通電連鎖 ====================
+
+    // 回復スキル: 最もHP割合が低い生存メンバーを回復（倍率で回復量が増える）
+    IEnumerator ResolveHeal(int member, ProtoSkill skill, float multiplier)
+    {
+        // 回復対象 = HP割合が最も低い生存メンバー（自分含む）
+        int target = member;
+        float worst = 2f;
+        for (int i = 0; i < _memberHP.Length; i++)
+        {
+            if (_memberHP[i] <= 0) continue;
+            float ratio = _memberHP[i] / (float)_main.MemberStats[i].MaxHP;
+            if (ratio < worst) { worst = ratio; target = i; }
+        }
+
+        int heal = Mathf.RoundToInt(skill.power * multiplier);
+        _message.text = $"{_main.Party[member].name}の{skill.skillName}！";
+        yield return Pulse(_actorRt, 1.12f, 0.25f);
+        StartCoroutine(FlashSprite(_memberImgs[target], new Color(0.5f, 1f, 0.7f)));
+
+        int max = _main.MemberStats[target].MaxHP;
+        _memberHP[target] = Mathf.Min(max, _memberHP[target] + heal);
+        _playerHP = 0; foreach (var hp in _memberHP) _playerHP += hp;
+
+        Vector2 pop = _memberRts[target].anchoredPosition + new Vector2(0, _memberRts[target].sizeDelta.y * 0.5f + 40f);
+        StartCoroutine(DamagePopup(pop, heal, multiplier > 1.01f ? 1.5f : 1f));
+        bool crit = multiplier > 1.01f;
+        _message.text = $"{(crit ? "クリティカル！" : "")}{_main.Party[target].name}のHPが {heal} 回復！";
+        RefreshAll();
+        yield return new WaitForSeconds(1f);
+    }
+
+    // バフスキル: 行動メンバーに一時的な攻撃・防御上昇を付与
+    IEnumerator ResolveBuff(int member, ProtoSkill skill)
+    {
+        _buffAtk[member] += skill.buffAtk;
+        _buffDef[member] += skill.buffDef;
+        _buffTurns[member] = Mathf.Max(_buffTurns[member], skill.buffTurns);
+
+        _message.text = $"{_main.Party[member].name}の{skill.skillName}！";
+        yield return Pulse(_actorRt, 1.15f, 0.3f);
+        StartCoroutine(FlashSprite(_actorImg, new Color(0.6f, 0.85f, 1f)));
+        SpawnBurst(_actorRt.anchoredPosition, skill.color, 14, 120f);
+        _message.text = $"{_main.Party[member].name}の攻撃+{skill.buffAtk} 防御+{skill.buffDef}（{skill.buffTurns}ターン）！";
+        RefreshAll();
+        yield return new WaitForSeconds(1f);
+    }
+
+    // ターン終了時にバフの残ターンを減らし、切れたら効果を消す
+    void TickBuffs()
+    {
+        if (_buffTurns == null) return;
+        for (int i = 0; i < _buffTurns.Length; i++)
+        {
+            if (_buffTurns[i] <= 0) continue;
+            _buffTurns[i]--;
+            if (_buffTurns[i] <= 0) { _buffAtk[i] = 0; _buffDef[i] = 0; }
+        }
+    }
+
+    // 通電: 使ったスキルの配置の中から起点を決める（充電済みなら自動/それ以外は盤面で選択）
+    IEnumerator SelectChainSource(int member, ProtoSkill skill)
+    {
+        _chainSource = null; _chainWasCharged = false;
+
+        var candidates = _main.Panels[member].Placements.FindAll(p => p.skill == skill);
+        if (candidates.Count == 0) yield break; // 盤面に無い（通常攻撃など）
+
+        var chargedCandidates = candidates.FindAll(p => _charged[member].Contains(p));
+
+        if (candidates.Count == 1)
+        {
+            _chainSource = candidates[0];
+        }
+        else if (chargedCandidates.Count == 1)
+        {
+            // 充電済みが1つだけ → 自動で選択
+            _chainSource = chargedCandidates[0];
+        }
+        else
+        {
+            // 複数候補 → 盤面オーバーレイでプレイヤーがタップ選択
+            yield return ChooseChainPlacement(member, skill, candidates);
+        }
+
+        if (_chainSource != null)
+            _chainWasCharged = _charged[member].Contains(_chainSource);
+    }
+
+    // 通電の伝播: 起点の充電を消費し、隣接する配置を充電する
+    void ApplyChainPropagation(int member)
+    {
+        if (!_main.ChainEnabled || _chainSource == null) return;
+
+        // 起点が充電済みだったら消費（クリティカルに使ったので放電）
+        _charged[member].Remove(_chainSource);
+
+        // 起点に隣接する別の配置を充電（辺接 or 頂点接は設定で切替）
+        foreach (var p in _main.Panels[member].Placements)
+        {
+            if (p == _chainSource) continue;
+            if (ArePlacementsAdjacent(_chainSource, p, _main.ChainCorner))
+                _charged[member].Add(p);
+        }
+    }
+
+    // 2つの配置が隣接しているか（corner=true: 頂点対角接も許可 / false: 辺接のみ）
+    bool ArePlacementsAdjacent(PanelModel.Placement a, PanelModel.Placement b, bool corner)
+    {
+        foreach (var ca in a.cells)
+            foreach (var cb in b.cells)
+            {
+                int dx = Mathf.Abs(ca.x - cb.x), dy = Mathf.Abs(ca.y - cb.y);
+                if (corner)
+                {
+                    if (dx <= 1 && dy <= 1 && (dx + dy) > 0) return true; // 8近傍
+                }
+                else
+                {
+                    if (dx + dy == 1) return true; // 4近傍（辺接）
+                }
+            }
+        return false;
+    }
+
+    // 複数候補があるとき、盤面オーバーレイで起点ピースをタップ選択させる
+    IEnumerator ChooseChainPlacement(int member, ProtoSkill skill, List<PanelModel.Placement> candidates)
+    {
+        var panel = _main.Panels[member];
+        PanelModel.Placement picked = null;
+
+        var root = ProtoUI.CreateFullScreen("ChainSelect", _root);
+        var dim = root.gameObject.AddComponent<Image>();
+        dim.color = new Color(0, 0, 0, 0.8f);
+
+        ProtoUI.CreateText("CTitle", root,
+            $"「{skill.skillName}」を使う配置を選択（金枠=充電済み）", 26,
+            new Vector2(0, 320), new Vector2(1100, 46), new Color(1f, 0.9f, 0.6f));
+
+        float cs = 32f, gap = 3f, unit = cs + gap;
+        var board = ProtoUI.CreateRect("CBoard", root);
+        board.anchoredPosition = new Vector2(0, -10);
+
+        for (int y = 0; y < panel.H; y++)
+            for (int x = 0; x < panel.W; x++)
+            {
+                if (!panel.IsValid(x, y)) continue;
+                var p = panel.GetAt(x, y);
+                Vector2 pos = new Vector2(x * unit - (panel.W - 1) * unit / 2f,
+                                          -(y * unit - (panel.H - 1) * unit / 2f));
+                Color col = p == null ? new Color(0.16f, 0.14f, 0.24f) : p.skill.color;
+
+                bool isCandidate = p != null && candidates.Contains(p);
+                bool isCharged = p != null && _charged[member].Contains(p);
+                if (isCharged) col = Color.Lerp(col, new Color(1f, 0.85f, 0.3f), 0.5f);
+                if (isCandidate) col = Color.Lerp(col, Color.white, 0.25f);
+
+                var cell = ProtoUI.CreatePanel($"CC_{x}_{y}", board, pos, new Vector2(cs, cs), col);
+
+                if (isCandidate)
+                {
+                    // 候補ピースのマスをボタン化（金枠で強調）
+                    var border = ProtoUI.CreatePanel("Bd", board, pos, new Vector2(cs + 4, cs + 4),
+                        isCharged ? new Color(1f, 0.85f, 0.3f) : new Color(0.9f, 0.9f, 0.95f));
+                    border.transform.SetAsFirstSibling();
+                    var btn = cell.gameObject.AddComponent<Button>();
+                    btn.targetGraphic = cell;
+                    var sel = p;
+                    btn.onClick.AddListener(() => picked = sel);
+                }
+                else
+                {
+                    cell.raycastTarget = false;
+                }
+            }
+
+        // タップされるまで待つ
+        while (picked == null) yield return null;
+
+        _chainSource = picked;
+        Destroy(root.gameObject);
     }
 
     // 敵の攻撃1回ぶん（技を抽選 → 連続ヒット対応 → 回避/防御判定）両モード共通
@@ -1407,7 +1591,8 @@ public class ProtoBattle : MonoBehaviour
 
             int raw = Mathf.RoundToInt(Random.Range(_enemy.minAtk, _enemy.maxAtk + 1) * atk.mult)
                       + 3 * (_effWave - 1);
-            int dmg = Mathf.Max(1, raw - targetStats.Defense);
+            int defStat = targetStats.Defense + (_buffDef != null ? _buffDef[target] : 0);
+            int dmg = Mathf.Max(1, raw - defStat);
             bool dodged = Random.Range(0, 100) < targetStats.Speed * 2; // 素早さ×2 %で回避
 
             if (dodged)
@@ -1448,98 +1633,113 @@ public class ProtoBattle : MonoBehaviour
         _resultRoot.gameObject.SetActive(true);
     }
 
-    // ==================== 点滅カウント・チャレンジ ====================
+    // ==================== 順次点滅チャレンジ（Simon式：順番・位置の再現） ====================
 
     float _challengeMultiplier;
+    const float FlashOnTime = 0.45f;   // 1マスの点灯時間
+    const float FlashGapTime = 0.18f;  // 点灯と点灯の間（合計 <3Hz で光過敏性配慮）
 
     IEnumerator RunChallenge(ProtoSkill skill)
     {
         _challengeRoot.gameObject.SetActive(true);
-        _challengePrompt.text = $"「{skill.skillName}」発動！　光るマスを数えろ…！";
-        _challengeInput.gameObject.SetActive(false);
+        _challengeInput.gameObject.SetActive(false); // 数値入力は使わない（タップ再現方式）
+        _challengePrompt.text = $"「{skill.skillName}」発動！　光る順番を覚えろ…！";
         ProtoUI.SetGauge(_timerFill, 1f, 500f);
 
-        // ピース形状を中央に描画
+        // ピース形状を中央に描画（マスをタップできるようButton化）
         foreach (Transform c in _pieceArea) Destroy(c.gameObject);
         var cellImages = new List<Image>();
-        float cs = 56f, gap = 5f;
+        var baseColors = new List<Color>();
+        float cs = 54f, gap = 5f;
         int minX = skill.shape.Min(v => v.x), minY = skill.shape.Min(v => v.y);
         int maxX = skill.shape.Max(v => v.x), maxY = skill.shape.Max(v => v.y);
         float ox = -(maxX - minX) * (cs + gap) / 2f;
         float oy = (maxY - minY) * (cs + gap) / 2f;
-        foreach (var v in skill.shape)
+
+        var playerTaps = new List<int>();
+        bool inputOpen = false;
+
+        for (int i = 0; i < skill.shape.Length; i++)
         {
+            var v = skill.shape[i];
+            Color baseCol = Color.Lerp(skill.color, Color.black, 0.45f);
             var img = ProtoUI.CreatePanel("PCell", _pieceArea,
                 new Vector2(ox + (v.x - minX) * (cs + gap), oy - (v.y - minY) * (cs + gap)),
-                new Vector2(cs, cs), Color.Lerp(skill.color, Color.black, 0.45f));
+                new Vector2(cs, cs), baseCol);
             cellImages.Add(img);
+            baseColors.Add(baseCol);
+
+            int idx = i;
+            var btn = img.gameObject.AddComponent<Button>();
+            btn.targetGraphic = img;
+            btn.onClick.AddListener(() =>
+            {
+                if (!inputOpen) return;
+                playerTaps.Add(idx);
+                StartCoroutine(TapFeedback(img, baseColors[idx])); // タップしたマスを一瞬光らせる
+            });
         }
 
         yield return new WaitForSeconds(0.7f);
 
-        // 単発フラッシュ（点滅は1回のみ・0.5秒。光過敏性ガイドライン準拠）
-        int flashCount = Random.Range(1, skill.Size + 1);
-        var order = Enumerable.Range(0, cellImages.Count).OrderBy(_ => Random.value).ToList();
-        var flashed = order.Take(flashCount).Select(i => cellImages[i]).ToList();
-        var original = flashed.Select(img => img.color).ToList();
-        foreach (var img in flashed) img.color = Color.white;
-        yield return new WaitForSeconds(FlashDuration);
-        for (int i = 0; i < flashed.Count; i++) flashed[i].color = original[i];
+        // 点灯シーケンスを生成（マス数が多いほど長い。順番・位置の両方を覚える）
+        int seqLen = Mathf.Clamp(Mathf.RoundToInt(skill.Size * 0.5f), 4, 8);
+        seqLen = Mathf.Min(seqLen, cellImages.Count);
+        var seq = new List<int>();
+        var pool = Enumerable.Range(0, cellImages.Count).OrderBy(_ => Random.value).ToList();
+        for (int i = 0; i < seqLen; i++) seq.Add(pool[i]); // 重複なしの順番
 
-        // 手入力（キーボードで数字を打ってEnter）
-        _challengePrompt.text = "何マス光った？　数字を入力してEnter！";
-        _challengeAnswer = -1;
-        _challengeDone = false;
+        // 順番に1マスずつ点灯（Simon式の提示フェーズ）
+        for (int i = 0; i < seq.Count; i++)
+        {
+            int ci = seq[i];
+            cellImages[ci].color = Color.white;
+            yield return new WaitForSeconds(FlashOnTime);
+            cellImages[ci].color = baseColors[ci];
+            yield return new WaitForSeconds(FlashGapTime);
+        }
 
-        _challengeInput.gameObject.SetActive(true);
-        _challengeInput.text = "";
-        _challengeInput.ActivateInputField();
+        // 再現フェーズ：同じ順番でタップ
+        _challengePrompt.text = $"同じ順番で {seqLen} マスをタップ！";
+        inputOpen = true;
 
-        // 制限時間
-        float remaining = AnswerTime;
-        while (remaining > 0f && !_challengeDone)
+        float remaining = AnswerTime + seqLen * 0.6f; // 長いシーケンスほど時間に余裕を持たせる
+        float total = remaining;
+        while (remaining > 0f && playerTaps.Count < seqLen)
         {
             remaining -= Time.deltaTime;
-            ProtoUI.SetGauge(_timerFill, remaining / AnswerTime, 500f);
+            ProtoUI.SetGauge(_timerFill, remaining / total, 500f);
             yield return null;
         }
+        inputOpen = false;
 
-        // 倍率判定
-        string msg;
-        if (_challengeAnswer < 0)
+        // 採点：先頭から連続して正解できた数で倍率を決める
+        int correct = 0;
+        for (int i = 0; i < seqLen && i < playerTaps.Count; i++)
         {
-            _challengeMultiplier = 1f;
-            msg = $"時間切れ！正解は {flashCount}。通常威力！";
+            if (playerTaps[i] == seq[i]) correct++;
+            else break;
         }
-        else
-        {
-            int diff = Mathf.Abs(_challengeAnswer - flashCount);
-            _challengeMultiplier = diff == 0 ? 2f : diff == 1 ? 1.5f : diff == 2 ? 1.2f : 1f;
-            msg = diff == 0
-                ? $"ジャスト {flashCount}！クリティカル！！（威力200%）"
-                : $"正解は {flashCount}（{diff}ずれ）→ 威力{Mathf.RoundToInt(_challengeMultiplier * 100)}%";
-        }
+        float frac = seqLen > 0 ? correct / (float)seqLen : 0f;
+        _challengeMultiplier = Mathf.Lerp(1f, _main.FlashCritMult, frac);
 
+        // 正解の順番をハイライトしながら結果表示
+        string msg = correct >= seqLen
+            ? $"パーフェクト！クリティカル！（威力{Mathf.RoundToInt(_challengeMultiplier * 100)}%）"
+            : correct == 0
+                ? "失敗…通常威力"
+                : $"{correct}/{seqLen} 正解 → 威力{Mathf.RoundToInt(_challengeMultiplier * 100)}%";
         _challengePrompt.text = msg;
-        _challengeInput.DeactivateInputField();
-        _challengeInput.gameObject.SetActive(false);
+
         yield return new WaitForSeconds(1.1f);
         _challengeRoot.gameObject.SetActive(false);
     }
 
-    void OnChallengeSubmit(string text)
+    // タップしたマスを一瞬だけ明るくするフィードバック
+    IEnumerator TapFeedback(Image img, Color baseCol)
     {
-        if (_challengeDone) return;
-        if (int.TryParse(text, out int value))
-        {
-            _challengeAnswer = value;
-            _challengeDone = true;
-        }
-        else
-        {
-            // 数字以外はクリアして再入力
-            _challengeInput.text = "";
-            _challengeInput.ActivateInputField();
-        }
+        img.color = Color.Lerp(baseCol, Color.white, 0.7f);
+        yield return new WaitForSeconds(0.15f);
+        img.color = baseCol;
     }
 }

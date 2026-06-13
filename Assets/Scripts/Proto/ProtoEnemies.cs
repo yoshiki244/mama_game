@@ -40,7 +40,7 @@ public static class ProtoEnemies
                 _all = new List<ProtoEnemy>
                 {
                     new ProtoEnemy { id = "slime",  enemyName = "スライム", sprite = ProtoPixelArt.Slime(),
-                        baseHP = 60,  minAtk = 6,  maxAtk = 12, battleSize = new Vector2(300, 200), mapSize = new Vector2(78, 52),
+                        baseHP = 160,  minAtk = 7,  maxAtk = 13, battleSize = new Vector2(300, 200), mapSize = new Vector2(78, 52),
                         atbInterval = 5.0f,
                         attacks = new[]
                         {
@@ -51,7 +51,7 @@ public static class ProtoEnemies
                             new EnemyAttack { name = "ようすを見ている", mult = 0f,  hits = 0, weight = 8 },
                         } },
                     new ProtoEnemy { id = "bat",    enemyName = "コウモリ", sprite = ProtoPixelArt.Bat(),
-                        baseHP = 45,  minAtk = 8,  maxAtk = 14, battleSize = new Vector2(310, 160), mapSize = new Vector2(80, 42),
+                        baseHP = 120,  minAtk = 9,  maxAtk = 15, battleSize = new Vector2(310, 160), mapSize = new Vector2(80, 42),
                         atbInterval = 3.5f, flying = true, // 素早いので攻撃間隔が短い
                         attacks = new[]
                         {
@@ -62,7 +62,7 @@ public static class ProtoEnemies
                             new EnemyAttack { name = "きりもみ突進",   mult = 1.3f,  hits = 1, weight = 8 },
                         } },
                     new ProtoEnemy { id = "golem",  enemyName = "ゴーレム", sprite = ProtoPixelArt.Golem(),
-                        baseHP = 140, minAtk = 10, maxAtk = 18, battleSize = new Vector2(430, 390), mapSize = new Vector2(66, 60),
+                        baseHP = 340, minAtk = 11, maxAtk = 19, battleSize = new Vector2(430, 390), mapSize = new Vector2(66, 60),
                         atbInterval = 6.5f, // 鈍重だが一発が重い
                         attacks = new[]
                         {
@@ -73,7 +73,7 @@ public static class ProtoEnemies
                             new EnemyAttack { name = "ちからをためている", mult = 0f, hits = 0, weight = 8 },
                         } },
                     new ProtoEnemy { id = "dragon", enemyName = "ドラゴン", sprite = ProtoPixelArt.Dragon(), mapSpriteOverride = ProtoPixelArt.DragonFront(),
-                        baseHP = 170, minAtk = 12, maxAtk = 20, battleSize = new Vector2(720, 440), mapSize = new Vector2(135, 82),
+                        baseHP = 620, minAtk = 13, maxAtk = 21, battleSize = new Vector2(720, 440), mapSize = new Vector2(135, 82),
                         atbInterval = 5.5f, flying = true,
                         levelOffset = 9, // 山頂のボス。序盤のレベルでは歯が立たない
                         attacks = new[]
@@ -85,7 +85,7 @@ public static class ProtoEnemies
                             new EnemyAttack { name = "天をあおいで咆哮した", mult = 0f, hits = 0, weight = 8 },
                         } },
                     new ProtoEnemy { id = "oni", enemyName = "オニ", sprite = ProtoPixelArt.Oni(),
-                        baseHP = 300, minAtk = 16, maxAtk = 24, battleSize = new Vector2(460, 530), mapSize = new Vector2(92, 106),
+                        baseHP = 680, minAtk = 17, maxAtk = 25, battleSize = new Vector2(460, 530), mapSize = new Vector2(92, 106),
                         atbInterval = 6.0f,
                         levelOffset = 4, // 風雨の森の中ボス
                         attacks = new[]
