@@ -2,15 +2,15 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<title>Project M プロトタイプ ソースコード解説</title>
+<title>Project M プロトタイプ ソースコード解説 v2</title>
 <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
 <style>
   body { font-family: "Yu Gothic UI", "Meiryo", sans-serif; line-height: 1.8; color: #222; max-width: 900px; margin: 0 auto; padding: 24px; }
   h1 { border-bottom: 3px solid #8662c7; padding-bottom: 8px; color: #4a2d7a; }
-  h2 { border-left: 6px solid #8662c7; padding-left: 10px; margin-top: 40px; color: #4a2d7a; page-break-after: avoid; }
-  h3 { color: #6a4aa0; margin-top: 24px; page-break-after: avoid; }
+  h2 { border-left: 6px solid #8662c7; padding-left: 10px; margin-top: 38px; color: #4a2d7a; page-break-after: avoid; }
+  h3 { color: #6a4aa0; margin-top: 22px; margin-bottom: 4px; page-break-after: avoid; }
   table { border-collapse: collapse; width: 100%; margin: 12px 0; font-size: 13px; }
-  th, td { border: 1px solid #bbb; padding: 6px 10px; text-align: left; }
+  th, td { border: 1px solid #bbb; padding: 5px 9px; text-align: left; }
   th { background: #efe8fa; }
   tr:nth-child(even) { background: #f7f4fc; }
   code { background: #f0ecf7; padding: 1px 5px; border-radius: 3px; font-size: 12px; }
@@ -23,65 +23,61 @@
 </head>
 <body>
 
-<h1>Project M プロトタイプ<br>ソースコード解説</h1>
-<p>C#を知らない人でも「どのファイルが何の係か」「処理がどう流れるか」がわかるように書いた資料です。</p>
+<h1>Project M プロトタイプ<br>ソースコード解説 v2</h1>
+<p>C#を知らない人でも「どのファイルが何の係か」「処理がどう流れるか」がわかるように書いた資料です。<br>（パーティ・3エリアマップ・ボス・ATB・サウンドまで反映した最新版）</p>
 
-<h2>1. ゲーム全体の画面構成</h2>
-<p>このゲームは4つの画面を行き来します。</p>
+<h2>1. このゲームは何ができる？</h2>
+<p>ローグライク育成カードバトル「Project M(仮)」のプリプロ版です。</p>
 <div class="mermaid">
 flowchart LR
-    MAP["🗺 マップ画面<br>歩き回る"] -->|敵にぶつかる| BATTLE["⚔ バトル画面<br>カードで戦う"]
-    BATTLE -->|勝利/敗北/逃げる| MAP
-    MAP -->|Bキー| MENU["📋 メニュー画面<br>ステータス/設定/セーブ"]
-    MENU -->|ビルドを選択| BUILD["🧩 ビルド画面<br>10×10盤面にピース配置"]
+    MAP["🗺 マップ画面<br>3エリアを歩く"] -->|敵に接触| BATTLE["⚔ バトル画面<br>カード＋点滅チャレンジ"]
+    BATTLE -->|勝利でEXP| MAP
+    MAP -->|Bキー| MENU["📋 メニュー<br>ステータス/仲間/設定/セーブ"]
+    MENU -->|ビルド| BUILD["🧩 ビルド画面<br>盤面にピース配置"]
     BUILD --> MENU
     MENU -->|閉じる| MAP
 </div>
+<p><b>3つのエリア</b>：草原（レベル上げ）→ 風雨の森（雨・中ボス「鬼」）→ 嵐の山頂（雷・ボス「ドラゴン」）。山頂のドラゴンは高レベルなので、草原で鍛えてから挑む構造です。</p>
 
-<h2>2. ソースファイル一覧（役割を一言で）</h2>
+<h2>2. ソースファイル一覧</h2>
 <p>すべて <code>Assets/Scripts/Proto/</code> にあります。</p>
 <table>
-<tr><th>ファイル</th><th>一言でいうと</th><th>例えるなら</th></tr>
-<tr><td><b>ProtoMain.cs</b></td><td>ゲーム全体の起動・画面切り替えの司令塔</td><td>劇場の支配人</td></tr>
-<tr><td><b>MapScreen.cs</b></td><td>マップ画面（移動・敵配置・エンカウント）</td><td>フィールドの管理人</td></tr>
-<tr><td><b>ProtoBattle.cs</b></td><td>バトル画面（ターン進行・演出・チャレンジ）</td><td>バトルの審判＋演出家</td></tr>
-<tr><td><b>BuildScreen.cs</b></td><td>ビルド画面（ピースの配置・回転・移動）</td><td>パズル盤の店主</td></tr>
-<tr><td><b>MenuScreen.cs</b></td><td>メニュー画面（ステータス・設定・セーブ）</td><td>受付窓口</td></tr>
-<tr><td><b>PanelModel.cs</b></td><td>10×10盤面の「データだけ」を管理</td><td>盤面の帳簿係</td></tr>
-<tr><td><b>ProtoSkills.cs</b></td><td>スキル6種の定義（名前・威力・ピース形状）</td><td>技のカタログ</td></tr>
-<tr><td><b>ProtoEnemies.cs</b></td><td>敵4種の定義（名前・HP・攻撃力・見た目）</td><td>モンスター図鑑</td></tr>
-<tr><td><b>PlayerStats.cs</b></td><td>MAMAの成長（レベル・EXP・4ステータス）</td><td>キャラの履歴書</td></tr>
-<tr><td><b>ProtoSave.cs</b></td><td>セーブ・ロード</td><td>金庫番</td></tr>
-<tr><td><b>ProtoAudio.cs</b></td><td>BGM・効果音をプログラムで自動生成</td><td>お抱え作曲家</td></tr>
-<tr><td><b>ProtoPixelArt.cs</b></td><td>ドット絵をプログラムで自動生成</td><td>お抱え絵師</td></tr>
-<tr><td><b>ProtoUI.cs</b></td><td>ボタンや文字を作る共通道具箱</td><td>大道具係</td></tr>
+<tr><th>ファイル</th><th>行数</th><th>一言でいうと</th><th>例えるなら</th></tr>
+<tr><td><b>ProtoMain.cs</b></td><td>185</td><td>起動・画面切替・BGM・パーティ管理の司令塔</td><td>劇場の支配人</td></tr>
+<tr><td><b>MapScreen.cs</b></td><td>594</td><td>3エリアのマップ（移動・敵・雨・雷・隊列）</td><td>フィールドの管理人</td></tr>
+<tr><td><b>ProtoBattle.cs</b></td><td>1355</td><td>バトル全部（ターン/ATB・演出・点滅チャレンジ）</td><td>バトルの審判＋演出家</td></tr>
+<tr><td><b>BuildScreen.cs</b></td><td>406</td><td>ビルド画面（メンバー別の盤面編集）</td><td>パズル盤の店主</td></tr>
+<tr><td><b>MenuScreen.cs</b></td><td>429</td><td>メニュー（ステータス/仲間/設定/セーブ）</td><td>受付窓口</td></tr>
+<tr><td><b>PanelModel.cs</b></td><td>174</td><td>盤面のデータと配置判定（形状対応）</td><td>盤面の帳簿係</td></tr>
+<tr><td><b>ProtoSkills.cs</b></td><td>47</td><td>スキル6種の定義</td><td>技のカタログ</td></tr>
+<tr><td><b>ProtoEnemies.cs</b></td><td>130</td><td>敵6種＋技・出現率の定義</td><td>モンスター図鑑</td></tr>
+<tr><td><b>ProtoParty.cs</b></td><td>47</td><td>仲間3人＋盤面形状の定義</td><td>仲間名簿</td></tr>
+<tr><td><b>PlayerStats.cs</b></td><td>34</td><td>レベル・EXP・4ステータスと成長</td><td>キャラの履歴書</td></tr>
+<tr><td><b>ProtoSave.cs</b></td><td>112</td><td>セーブ・ロード</td><td>金庫番</td></tr>
+<tr><td><b>ProtoAudio.cs</b></td><td>262</td><td>BGM4曲・効果音を波形から生成</td><td>お抱え作曲家</td></tr>
+<tr><td><b>ProtoPixelArt.cs</b></td><td>584</td><td>ドット絵・背景・マップタイルを生成</td><td>お抱え絵師</td></tr>
+<tr><td><b>ProtoUI.cs</b></td><td>167</td><td>ボタン・文字・ゲージを作る道具箱</td><td>大道具係</td></tr>
 </table>
-<p class="note">※ <code>Assets/Scripts/Battle/</code>・<code>GameData/</code>・<code>UI/</code> にある古いファイル群（BattleManager等）は、最初に作った練習用バトル（SampleScene用）です。現在のプロトでは使っていません。</p>
 
 <div class="pagebreak"></div>
 <h2>3. ファイル同士の相関図</h2>
-<p>「誰が誰に指示を出すか」の図です。矢印の向き＝「使う側 → 使われる側」。</p>
+<p>矢印の向き＝「使う側 → 使われる側」。</p>
 <div class="mermaid">
 flowchart TD
-    subgraph 司令塔
-        MAIN["ProtoMain<br>起動・画面切替・BGM"]
-    end
-    subgraph 画面たち
-        MAP[MapScreen]
-        BATTLE[ProtoBattle]
-        BUILD[BuildScreen]
-        MENU[MenuScreen]
-    end
-    subgraph データ・道具
-        PANEL["PanelModel<br>盤面データ"]
-        SKILL["ProtoSkills<br>技カタログ"]
-        ENEMY["ProtoEnemies<br>敵図鑑"]
-        STATS["PlayerStats<br>成長データ"]
-        SAVE["ProtoSave<br>セーブ"]
-        AUDIO["ProtoAudio<br>音の生成"]
-        ART["ProtoPixelArt<br>絵の生成"]
-        UI["ProtoUI<br>UI部品の道具箱"]
-    end
+    MAIN["ProtoMain<br>起動/画面切替/BGM/パーティ"]
+    MAP[MapScreen]
+    BATTLE[ProtoBattle]
+    BUILD[BuildScreen]
+    MENU[MenuScreen]
+    PANEL["PanelModel ×人数"]
+    STATS["PlayerStats ×人数"]
+    SKILL["ProtoSkills"]
+    ENEMY["ProtoEnemies"]
+    PARTY["ProtoParty"]
+    SAVE["ProtoSave"]
+    AUDIO["ProtoAudio"]
+    ART["ProtoPixelArt"]
+    UI["ProtoUI"]
     MAIN --> MAP
     MAIN --> BATTLE
     MAIN --> BUILD
@@ -90,6 +86,7 @@ flowchart TD
     MAIN --> PANEL
     MAIN --> SAVE
     MAIN --> AUDIO
+    MAIN --> PARTY
     MAP --> ENEMY
     MAP --> ART
     MAP --> UI
@@ -102,182 +99,121 @@ flowchart TD
     BATTLE --> UI
     BUILD --> SKILL
     BUILD --> PANEL
+    BUILD --> PARTY
     BUILD --> UI
     MENU --> STATS
     MENU --> SAVE
+    MENU --> PARTY
     MENU --> ART
     MENU --> UI
 </div>
-<p><b>ポイント</b>：</p>
+<p><b>設計の肝</b>：</p>
 <ul>
-<li>下段の「データ・道具」は、上の誰かに<b>使われるだけ</b>で、自分からは何もしません（一方通行）。これはGDDの設計原則「データ層→ロジック層→UI層の一方向依存」に沿っています</li>
-<li>新しい敵や技を増やすときは<b>図鑑（ProtoEnemies/ProtoSkills）に1行足すだけ</b>で、画面側のコードは触らなくていい構造です</li>
+<li>データ・道具は<b>使われるだけ</b>の一方通行（GDDの「データ層→ロジック層→UI層」に沿う）</li>
+<li><code>PanelModel</code>と<code>PlayerStats</code>は<b>人数分</b>存在（各員が自分の盤面・成長を持つ）</li>
+<li>敵・技・仲間を増やすときは<b>図鑑に1行足すだけ</b>で画面側は無改造</li>
 </ul>
 
 <div class="pagebreak"></div>
-<h2>4. 各ファイルの中身（やさしい説明）</h2>
+<h2>4. 各ファイルの詳細</h2>
 
 <h3>ProtoMain.cs — 劇場の支配人</h3>
-<p>ゲーム起動時に<b>ただ1人だけ</b>動き出すファイルです。</p>
-<ul>
-<li>開演準備：カメラ・Canvas（UIの土台）・4つの画面・BGMをすべて用意する</li>
-<li>セーブデータがあれば復元する</li>
-<li>「マップを見せて」「バトル開始」と言われたら、<b>他の画面を隠して目的の画面だけ表示</b>する</li>
-<li>画面に合わせてBGMを切り替える（マップ＝のどか、バトル＝激しい）</li>
-</ul>
+<p>ゲームに1人だけ。起動時にカメラ・Canvas・4画面・BGM・パーティを用意しセーブを復元。画面切替（ShowMap等）、パーティ管理（最大3人・各員に盤面と成長）、BGMの場面別自動切替（ボスは levelOffset で判定）。</p>
 
 <h3>MapScreen.cs — フィールドの管理人</h3>
-<ul>
-<li>72ピクセル四方の<b>マス目の世界</b>を管理。プレイヤーは上下左右に1マスずつ移動（ポケモン式）</li>
-<li>移動のたびに「そこは木？敵？」をチェック。<b>敵のマスに踏み込むと「！」→バトルへ</b></li>
-<li>敵は6体常駐し、数秒ごとに1マスうろつく。倒すと別の場所に新しい敵を補充</li>
-<li>歩く向きに合わせてキャラの絵（正面/背面/横）と足のコマを切り替える</li>
-</ul>
+<p>72pxのマス目を1マスずつ移動。3エリアを LoadArea で組み替え（上端で次へ/下端で前へ）。敵は見えていて接触でバトル・徘徊あり。エリア2・3は雨、3は雷。仲間はプレイヤーの過去位置を辿って追従。</p>
 
 <h3>ProtoBattle.cs — バトルの審判＋演出家</h3>
-<p>一番大きなファイル。バトルの全てを仕切ります。</p>
-<ol>
-<li><b>開始</b>：敵図鑑から渡された敵を表示し、盤面から山札100枚を作って手札3枚を配る（配布アニメ付き）</li>
-<li><b>カード選択</b>：スキルなら点滅チャレンジ開始。ピースのマスが一瞬光り、数を入力（正解で威力200%）</li>
-<li><b>攻撃</b>：技ごとの専用モーション（火球/居合/急降下など）→ヒット音→ダメージ数字ポップアップ</li>
-<li><b>敵の反撃</b>：素早さで回避判定、防御力でダメージ軽減</li>
-<li><b>決着</b>：勝てばEXP獲得→レベルアップ判定→マップへ</li>
-</ol>
+<p>最大ファイル。①開始＝メンバーごとに自分の盤面から山札を作り手札3枚 ②カード選択で点滅チャレンジ（正解で威力200%）③技ごとの専用モーション＋ヒット音＋数値ポップアップ ④ターン制/ATBの2方式 ⑤メンバー個別HP・戦闘不能 ⑥勝てば全員EXP。ボスは levelOffset ぶん格上。</p>
 
 <h3>BuildScreen.cs — パズル盤の店主</h3>
-<ul>
-<li>右の一覧からピースを選び、盤面を左クリックで配置。右クリック撤去、ドラッグ移動、クリック選択→Rキー回転</li>
-<li>「占有マス数＝そのスキルの出現率%」をリアルタイム表示</li>
-<li><b>実際の盤面データはここでは持たず、帳簿係（PanelModel）に全部記録させる</b>のがミソ。だからバトル画面も同じ帳簿を読んで山札を作れる</li>
-</ul>
+<p>上部タブでメンバーを選び各自の盤面にピース配置（クリック/ドラッグ/Rキー回転）。盤面の形はメンバーで違う。占有マス数＝出現率%。データは PanelModel が持つ。</p>
 
 <h3>MenuScreen.cs — 受付窓口</h3>
-<ul>
-<li>縦に並んだ項目（ビルド/ステータス/設定/セーブ/閉じる）を矢印キー＋Enterかマウスで選ぶ</li>
-<li>ステータス：履歴書（PlayerStats）の中身を表示</li>
-<li>設定：音量とBGMのON/OFF　／　セーブ：金庫番（ProtoSave）に保存を依頼</li>
-</ul>
+<p>矢印キー＋Enterで操作、選んだだけで右に詳細表示。ステータス（メンバータブ）/仲間（←→で増減）/設定（音量・BGM・バトル方式）/セーブ。</p>
 
 <h3>PanelModel.cs — 盤面の帳簿係</h3>
-<ul>
-<li>10×10=100マスの「どこに何のピースが置いてあるか」だけを記録</li>
-<li>「ここに置ける？」「回転したらはみ出さない？」の判定もここ</li>
-<li><b>画面（見た目）のことは一切知らない</b>純粋なデータ係。だからテストや差し替えが簡単</li>
-</ul>
+<p>「どこに何のピースがあるか」だけを記録する純粋データ。形状マスク対応（キャラごとに有効マスが違い、どれも100マス）。配置可否・回転・山札生成を判定。</p>
 
-<h3>ProtoSkills.cs / ProtoEnemies.cs — カタログと図鑑</h3>
-<ul>
-<li>技：名前・威力・ピース形状（マスの並び）・色</li>
-<li>敵：名前・HP・攻撃力・バトル/マップでの表示サイズ・出現率</li>
-<li><b>数値をいじるだけでゲームバランスを調整できる</b>場所</li>
-</ul>
+<h3>ProtoSkills / ProtoEnemies / ProtoParty — カタログ類</h3>
+<p>技＝名前・威力・形・色。敵＝HP・攻撃力・技5種・出現率・飛行フラグ・ボスのレベル補正（エリア別出現）。仲間＝MAMA/アカネ/ソラ＋各自の盤面形状（正方形/三角形/ひし形）。</p>
 
-<h3>PlayerStats.cs — キャラの履歴書</h3>
-<ul>
-<li>レベル・EXP・HP・攻撃力・防御力・素早さを記録</li>
-<li>EXPが一定値たまると自動でレベルアップし、4ステータスが上がる</li>
-</ul>
+<h3>PlayerStats.cs — 履歴書</h3>
+<p>レベル・EXP・HP・攻撃・防御・素早さ。EXPが貯まると自動レベルアップで全能力上昇。</p>
 
 <h3>ProtoSave.cs — 金庫番</h3>
-<ul>
-<li>履歴書＋Wave＋盤面の配置をJSON（テキスト形式）にしてUnityのPlayerPrefs（端末内の保存領域）へ</li>
-<li>起動時に金庫を開けて、あれば自動復元</li>
-</ul>
+<p>全員のステータス・盤面・WaveをPlayerPrefsにJSON保存。起動時に自動ロード（旧形式互換あり）。</p>
 
 <h3>ProtoAudio.cs — お抱え作曲家</h3>
-<ul>
-<li>音楽ファイルを一切使わず、<b>波形を計算してBGMと効果音を作る</b></li>
-<li>フィールド曲（長調・ゆったり）、バトル曲（短調・2倍速・ドラム入り）、ヒット音4段階</li>
-</ul>
+<p>音楽ファイル不使用、波形を計算して生成。BGM4曲（フィールド/バトル/ボス/嵐）＋効果音（ヒット4段階・風切り・雷鳴）。</p>
 
 <h3>ProtoPixelArt.cs — お抱え絵師</h3>
-<ul>
-<li>文字のマップ（<code>"..HHSSHH.."</code> のような行）を1文字＝1ドットとして読み取り、画像に変換</li>
-<li>MAMA・敵4種・歩行スプライト・背景・マップタイルすべてここで生成</li>
-<li><b>文字を書き換えるだけでドット絵を編集できる</b>（未知の文字はマゼンタ色で警告）</li>
-</ul>
+<p>文字マップを1文字＝1ドットで画像化。キャラ・敵6種・戦闘背景・見下ろしマップ（3テーマ）を生成。文字を書き換えるだけで編集可能。</p>
 
 <h3>ProtoUI.cs — 大道具係</h3>
-<ul>
-<li>「ここにボタン」「ここに文字」「ここにゲージ」を1行で作れる共通関数集</li>
-<li>全文字に黒縁取りを自動付与、ゴールドの見出しスタイルなどデザインの統一もここ</li>
-</ul>
+<p>ボタン・文字・ゲージを1行で作る共通関数集。黒縁取り・金見出しなどデザイン統一もここ。</p>
 
 <div class="pagebreak"></div>
-<h2>5. 処理の流れを追ってみる（バトル1ターンの例）</h2>
-<p>「アクアスラッシュのカードをクリックしてから敵に当たるまで」を時系列で：</p>
+<h2>5. バトル1ターンの流れ（点滅チャレンジ）</h2>
 <div class="mermaid">
 sequenceDiagram
     participant P as プレイヤー
     participant B as ProtoBattle
     participant S as ProtoSkills
-    participant A as ProtoAudio
     participant ST as PlayerStats
-    P->>B: カードをクリック
-    B->>B: 点滅チャレンジ開始（ピースのマスが光る）
-    P->>B: 光った数を入力してEnter
-    B->>B: 正解とのズレから倍率を決定（200%〜100%）
-    B->>S: アクアスラッシュの威力(60)と形を参照
-    B->>ST: 攻撃力(+10)を参照
-    Note over B: ダメージ = (60+10) × 倍率
-    B->>B: 居合モーション再生（敵を斬り抜ける）
-    B->>A: 技の強さに応じたヒット音を再生
-    B->>B: エフェクト＋ダメージ数字＋敵HPを減らす
+    participant A as ProtoAudio
+    P->>B: メンバーのカードをクリック
+    B->>B: 点滅チャレンジ（マスが光る）
+    P->>B: 光った数を入力
+    B->>B: ズレから倍率決定（200%〜100%）
+    B->>S: カードの威力を参照
+    B->>ST: 行動メンバーの攻撃力を参照
+    Note over B: ダメージ＝（威力＋攻撃力）×倍率
+    B->>B: 技ごとのモーション再生
+    B->>A: 強さに応じたヒット音
+    B->>B: 数値ポップアップ＋敵HP減少
 </div>
 
-<h2>6. Unityへの落とし込み方（なぜ動くのか）</h2>
-
-<h3>仕組み：たった1つの部品から全てが生まれる</h3>
-<p>普通のUnity開発では、ボタンやキャラを<b>エディタ上で手作業で配置</b>します。このプロトは違うアプローチを採っています：</p>
-<pre>proto.unity（シーン）の中身
-└── 空のGameObject ×1個
-     └── ProtoMain（スクリプト）←これだけ！</pre>
-<p>▶再生ボタンを押すと、ProtoMainの <code>Awake()</code>（Unityが自動で呼ぶ初期化関数）が走り、<b>カメラ設定→Canvas→4画面のUI→キャラのドット絵→BGM、すべてをコードがその場で組み立てます</b>。</p>
-
-<h3>この方式のメリット・デメリット</h3>
+<h2>6. キャラごとの盤面の形（どれも100マス）</h2>
 <table>
-<tr><th></th><th>説明</th></tr>
-<tr><td>✅ メリット</td><td>シーンの手作業ゼロ。コードを直すだけで全部変わる。Git管理が楽（シーンファイルの差分地獄がない）</td></tr>
-<tr><td>✅ メリット</td><td>「どこで何が作られているか」が全部コードに書いてあり、追跡できる</td></tr>
-<tr><td>⚠️ デメリット</td><td>エディタで見た目を直接いじれない（数値を変えて▶で確認の繰り返し）</td></tr>
-<tr><td>⚠️ デメリット</td><td>本番開発ではアーティストが作業できないので、<b>プリプロ専用の手法</b></td></tr>
+<tr><th>キャラ</th><th>形</th><th>特徴</th></tr>
+<tr><td>MAMA</td><td>10×10 正方形</td><td>素直に置ける標準形</td></tr>
+<tr><td>アカネ</td><td>三角形（1,3,5…19）</td><td>頂点が狭く悩ましい</td></tr>
+<tr><td>ソラ</td><td>ひし形</td><td>中央が広く大型ピース向き</td></tr>
 </table>
 
-<h3>Unityの基本概念との対応</h3>
+<h2>7. Unityへの落とし込み方</h2>
+<p>シーン <code>proto.unity</code> には<b>空のGameObject＋ProtoMain</b>が1つあるだけ。▶を押すと <code>Awake()</code> が走り、カメラ・UI・キャラ・音をコードが全部その場で組み立てます。</p>
 <table>
-<tr><th>Unity用語</th><th>このプロジェクトでの使われ方</th></tr>
-<tr><td><b>GameObject</b></td><td>「物」の入れ物。ProtoMainを載せる1個だけ手作業、残りはコードが生成</td></tr>
-<tr><td><b>MonoBehaviour</b></td><td>Unityに「毎フレームUpdate呼んで」等を頼める特別なクラス。画面系ファイルはみんなこれ</td></tr>
-<tr><td><b>Awake / Start / Update</b></td><td>Unityが自動で呼ぶ関数。Awake=起動時1回、Update=毎フレーム（移動やキー入力はここ）</td></tr>
-<tr><td><b>Canvas</b></td><td>UIの土台。ProtoUIが1枚作り、全画面がその子として並ぶ</td></tr>
-<tr><td><b>コルーチン（IEnumerator）</b></td><td>「0.5秒待ってから次へ」ができる仕組み。バトル演出の順番制御はぜんぶこれ</td></tr>
-<tr><td><b>Sprite / Texture2D</b></td><td>画像。ProtoPixelArtがドットを1個ずつ打って作る</td></tr>
-<tr><td><b>AudioClip / AudioSource</b></td><td>音の波形と再生機。ProtoAudioが波形を計算して作る</td></tr>
-<tr><td><b>PlayerPrefs</b></td><td>端末内の小さな保存領域。セーブデータ置き場</td></tr>
+<tr><th>メリット</th><th>デメリット</th></tr>
+<tr><td>シーンの手作業ゼロ、コードだけで全部変わる</td><td>エディタで見た目を直接いじれない</td></tr>
+<tr><td>「どこで何が作られるか」が全部コードにある</td><td>本番ではアーティストが作業不可（プリプロ専用）</td></tr>
+</table>
+<table>
+<tr><th>Unity用語</th><th>使われ方</th></tr>
+<tr><td>MonoBehaviour</td><td>画面系ファイル。UnityがUpdate等を呼ぶ</td></tr>
+<tr><td>Awake/Start/Update</td><td>起動時1回／毎フレーム（移動・入力・雨・雷）</td></tr>
+<tr><td>コルーチン(IEnumerator)</td><td>「0.5秒待ってから次」。演出の順番制御</td></tr>
+<tr><td>Sprite/Texture2D</td><td>画像。ProtoPixelArtがドットで生成</td></tr>
+<tr><td>AudioClip</td><td>音。ProtoAudioが波形計算で生成</td></tr>
+<tr><td>PlayerPrefs</td><td>端末内の保存領域。セーブ置き場</td></tr>
+</table>
+<p><b>動かす手順</b>：①<code>Assets/Scenes/proto.unity</code>を開く ②▶再生（草原から開始）③WASD/矢印=移動、B=メニュー、バトルは数字入力＋Enter</p>
+
+<h2>8. 「どこを直せばいい？」早見表</h2>
+<table>
+<tr><th>やりたいこと</th><th>ファイル</th><th>場所</th></tr>
+<tr><td>技の威力・形</td><td>ProtoSkills.cs</td><td><code>All</code></td></tr>
+<tr><td>敵のHP・技・出現率</td><td>ProtoEnemies.cs</td><td><code>All</code></td></tr>
+<tr><td>ボスの強さ</td><td>ProtoEnemies.cs</td><td><code>levelOffset</code></td></tr>
+<tr><td>仲間の見た目・盤面形</td><td>ProtoParty.cs</td><td><code>Roster</code> / <code>BoardMask</code></td></tr>
+<tr><td>ドット絵</td><td>ProtoPixelArt.cs</td><td>各メソッドの <code>rows</code></td></tr>
+<tr><td>レベルアップ量</td><td>PlayerStats.cs</td><td><code>LevelUp()</code></td></tr>
+<tr><td>エンカウント率・エリア構成</td><td>MapScreen.cs</td><td>上部定数・<code>LoadArea</code></td></tr>
+<tr><td>点滅の時間・制限時間</td><td>ProtoBattle.cs</td><td><code>FlashDuration</code>/<code>AnswerTime</code></td></tr>
+<tr><td>BGMのメロディ</td><td>ProtoAudio.cs</td><td>各曲の <code>melody</code> 配列</td></tr>
 </table>
 
-<h3>自分で動かす手順</h3>
-<ol>
-<li>Unityで <code>Assets/Scenes/proto.unity</code> を開く</li>
-<li>▶再生 → マップ画面から始まる</li>
-<li>操作：WASD/矢印=移動、B=メニュー、バトル中は数字入力+Enter</li>
-</ol>
-
-<h2>7. よくある「どこを直せばいい？」早見表</h2>
-<table>
-<tr><th>やりたいこと</th><th>触るファイル</th><th>場所</th></tr>
-<tr><td>技の威力・形を変える</td><td>ProtoSkills.cs</td><td><code>All</code> のリスト</td></tr>
-<tr><td>敵のHP・攻撃力を変える</td><td>ProtoEnemies.cs</td><td><code>All</code> のリスト</td></tr>
-<tr><td>ドット絵を描き直す</td><td>ProtoPixelArt.cs</td><td>各メソッドの <code>rows</code></td></tr>
-<tr><td>レベルアップの上昇量</td><td>PlayerStats.cs</td><td><code>LevelUp()</code></td></tr>
-<tr><td>エンカウント率・敵の数</td><td>MapScreen.cs</td><td>上部の定数</td></tr>
-<tr><td>点滅の時間・回答制限時間</td><td>ProtoBattle.cs</td><td><code>FlashDuration</code> / <code>AnswerTime</code></td></tr>
-<tr><td>クリティカルの倍率</td><td>ProtoBattle.cs</td><td><code>RunChallenge()</code> 内の判定</td></tr>
-<tr><td>BGMのメロディ</td><td>ProtoAudio.cs</td><td><code>melody</code> 配列（周波数の並び）</td></tr>
-</table>
-
-<script>
-  mermaid.initialize({ startOnLoad: true, theme: 'default' });
-</script>
+<script>mermaid.initialize({ startOnLoad: true, theme: 'default' });</script>
 </body>
 </html>
