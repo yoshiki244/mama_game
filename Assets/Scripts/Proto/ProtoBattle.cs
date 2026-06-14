@@ -358,9 +358,9 @@ public class ProtoBattle : MonoBehaviour
 
         var party = _main.Party;
         // 横並び・小さめ（カード選択エリアを広く使うため）。足が地面ラインに着くよう配置
-        float size = party.Count == 1 ? 380f : party.Count == 2 ? 290f : 240f; // キャラを大きく
+        float size = party.Count == 1 ? 460f : party.Count == 2 ? 360f : 300f; // キャラをさらに大きく
         float height = size * 1.23f;
-        float startX = party.Count == 1 ? -470f : -640f;
+        float startX = party.Count == 1 ? -460f : -660f;
         for (int i = 0; i < party.Count; i++)
         {
             Vector2 pos = new Vector2(startX + i * (size * 0.72f), GroundY + height / 2f);
