@@ -6,9 +6,12 @@ public class PartyMember
 {
     public string name;
     public Color hair, hairShadow, hairLight;
+    public bool usePhoto; // trueなら実画像(Resources/mama_character)を使う
 
-    public Sprite BattleSprite() => ProtoPixelArt.Mama(hair, hairShadow, hairLight);
-    public Sprite MapSprite(int dir, int frame) => ProtoPixelArt.MapMama(dir, frame, hair, hairShadow);
+    public Sprite BattleSprite()
+        => usePhoto ? ProtoPixelArt.MamaPhoto() : ProtoPixelArt.Mama(hair, hairShadow, hairLight);
+    public Sprite MapSprite(int dir, int frame)
+        => usePhoto ? ProtoPixelArt.MamaPhoto() : ProtoPixelArt.MapMama(dir, frame, hair, hairShadow);
 }
 
 public static class ProtoParty
@@ -16,7 +19,7 @@ public static class ProtoParty
     // 加入順のロスター（1人目は主人公MAMA固定）
     public static readonly PartyMember[] Roster =
     {
-        new PartyMember { name = "MAMA",
+        new PartyMember { name = "MAMA", usePhoto = true,
             hair = new Color(0.87f, 0.88f, 0.95f), hairShadow = new Color(0.66f, 0.68f, 0.80f), hairLight = new Color(0.98f, 0.99f, 1f) },
         new PartyMember { name = "アカネ",
             hair = new Color(0.92f, 0.45f, 0.40f), hairShadow = new Color(0.68f, 0.30f, 0.26f), hairLight = new Color(1f, 0.65f, 0.55f) },

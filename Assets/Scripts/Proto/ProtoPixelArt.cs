@@ -30,6 +30,21 @@ public static class ProtoPixelArt
         return Sprite.Create(tex, new Rect(0, 0, w, h), new Vector2(0.5f, 0.5f), 16f);
     }
 
+    // 主人公の実画像（Assets/Resources/mama_character.png）を読み込む。一度読んだらキャッシュ
+    static Sprite _mamaPhoto;
+    static bool _mamaPhotoLoaded;
+    public static Sprite MamaPhoto()
+    {
+        if (!_mamaPhotoLoaded)
+        {
+            _mamaPhoto = Resources.Load<Sprite>("mama_character");
+            _mamaPhotoLoaded = true;
+            if (_mamaPhoto == null)
+                Debug.LogWarning("mama_character.png が Assets/Resources に見つかりません（Sprite設定を確認）");
+        }
+        return _mamaPhoto != null ? _mamaPhoto : Mama(); // 無ければ従来のドット絵にフォールバック
+    }
+
     // バトル用MAMA（30x38）: 銀髪ロング・黒ドレス・シースルー裾・右腕を突き出す構え
     public static Sprite Mama()
         => Mama(new Color(0.87f, 0.88f, 0.95f), new Color(0.66f, 0.68f, 0.80f), new Color(0.98f, 0.99f, 1f));
