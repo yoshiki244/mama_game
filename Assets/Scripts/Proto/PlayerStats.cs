@@ -1,39 +1,18 @@
-using UnityEngine;
-
-// MAMAの成長ステータス（GDD SYS-12 育成メタの前段）
-// 勝利でEXP獲得 → レベルアップで4ステータスが上昇する
+// プレイヤー（MAMA）の基礎ステータス。本設では単一キャラ・レベル成長なし。
+// 成長は「盤面拡張」と「ピース獲得」に一本化（HP/攻撃は固定＋戦闘中バフのみ）。
 public class PlayerStats
 {
-    public int Level = 1;
-    public int Exp = 0;
+    public int MaxHP = 80;
+    public int Attack = 6;
 
-    public int MaxHP = 120;
-    public int Attack = 10;   // カード威力に加算される
-    public int Defense = 5;   // 被ダメージを軽減
-    public int Speed = 5;     // 回避率に影響（Speed×2 %）
+    public PlayerStats() { }
 
-    public int ExpToNext => Level * 50;
-
-    // EXPを加算し、レベルアップしたら true（複数レベル一気に上がることもある）
-    public bool GainExp(int amount)
+    public PlayerStats(GameConfig config)
     {
-        Exp += amount;
-        bool leveled = false;
-        while (Exp >= ExpToNext)
+        if (config != null)
         {
-            Exp -= ExpToNext;
-            LevelUp();
-            leveled = true;
+            MaxHP = config.playerMaxHP;
+            Attack = config.playerAttack;
         }
-        return leveled;
-    }
-
-    void LevelUp()
-    {
-        Level++;
-        MaxHP += 10;
-        Attack += 2;
-        Defense += 1;
-        Speed += 1;
     }
 }
