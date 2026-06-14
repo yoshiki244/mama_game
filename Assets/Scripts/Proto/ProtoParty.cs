@@ -15,11 +15,9 @@ public class PartyMember
         if (!usePhoto) return ProtoPixelArt.Mama(hair, hairShadow, hairLight);
         return isLeader ? ProtoPixelArt.MamaPhoto() : ProtoPixelArt.MamaPhotoTinted(hair);
     }
+    // マップは常にドット絵の歩きキャラ（4方向・アニメ付き）。画像は使わない
     public Sprite MapSprite(int dir, int frame)
-    {
-        if (!usePhoto) return ProtoPixelArt.MapMama(dir, frame, hair, hairShadow);
-        return isLeader ? ProtoPixelArt.MamaPhoto() : ProtoPixelArt.MamaPhotoTinted(hair);
-    }
+        => ProtoPixelArt.MapMama(dir, frame, hair, hairShadow);
 }
 
 public static class ProtoParty
