@@ -335,8 +335,8 @@ public class MenuScreen : MonoBehaviour
 
         // キャラ立ち絵
         var charRt = ProtoUI.CreateRect("Chara", _statusContent);
-        charRt.anchoredPosition = new Vector2(-230, -20);
-        charRt.sizeDelta = new Vector2(190, 280);
+        charRt.anchoredPosition = new Vector2(-220, -30);
+        charRt.sizeDelta = new Vector2(290, 420);
         _statusPortrait = charRt.gameObject.AddComponent<Image>();
         _statusPortrait.sprite = ProtoPixelArt.Mama();
         _statusPortrait.preserveAspect = true;
