@@ -1,52 +1,54 @@
 using UnityEngine;
 using System.Collections.Generic;
 
-// 10x10スキルパネルの盤面データ（GDD SYS-02: 盤面管理・配置判定・確率算出）
-// 1マス=出現率1%。空白マスは通常攻撃に変換される。
+// スキルパネルの盤面データ（配置判定・確率算出）。本設では単一・正方形・可変サイズ(5×5〜10×10)。
+// 1マス＝出現率の分子。空白マスは通常攻撃に変換される。出現率 = ピースのマス数 / 盤面マス数。
 public class PanelModel
 {
     public int W { get; private set; }
     public int H { get; private set; }
 
-    // 1回の配置（ピース1個）を表す
+    // 1回の配置（ピース1個）
     public class Placement
     {
         public int id;
-        public ProtoSkill skill;
+        public CardDef card;
         public List<Vector2Int> cells = new List<Vector2Int>();
     }
 
     Placement[,] _grid;
-    bool[,] _valid; // そのマスが盤面として存在するか（キャラごとに形が違う）
     int _nextId = 1;
     public List<Placement> Placements = new List<Placement>();
 
     public PanelModel(int w, int h)
     {
-        W = w;
-        H = h;
+        W = w; H = h;
         _grid = new Placement[w, h];
-        _valid = new bool[w, h];
-        for (int x = 0; x < w; x++)
-            for (int y = 0; y < h; y++)
-                _valid[x, y] = true;
     }
 
-    // 形状マスク付きコンストラクタ（trueのマスだけが盤面）
-    public PanelModel(bool[,] mask)
+    // 盤面拡張（既存配置は座標そのまま保持。範囲外になった配置は除去）
+    public void Resize(int newW, int newH)
     {
-        W = mask.GetLength(0);
-        H = mask.GetLength(1);
-        _grid = new Placement[W, H];
-        _valid = mask;
+        var newGrid = new Placement[newW, newH];
+        var kept = new List<Placement>();
+        foreach (var p in Placements)
+        {
+            bool fits = true;
+            foreach (var c in p.cells)
+                if (c.x < 0 || c.y < 0 || c.x >= newW || c.y >= newH) { fits = false; break; }
+            if (!fits) continue;
+            foreach (var c in p.cells) newGrid[c.x, c.y] = p;
+            kept.Add(p);
+        }
+        W = newW; H = newH;
+        _grid = newGrid;
+        Placements = kept;
     }
 
-    public bool IsValid(int x, int y)
-        => x >= 0 && y >= 0 && x < W && y < H && _valid[x, y];
+    public bool IsValid(int x, int y) => x >= 0 && y >= 0 && x < W && y < H;
 
-    public Placement GetAt(int x, int y) => _grid[x, y];
+    public Placement GetAt(int x, int y) => IsValid(x, y) ? _grid[x, y] : null;
 
-    // 90度回転をrot回適用
     public static Vector2Int Rotate(Vector2Int v, int rot)
     {
         for (int i = 0; i < ((rot % 4) + 4) % 4; i++)
@@ -54,37 +56,35 @@ public class PanelModel
         return v;
     }
 
-    public IEnumerable<Vector2Int> Cells(ProtoSkill s, Vector2Int anchor, int rot)
+    public IEnumerable<Vector2Int> Cells(CardDef c, Vector2Int anchor, int rot)
     {
-        foreach (var o in s.shape)
+        foreach (var o in c.Shape)
             yield return anchor + Rotate(o, rot);
     }
 
-    public bool CanPlace(ProtoSkill s, Vector2Int anchor, int rot)
+    public bool CanPlace(CardDef c, Vector2Int anchor, int rot)
     {
-        foreach (var c in Cells(s, anchor, rot))
+        foreach (var cell in Cells(c, anchor, rot))
         {
-            if (!IsValid(c.x, c.y)) return false;
-            if (_grid[c.x, c.y] != null) return false;
+            if (!IsValid(cell.x, cell.y)) return false;
+            if (_grid[cell.x, cell.y] != null) return false;
         }
         return true;
     }
 
-    public bool Place(ProtoSkill s, Vector2Int anchor, int rot)
+    public bool Place(CardDef c, Vector2Int anchor, int rot)
     {
-        if (!CanPlace(s, anchor, rot)) return false;
-
-        var p = new Placement { id = _nextId++, skill = s };
-        foreach (var c in Cells(s, anchor, rot))
+        if (!CanPlace(c, anchor, rot)) return false;
+        var p = new Placement { id = _nextId++, card = c };
+        foreach (var cell in Cells(c, anchor, rot))
         {
-            _grid[c.x, c.y] = p;
-            p.cells.Add(c);
+            _grid[cell.x, cell.y] = p;
+            p.cells.Add(cell);
         }
         Placements.Add(p);
         return true;
     }
 
-    // 任意のマス集合が配置可能か（ドラッグ移動用）
     public bool CanPlaceCells(List<Vector2Int> cells)
     {
         foreach (var c in cells)
@@ -95,25 +95,19 @@ public class PanelModel
         return true;
     }
 
-    // 任意のマス集合にそのまま配置（ドラッグ移動用）
-    public bool PlaceCells(ProtoSkill s, List<Vector2Int> cells)
+    public bool PlaceCells(CardDef card, List<Vector2Int> cells)
     {
         if (!CanPlaceCells(cells)) return false;
-        var p = new Placement { id = _nextId++, skill = s };
-        foreach (var c in cells)
-        {
-            _grid[c.x, c.y] = p;
-            p.cells.Add(c);
-        }
+        var p = new Placement { id = _nextId++, card = card };
+        foreach (var c in cells) { _grid[c.x, c.y] = p; p.cells.Add(c); }
         Placements.Add(p);
         return true;
     }
 
-    // 指定マスにあるピースをその場で90度回転。
-    // 盤外にはみ出す場合は内側へ自動スライド。他ピースと衝突する場合のみ失敗（元に戻す）
+    // 指定マスのピースをその場で90度回転（盤外は内側へスライド／衝突時は元に戻す）
     public bool RotatePlacementAt(int x, int y)
     {
-        var p = _grid[x, y];
+        var p = GetAt(x, y);
         if (p == null) return false;
 
         var pivot = p.cells[0];
@@ -124,7 +118,6 @@ public class PanelModel
             rotated.Add(pivot + new Vector2Int(rel.y, -rel.x));
         }
 
-        // 盤外にはみ出した分を内側へスライド
         int minX = int.MaxValue, maxX = int.MinValue, minY = int.MaxValue, maxY = int.MinValue;
         foreach (var c in rotated)
         {
@@ -135,22 +128,19 @@ public class PanelModel
         int dy = minY < 0 ? -minY : (maxY >= H ? H - 1 - maxY : 0);
         for (int i = 0; i < rotated.Count; i++) rotated[i] += new Vector2Int(dx, dy);
 
-        var skill = p.skill;
+        var card = p.card;
         var original = new List<Vector2Int>(p.cells);
         RemoveAt(x, y);
-
-        if (PlaceCells(skill, rotated)) return true;
-        PlaceCells(skill, original); // 他ピースと衝突した場合は復元
+        if (PlaceCells(card, rotated)) return true;
+        PlaceCells(card, original);
         return false;
     }
 
-    // 指定マスにあるピースを丸ごと撤去
     public void RemoveAt(int x, int y)
     {
-        var p = _grid[x, y];
+        var p = GetAt(x, y);
         if (p == null) return;
-        foreach (var c in p.cells)
-            _grid[c.x, c.y] = null;
+        foreach (var c in p.cells) _grid[c.x, c.y] = null;
         Placements.Remove(p);
     }
 
@@ -163,36 +153,27 @@ public class PanelModel
         return n;
     }
 
-    // スキルごとの占有マス数（=出現率%）
-    public Dictionary<ProtoSkill, int> CountBySkill()
+    // カードごとの占有マス数
+    public Dictionary<CardDef, int> CountByCard()
     {
-        var d = new Dictionary<ProtoSkill, int>();
+        var d = new Dictionary<CardDef, int>();
         foreach (var p in Placements)
         {
-            if (!d.ContainsKey(p.skill)) d[p.skill] = 0;
-            d[p.skill] += p.cells.Count;
+            if (!d.ContainsKey(p.card)) d[p.card] = 0;
+            d[p.card] += p.cells.Count;
         }
         return d;
     }
 
-    // 有効マスの総数（どの形でも100になるように設計）
-    public int ValidCount()
-    {
-        int n = 0;
-        for (int x = 0; x < W; x++)
-            for (int y = 0; y < H; y++)
-                if (_valid[x, y]) n++;
-        return n;
-    }
+    public int ValidCount() => W * H;
 
-    // 山札を生成: 有効マス=カード（GDD推奨の引き切り方式）。null=通常攻撃
-    public List<ProtoSkill> BuildDeck()
+    // 山札（盤面マス＝カード。null＝通常攻撃）。確率サンプリングの母集団。
+    public List<CardDef> BuildDeck()
     {
-        var deck = new List<ProtoSkill>();
+        var deck = new List<CardDef>();
         for (int x = 0; x < W; x++)
             for (int y = 0; y < H; y++)
-                if (_valid[x, y])
-                    deck.Add(_grid[x, y]?.skill);
+                deck.Add(_grid[x, y]?.card);
         return deck;
     }
 }
