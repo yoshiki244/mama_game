@@ -1,121 +1,122 @@
-﻿using UnityEngine;
+using UnityEngine;
 using UnityEngine.EventSystems;
 using System.Collections.Generic;
 
-// プリプロ版の起動スクリプト。
-// 空のGameObjectにこれを付けて再生するだけで、カメラ設定・Canvas・全UIを自動生成する。
+// 本設の起動スクリプト。空のGameObjectにこれを付けて再生するだけで全UIを自動生成する。
+// 単一キャラ（MAMA）。データは Resources の ContentDatabase から読み込む。
 public class ProtoMain : MonoBehaviour
 {
-    // メンバーごとの個別ステータス（MemberStats[i] = Party[i] のもの）
-    public System.Collections.Generic.List<PlayerStats> MemberStats { get; private set; }
-        = new System.Collections.Generic.List<PlayerStats>();
+    // ---- データ ----
+    public ContentDatabase Db { get; private set; }
+    public GameConfig Cfg => Db != null ? Db.config : null;
 
-    // 互換用: リーダー（MAMA）のステータス
-    public PlayerStats Stats => MemberStats[0];
+    // ---- プレイヤー状態 ----
+    public PlayerStats Stats { get; private set; }
+    public PanelModel Panel { get; private set; }
+    public int Money { get; private set; }
+    public int Expansions { get; private set; }   // 盤面拡張回数 0..5
+    public int BoardSize => 5 + Expansions;        // 5×5 → 10×10
+    public int MaxMana => (Cfg != null ? Cfg.baseMana : 3) + Expansions;
     public int Wave { get; private set; } = 1;
+    public int CurrentDepth { get; set; } = 1; // 現在地の深度（マップの列番号）。報酬/ショップの抽選に使う
+
+    public List<string> OwnedCardIds { get; private set; } = new List<string>();
+
     public Canvas Canvas { get; private set; }
     public bool BgmEnabled { get; private set; }
 
-    // ===== プロト検証用の戦闘設定（PlayerPrefsで永続化）=====
-    public bool ChainEnabled { get; private set; }   // 通電連鎖 ON/OFF
-    public bool ChainCorner { get; private set; }    // true=頂点対角接（ブロックス式）/ false=辺隣接
-    public bool FlashEnabled { get; private set; }   // 順次点滅チャレンジ ON/OFF
-    public int  FlashThreshold { get; private set; } // 順次点滅の発動マス数（10 or 15）
-    public float ChainCritMult { get; private set; } // 通電クリティカル倍率
-    public float FlashCritMult { get; private set; } // 順次点滅クリティカル倍率
-
-    // ===== 所持ピース（敵撃破ごとに解放される）=====
-    public List<string> OwnedSkillIds { get; private set; } = new List<string>();
-
-    public List<ProtoSkill> OwnedSkills()
+    // ---- 所持カード操作 ----
+    public List<CardDef> OwnedCards()
     {
-        var list = new List<ProtoSkill>();
-        foreach (var id in OwnedSkillIds)
+        var list = new List<CardDef>();
+        if (Db == null) return list;
+        foreach (var id in OwnedCardIds)
         {
-            var s = ProtoSkills.Find(id);
-            if (s != null) list.Add(s);
+            var c = Db.FindCard(id);
+            if (c != null) list.Add(c);
         }
         return list;
     }
 
-    // 解放順の次のピースを1つ解放する。すべて解放済みなら null
-    public ProtoSkill UnlockNextSkill()
+    public bool OwnsCard(string id) => OwnedCardIds.Contains(id);
+
+    public bool AddCard(string id)
     {
-        foreach (var id in ProtoSkills.UnlockOrder)
-        {
-            if (!OwnedSkillIds.Contains(id))
-            {
-                OwnedSkillIds.Add(id);
-                PlayerPrefs.SetString("owned", string.Join(",", OwnedSkillIds));
-                return ProtoSkills.Find(id);
-            }
-        }
-        return null;
-    }
-
-    // パーティ（1人目はMAMA固定、最大3人）
-    public System.Collections.Generic.List<PartyMember> Party { get; private set; }
-        = new System.Collections.Generic.List<PartyMember>();
-
-    // メンバーごとの盤面（形がキャラで違う）。Panels[i] = Party[i] の盤面
-    public System.Collections.Generic.List<PanelModel> Panels { get; private set; }
-        = new System.Collections.Generic.List<PanelModel>();
-
-    public bool AddPartyMember()
-    {
-        if (Party.Count >= ProtoParty.MaxMembers) return false;
-        Party.Add(ProtoParty.Roster[Party.Count]);
-        Panels.Add(new PanelModel(ProtoParty.BoardMask(Panels.Count)));
-        MemberStats.Add(new PlayerStats()); // 新加入はLv1から
-        PlayerPrefs.SetInt("party", Party.Count);
+        if (string.IsNullOrEmpty(id) || OwnedCardIds.Contains(id)) return false;
+        if (Db.FindCard(id) == null) return false;
+        OwnedCardIds.Add(id);
         return true;
     }
 
-    public bool RemovePartyMember()
+    // ---- 経済 ----
+    public void AddMoney(int amount) => Money = Mathf.Max(0, Money + amount);
+
+    public int NextExpansionCost()
+        => (Cfg != null && Expansions < Cfg.expansionCosts.Length) ? Cfg.expansionCosts[Expansions] : -1;
+
+    public bool CanExpand() => Expansions < 5 && NextExpansionCost() >= 0 && Money >= NextExpansionCost();
+
+    public bool ExpandBoard()
     {
-        if (Party.Count <= 1) return false; // リーダーは外せない
-        Party.RemoveAt(Party.Count - 1);
-        Panels.RemoveAt(Panels.Count - 1);
-        MemberStats.RemoveAt(MemberStats.Count - 1);
-        PlayerPrefs.SetInt("party", Party.Count);
+        if (!CanExpand()) return false;
+        Money -= NextExpansionCost();
+        Expansions++;
+        Panel.Resize(BoardSize, BoardSize);
         return true;
     }
 
-    public void SetChainEnabled(bool on)   { ChainEnabled = on; PlayerPrefs.SetInt("chain", on ? 1 : 0); }
-    public void SetChainCorner(bool on)    { ChainCorner = on;  PlayerPrefs.SetInt("chainCorner", on ? 1 : 0); }
-    public void SetFlashEnabled(bool on)   { FlashEnabled = on; PlayerPrefs.SetInt("flash", on ? 1 : 0); }
-    public void SetFlashThreshold(int n)   { FlashThreshold = n; PlayerPrefs.SetInt("flashTh", n); }
-    public void SetChainCritMult(float m)  { ChainCritMult = Mathf.Clamp(m, 1.0f, 2.0f); PlayerPrefs.SetFloat("chainMult", ChainCritMult); }
-    public void SetFlashCritMult(float m)  { FlashCritMult = Mathf.Clamp(m, 1.0f, 2.0f); PlayerPrefs.SetFloat("flashMult", FlashCritMult); }
+    public bool BuyCard(string id)
+    {
+        int price = Cfg != null ? Cfg.shopBuyPrice : 40;
+        if (OwnedCardIds.Contains(id) || Money < price || Db.FindCard(id) == null) return false;
+        Money -= price;
+        OwnedCardIds.Add(id);
+        return true;
+    }
 
+    public void SetWave(int wave) => Wave = wave;
+
+    // ---- 画面 ----
     BuildScreen _build;
     ProtoBattle _battle;
     MapScreen _map;
     MenuScreen _menu;
     UnityEngine.UI.Image _bgImg;
     AudioSource _bgmSource;
-    AudioClip _fieldBgm, _battleBgm, _stormBgm, _bossBgm;
-
-    public void SetWave(int wave) => Wave = wave;
-
-    // 互換用: リーダー（MAMA）の盤面
-    public PanelModel Panel => Panels[0];
+    AudioClip _fieldBgm, _battleBgm, _bossBgm;
 
     void Awake()
     {
+        // データ読み込み
+        Db = Resources.Load<ContentDatabase>("GameData/ContentDatabase");
+        if (Db == null)
+            Debug.LogError("[ProtoMain] ContentDatabase が見つかりません。メニュー『MamaGame > コンテンツ(SO)を生成』を実行してください。");
 
         SetupCamera();
         Canvas = ProtoUI.CreateCanvas();
         EnsureEventSystem();
 
-        // 自然背景（最初に作る=一番後ろに描画される）。バトル画面でのみ表示
+        // バトル用の自然背景
         var bgRt = ProtoUI.CreateFullScreen("Background", Canvas.transform);
         _bgImg = bgRt.gameObject.AddComponent<UnityEngine.UI.Image>();
         _bgImg.sprite = ProtoPixelArt.NatureBackground();
-        _bgImg.color = new Color(0.85f, 0.9f, 0.9f); // 少し落ち着かせてUIを読みやすく
+        _bgImg.color = new Color(0.85f, 0.9f, 0.9f);
         _bgImg.raycastTarget = false;
 
+        // プレイヤー初期化
+        Stats = new PlayerStats(Cfg);
+        Expansions = 0;
+        Money = 0;
+        Panel = new PanelModel(BoardSize, BoardSize);
 
+        // 初期所持カード
+        OwnedCardIds.Clear();
+        if (Cfg != null && Cfg.initialOwned != null)
+            foreach (var id in Cfg.initialOwned)
+                if (Db != null && Db.FindCard(id) != null && !OwnedCardIds.Contains(id))
+                    OwnedCardIds.Add(id);
+
+        // 画面生成
         _build = gameObject.AddComponent<BuildScreen>();
         _battle = gameObject.AddComponent<ProtoBattle>();
         _map = gameObject.AddComponent<MapScreen>();
@@ -125,44 +126,13 @@ public class ProtoMain : MonoBehaviour
         _map.Init(this);
         _menu.Init(this);
 
-        // 設定の復元（プロト検証用の戦闘設定）
-        ChainEnabled = PlayerPrefs.GetInt("chain", 1) == 1;
-        ChainCorner  = PlayerPrefs.GetInt("chainCorner", 0) == 1;
-        FlashEnabled = PlayerPrefs.GetInt("flash", 1) == 1;
-        FlashThreshold = PlayerPrefs.GetInt("flashTh", 10);
-        ChainCritMult = PlayerPrefs.GetFloat("chainMult", 1.3f);
-        FlashCritMult = PlayerPrefs.GetFloat("flashMult", 1.3f);
-
-        // 所持ピースの復元（無ければ初期所持=2マス・3マスのみ）
-        OwnedSkillIds.Clear();
-        string ownedStr = PlayerPrefs.GetString("owned", "");
-        if (!string.IsNullOrEmpty(ownedStr))
-        {
-            foreach (var id in ownedStr.Split(','))
-                if (!string.IsNullOrEmpty(id) && ProtoSkills.Find(id) != null)
-                    OwnedSkillIds.Add(id);
-        }
-        if (OwnedSkillIds.Count == 0)
-            OwnedSkillIds.AddRange(ProtoSkills.InitialOwned);
-
-        // パーティの復元（最低1人=MAMA）。盤面もメンバーごとの形で生成
-        // ※セーブの盤面復元より先にやる必要がある
-        int partyCount = Mathf.Clamp(PlayerPrefs.GetInt("party", 1), 1, ProtoParty.MaxMembers);
-        for (int i = 0; i < partyCount; i++)
-        {
-            Party.Add(ProtoParty.Roster[i]);
-            Panels.Add(new PanelModel(ProtoParty.BoardMask(i)));
-            MemberStats.Add(new PlayerStats());
-        }
-
-        // セーブデータがあれば復元（ステータス・Wave・盤面）
+        // セーブ復元（あれば）
         ProtoSave.Load(this);
 
-        // BGM（コード生成チップチューン）と音量の復元
+        // BGM
         AudioListener.volume = PlayerPrefs.GetFloat("volume", 0.8f);
         _fieldBgm = ProtoAudio.CreateBgm();
         _battleBgm = ProtoAudio.CreateBattleBgm();
-        _stormBgm = ProtoAudio.CreateStormBgm();
         _bossBgm = ProtoAudio.CreateBossBgm();
         _bgmSource = gameObject.AddComponent<AudioSource>();
         _bgmSource.clip = _fieldBgm;
@@ -170,22 +140,32 @@ public class ProtoMain : MonoBehaviour
         SetBgmEnabled(PlayerPrefs.GetInt("bgm", 1) == 1);
     }
 
-    // 画面に合わせてBGMを切り替える（同じ曲なら何もしない）
+    void Start() => ShowMap();
+
+    // セーブから状態を流し込む（ProtoSaveが呼ぶ）
+    public void ApplyLoaded(int money, int expansions, List<string> owned)
+    {
+        Money = Mathf.Max(0, money);
+        Expansions = Mathf.Clamp(expansions, 0, 5);
+        Panel.Resize(BoardSize, BoardSize);
+        if (owned != null && owned.Count > 0)
+        {
+            OwnedCardIds.Clear();
+            foreach (var id in owned)
+                if (Db != null && Db.FindCard(id) != null && !OwnedCardIds.Contains(id))
+                    OwnedCardIds.Add(id);
+        }
+    }
+
     void PlayBgm(AudioClip clip)
     {
-        if (_bgmSource == null || clip == null) return; // 起動初期化中はまだBGMが無い
+        if (_bgmSource == null || clip == null) return;
         if (_bgmSource.clip == clip && _bgmSource.isPlaying) return;
         _bgmSource.clip = clip;
         if (BgmEnabled) _bgmSource.Play();
     }
 
-    // マップのエリアに応じたBGM（嵐の山頂=緊迫した曲）。MapScreenから呼ばれる
-    public void PlayMapBgm(int area)
-    {
-        PlayBgm(area >= 2 ? _stormBgm : _fieldBgm);
-    }
-
-    void Start() => ShowMap();
+    public void PlayMapBgm(int area) => PlayBgm(_fieldBgm);
 
     public void SetBgmEnabled(bool enabled)
     {
@@ -195,51 +175,44 @@ public class ProtoMain : MonoBehaviour
         else if (!enabled && _bgmSource.isPlaying) _bgmSource.Stop();
     }
 
-    // メニュー画面（マップから開く）
     public void ShowMenu()
     {
         _bgImg.enabled = false;
-        _battle.Hide();
-        _build.Hide();
-        _map.Hide();
+        _battle.Hide(); _build.Hide(); _map.Hide();
         _menu.Show();
     }
 
-    // マップ画面（ゲームのホーム。ここから歩いてエンカウント）
     public void ShowMap()
     {
-        _bgImg.enabled = false; // マップは自前の背景を持つ
-        _battle.Hide();
-        _build.Hide();
-        _menu.Hide();
-        _map.Show(); // 中で現在エリアに応じたBGM（草原=フィールド/山頂=嵐）を再生する
+        _bgImg.enabled = false;
+        _battle.Hide(); _build.Hide(); _menu.Hide();
+        _map.Show();
     }
 
-    // ビルド画面（メニューから開く）
     public void ShowBuild()
     {
         _bgImg.enabled = false;
-        _battle.Hide();
-        _map.Hide();
-        _menu.Hide();
+        _battle.Hide(); _map.Hide(); _menu.Hide();
         _build.Show();
     }
 
-    // バトル開始（マップでぶつかった敵のデータを渡す）
-    public void StartBattle(ProtoEnemy enemy)
+    EnemyDef _pendingEnemy;
+    public EnemyDef CurrentEnemy => _pendingEnemy;
+
+    public void StartBattle(EnemyDef enemy)
     {
-        _bgImg.enabled = true; // バトルは自然背景
-        _build.Hide();
-        _map.Hide();
+        _pendingEnemy = enemy;
+        _bgImg.enabled = true;
+        _build.Hide(); _map.Hide(); _menu.Hide();
         _battle.Begin(enemy);
-        // ボス（鬼・ドラゴンなど levelOffset を持つ強敵）はシリアスな専用BGM
-        PlayBgm(enemy.levelOffset > 0 ? _bossBgm : _battleBgm);
+        PlayBgm(enemy != null && enemy.levelOffset > 0 ? _bossBgm : _battleBgm);
     }
 
+    // 戦闘勝利（報酬処理はProtoBattle側で完了済み）→ マップへ
     public void OnBattleWon()
     {
         Wave++;
-        _map.OnEnemyDefeated(); // 倒した敵をマップから消して補充
+        _map.OnEnemyDefeated();
         ShowMap();
     }
 
