@@ -45,6 +45,47 @@ public static class ProtoPixelArt
         return _mamaPhoto != null ? _mamaPhoto : Mama(); // 無ければ従来のドット絵にフォールバック
     }
 
+    // 主人公画像の「髪の銀色部分だけ」を指定色に塗り替えた版を作る（仲間の色違い用）
+    static readonly Dictionary<int, Sprite> _tintCache = new Dictionary<int, Sprite>();
+    public static Sprite MamaPhotoTinted(Color hairColor)
+    {
+        var baseSprite = MamaPhoto();
+        if (baseSprite == null) return Mama();
+
+        // 同じ色なら使い回し
+        int key = ((int)(hairColor.r * 255) << 16) | ((int)(hairColor.g * 255) << 8) | (int)(hairColor.b * 255);
+        if (_tintCache.TryGetValue(key, out var cached)) return cached;
+
+        var src = baseSprite.texture;
+        Color[] pixels;
+        try { pixels = src.GetPixels(); }
+        catch { return baseSprite; } // 読み取り不可ならそのまま
+
+        Color.RGBToHSV(hairColor, out float targetH, out float targetS, out _);
+
+        for (int i = 0; i < pixels.Length; i++)
+        {
+            var c = pixels[i];
+            if (c.a < 0.1f) continue;
+            Color.RGBToHSV(c, out float h, out float s, out float v);
+            // 銀髪＝低彩度かつ中間〜やや明るい明度。白いドレス(明度高)や肌・線(暗/有彩)は除外
+            if (s < 0.22f && v > 0.45f && v < 0.90f)
+            {
+                var nc = Color.HSVToRGB(targetH, Mathf.Max(0.45f, targetS), v); // 明暗(立体感)は維持
+                nc.a = c.a;
+                pixels[i] = nc;
+            }
+        }
+
+        var tex = new Texture2D(src.width, src.height, TextureFormat.RGBA32, false);
+        tex.filterMode = src.filterMode;
+        tex.SetPixels(pixels);
+        tex.Apply();
+        var sprite = Sprite.Create(tex, new Rect(0, 0, tex.width, tex.height), new Vector2(0.5f, 0.5f), 100f);
+        _tintCache[key] = sprite;
+        return sprite;
+    }
+
     // バトル用MAMA（30x38）: 銀髪ロング・黒ドレス・シースルー裾・右腕を突き出す構え
     public static Sprite Mama()
         => Mama(new Color(0.87f, 0.88f, 0.95f), new Color(0.66f, 0.68f, 0.80f), new Color(0.98f, 0.99f, 1f));
