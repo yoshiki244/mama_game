@@ -189,6 +189,26 @@ public class ProtoMain : MonoBehaviour
         _map.Show();
     }
 
+    // ゲームオーバーから最初(Wave1・最初のマス)へやり直す
+    public void RestartRun()
+    {
+        Stats = new PlayerStats(Cfg);
+        Wave = 1;
+        Money = 0;
+        _map.ResetRun();
+        ShowMap();
+    }
+
+    // ゲーム終了
+    public void QuitGame()
+    {
+#if UNITY_EDITOR
+        UnityEditor.EditorApplication.isPlaying = false;
+#else
+        Application.Quit();
+#endif
+    }
+
     public void ShowBuild()
     {
         _bgImg.enabled = false;

@@ -1,5 +1,6 @@
 using UnityEngine;
 using UnityEngine.UI;
+using UnityEngine.EventSystems;
 using TMPro;
 using System.Collections;
 using System.Collections.Generic;
@@ -18,6 +19,15 @@ public class ProtoBattle : MonoBehaviour
     Image _enemyFill, _pFill;
     TextMeshProUGUI _pHpText;
     RectTransform _handArea;
+    readonly List<CardDef> _pendingDrawn = new List<CardDef>();
+    readonly List<RectTransform> _cardRects = new List<RectTransform>();
+    RectTransform _boardOverlay;   // カード選択時に中央へ出す盤面プレビュー（枠＋背景）
+    RectTransform _boardContent;   // 盤面プレビューの動的中身（マス・文字）
+    int _selectedIndex = -1;
+    bool _dead;                    // HP0で倒れた状態（以降アニメ停止）
+    Coroutine _glowCo;
+    readonly List<Image> _glowImgs = new List<Image>();
+    readonly List<Color> _glowBase = new List<Color>();
     RectTransform _challengeRoot, _pieceArea;
     TextMeshProUGUI _challengePrompt;
     Image _timerFill;
@@ -48,7 +58,7 @@ public class ProtoBattle : MonoBehaviour
     AudioClip[] _hitClips;
     AudioClip _swingClip;
 
-    Image _actorImg, _slimeImg;
+    Image _actorImg, _slimeImg, _faceImg;
     RectTransform _actorRt, _slimeRt, _enemyInner, _playerInner, _enemyShadow;
 
     public void Init(ProtoMain main)
@@ -77,6 +87,17 @@ public class ProtoBattle : MonoBehaviour
         _root.gameObject.SetActive(true);
         _resultRoot.gameObject.SetActive(false);
         _challengeRoot.gameObject.SetActive(false);
+
+        // キャラ立ち絵・顔・位置サイズを通常に戻す（前回の倒れ絵/被弾絵をリセット）
+        _dead = false;
+        if (_actorImg != null) { _actorImg.sprite = ProtoPixelArt.MamaPhoto(); _actorImg.color = Color.white; }
+        if (_faceImg != null) _faceImg.sprite = ProtoPixelArt.FrontMama();
+        if (_actorRt != null) { _actorRt.anchoredPosition = new Vector2(-470, GroundY + 205f); _actorRt.sizeDelta = new Vector2(295, 375); _actorRt.localRotation = Quaternion.identity; _actorRt.localScale = Vector3.one; }
+        if (_playerInner != null) _playerInner.sizeDelta = new Vector2(295, 375);
+
+        // 残っているGAME OVERオーバーレイがあれば消す
+        var oldGo = _root.Find("GameOver");
+        if (oldGo != null) Destroy(oldGo.gameObject);
 
         _playerMaxHP = _main.Stats.MaxHP;
         _playerHP = _playerMaxHP;
@@ -132,56 +153,94 @@ public class ProtoBattle : MonoBehaviour
     {
         _root = ProtoUI.CreateFullScreen("BattleScreen", _main.Canvas.transform);
 
-        ProtoUI.CreatePanel("TopBar", _root, new Vector2(0, 400), new Vector2(1700, 115), new Color(0.05f, 0.04f, 0.10f, 0.62f)).raycastTarget = false;
-        ProtoUI.CreatePanel("TopBarLine", _root, new Vector2(0, 341), new Vector2(1700, 3), new Color(0.85f, 0.72f, 0.4f, 0.9f)).raycastTarget = false;
+        // バトル専用の背景画像（全画面）。最背面に敷く
+        var bgRt = ProtoUI.CreateFullScreen("BattleBG", _root);
+        var bgImg = bgRt.gameObject.AddComponent<Image>();
+        bgImg.sprite = ProtoPixelArt.BattleBackground();
+        bgImg.raycastTarget = false;
+        bgRt.SetAsFirstSibling();
+
+        ProtoUI.CreatePanel("BattleShade", _root, new Vector2(0, -382), new Vector2(1700, 260), new Color(0.015f, 0.018f, 0.028f, 0.45f)).raycastTarget = false;
+        ProtoUI.CreatePanel("TopBar", _root, new Vector2(0, 410), new Vector2(1700, 96), ProtoUI.Ink).raycastTarget = false;
+        ProtoUI.CreatePanel("TopBarLine", _root, new Vector2(0, 356), new Vector2(1700, 2), new Color(0.95f, 0.78f, 0.36f, 0.62f)).raycastTarget = false;
 
         // プレイヤーHUD（左上）
-        var pName = ProtoUI.CreateText("PName", _root, "MAMA", 22, new Vector2(-560, 410), new Vector2(220, 30));
-        pName.fontStyle = FontStyles.Bold; pName.color = new Color(0.9f, 0.92f, 1f);
-        ProtoUI.CreateGauge("PGauge", _root, new Vector2(-470, 378), new Vector2(GaugeWidth, 20),
-            new Color(0.15f, 0.12f, 0.2f), new Color(0.8f, 0.4f, 1f), out _pFill);
-        _pHpText = ProtoUI.CreateText("PHP", _root, "", 17, new Vector2(-470, 378), new Vector2(300, 26));
+        var pName = ProtoUI.CreateText("PName", _root, "MAMA", 27, new Vector2(-470, 416), new Vector2(320, 38), new Color(0.9f, 0.92f, 1f));
+        ProtoUI.StyleTitle(pName, new Color(0.9f, 0.92f, 1f), 3f);
+        ProtoUI.CreateGauge("PGauge", _root, new Vector2(-470, 382), new Vector2(GaugeWidth, 18),
+            new Color(0.08f, 0.07f, 0.11f, 0.92f), new Color(0.72f, 0.36f, 0.95f), out _pFill);
+        _pHpText = ProtoUI.CreateText("PHP", _root, "", 16, new Vector2(-470, 382), new Vector2(300, 24));
         _pHpText.fontStyle = FontStyles.Bold;
 
-        // マナ＆ステータス
-        _manaText = ProtoUI.CreateText("Mana", _root, "", 22, new Vector2(-470, 350), new Vector2(400, 28), new Color(0.6f, 0.85f, 1f));
-        _manaText.fontStyle = FontStyles.Bold; _manaText.alignment = TextAlignmentOptions.Left;
-        _statusText = ProtoUI.CreateText("Status", _root, "", 16, new Vector2(-470, 326), new Vector2(500, 24), new Color(0.8f, 0.9f, 0.8f));
+        // ステータス（プレイヤーHUD下・左上）
+        _statusText = ProtoUI.CreateText("Status", _root, "", 20, new Vector2(-460, 346), new Vector2(560, 28), new Color(0.8f, 0.9f, 0.8f));
         _statusText.alignment = TextAlignmentOptions.Left;
 
-        // 敵HUD（右上）
-        _enemyName = ProtoUI.CreateText("EName", _root, "", 28, new Vector2(560, 410), new Vector2(320, 40), new Color(1f, 0.5f, 0.45f));
-        ProtoUI.StyleTitle(_enemyName, new Color(1f, 0.55f, 0.5f));
-        ProtoUI.CreateGauge("EGauge", _root, new Vector2(560, 370), new Vector2(GaugeWidth, 20),
-            new Color(0.15f, 0.12f, 0.2f), new Color(1f, 0.35f, 0.35f), out _enemyFill);
-        _enemyHPText = ProtoUI.CreateText("EHP", _root, "", 17, new Vector2(560, 370), new Vector2(300, 26));
-        _enemyHPText.fontStyle = FontStyles.Bold;
+        // マナを移動して空いた左上スペースに顔アイコン（画像をそのまま表示）
+        var faceRt = ProtoUI.CreateRect("FaceIcon", _root);
+        faceRt.anchoredPosition = new Vector2(-690, 410);
+        faceRt.sizeDelta = new Vector2(84, 84);
+        _faceImg = faceRt.gameObject.AddComponent<Image>();
+        _faceImg.sprite = ProtoPixelArt.FrontMama(); _faceImg.preserveAspect = true; _faceImg.raycastTarget = false;
 
-        ProtoUI.CreateButton("RetreatBtn", _root, "逃げる", 15, new Vector2(738, 408), new Vector2(110, 38),
-            new Color(0.35f, 0.25f, 0.3f), () => _main.ShowMap());
+        // マナ（左下・手札カードの横に配置）
+        var manaBg = ProtoUI.CreateFramedPanel("ManaBadge", _root, new Vector2(-665, -298), new Vector2(164, 84), new Color(0.035f, 0.105f, 0.22f, 0.96f), new Color(0.38f, 0.78f, 1f, 0.8f));
+        manaBg.raycastTarget = false;
+        var manaLabel = ProtoUI.CreateText("ManaLabel", manaBg.transform, "マナ", 18, new Vector2(0, 24), new Vector2(150, 22), new Color(0.6f, 0.85f, 1f));
+        ProtoUI.StyleTitle(manaLabel, new Color(0.6f, 0.85f, 1f), 4f);
+        _manaText = ProtoUI.CreateText("Mana", manaBg.transform, "", 36, new Vector2(0, -12), new Vector2(150, 44), new Color(0.88f, 0.96f, 1f));
+        ProtoUI.StyleTitle(_manaText, new Color(0.88f, 0.96f, 1f), 3f);
+        _manaText.outlineWidth = 0.3f; _manaText.outlineColor = new Color32(8, 24, 56, 255);
+
+        // 敵HUD（右上）
+        _enemyName = ProtoUI.CreateText("EName", _root, "", 27, new Vector2(560, 416), new Vector2(320, 38), new Color(1f, 0.55f, 0.48f));
+        ProtoUI.StyleTitle(_enemyName, new Color(1f, 0.55f, 0.5f), 3f);
+        ProtoUI.CreateGauge("EGauge", _root, new Vector2(560, 382), new Vector2(GaugeWidth, 18),
+            new Color(0.08f, 0.07f, 0.11f, 0.92f), new Color(0.95f, 0.27f, 0.27f), out _enemyFill);
+        _enemyHPText = ProtoUI.CreateText("EHP", _root, "", 16, new Vector2(560, 382), new Vector2(300, 24));
+        _enemyHPText.fontStyle = FontStyles.Bold;
 
         // キャラ
         _slimeImg = CreateCharacterSprite("EnemySprite", ProtoPixelArt.Dragon(), new Vector2(460, 70), new Vector2(540, 355));
         _slimeRt = (RectTransform)_slimeImg.transform.parent;
         _enemyInner = (RectTransform)_slimeImg.transform;
 
-        _actorImg = CreateCharacterSprite("Player", ProtoPixelArt.Mama(), new Vector2(-430, GroundY + 175f), new Vector2(280, 345));
+        _actorImg = CreateCharacterSprite("Player", ProtoPixelArt.MamaPhoto(), new Vector2(-470, GroundY + 205f), new Vector2(295, 375));
         _actorRt = (RectTransform)_actorImg.transform.parent;
         _playerInner = (RectTransform)_actorImg.transform;
         AddGroundShadow(_actorRt, 150f);
 
         // メッセージ
-        var msgBox = ProtoUI.CreatePanel("MsgBox", _root, new Vector2(0, 300), new Vector2(1300, 50), new Color(0.08f, 0.06f, 0.14f, 0.92f));
-        _message = ProtoUI.CreateText("Msg", msgBox.transform, "", 22, Vector2.zero, new Vector2(1260, 50));
+        var msgBox = ProtoUI.CreateFramedPanel("MsgBox", _root, new Vector2(0, 302), new Vector2(980, 52), new Color(0.035f, 0.04f, 0.06f, 0.92f), new Color(0.65f, 0.55f, 0.36f, 0.62f));
+        _message = ProtoUI.CreateText("Msg", msgBox.transform, "", 22, Vector2.zero, new Vector2(940, 50));
 
         // 手札
         _handArea = ProtoUI.CreateRect("Hand", _root);
-        _handArea.anchoredPosition = new Vector2(-60, -300);
+        _handArea.anchoredPosition = new Vector2(-64, -302);
         _handArea.sizeDelta = new Vector2(1500, 240);
 
-        // ターン終了ボタン
-        _endTurnBtn = ProtoUI.CreateButton("EndTurn", _root, "ターン終了", 22, new Vector2(720, -300), new Vector2(180, 90),
-            new Color(0.5f, 0.35f, 0.25f), OnEndTurn);
+        // カード選択時に中央へ出す盤面プレビュー：外周だけ金色、内側は不透明パネル（背景と同化しない）
+        _boardOverlay = ProtoUI.CreateRect("BoardOverlay", _root);
+        _boardOverlay.anchoredPosition = new Vector2(0, 95);
+        _boardOverlay.sizeDelta = new Vector2(330, 330);
+        var ovBg = _boardOverlay.gameObject.AddComponent<Image>();
+        ovBg.color = new Color(0.9f, 0.78f, 0.42f, 0.97f); ovBg.raycastTarget = false; // 外周の金枠（細）
+        var ovInner = ProtoUI.CreatePanel("OverlayInner", _boardOverlay, Vector2.zero, new Vector2(322, 322), new Color(0.07f, 0.08f, 0.13f, 0.98f));
+        ovInner.raycastTarget = false; // 不透明の内側（背景が透けない・金は外周だけ）
+        _boardContent = ProtoUI.CreateRect("BoardContent", _boardOverlay); // 動的中身（毎回作り直す）
+        _boardContent.anchoredPosition = Vector2.zero; _boardContent.sizeDelta = new Vector2(330, 330);
+        _boardOverlay.gameObject.SetActive(false);
+
+        // 手札を最前面に（カードを上にドラッグしたとき盤面より前＝表で見える）
+        _handArea.SetAsLastSibling();
+
+        // ターン終了ボタン（大きめ・太い外枠）＋ 逃げるをその下に配置
+        ProtoUI.CreatePanel("EndTurnBorder", _root, new Vector2(632, -262), new Vector2(224, 114), new Color(0.85f, 0.72f, 0.4f, 0.95f)).raycastTarget = false;
+        _endTurnBtn = ProtoUI.CreateButton("EndTurn", _root, "ターン終了", 24, new Vector2(632, -262), new Vector2(212, 102),
+            new Color(0.38f, 0.13f, 0.12f, 0.96f), OnEndTurn);
+        ProtoUI.CreatePanel("RetreatBorder", _root, new Vector2(632, -374), new Vector2(224, 80), new Color(0.85f, 0.72f, 0.4f, 0.95f)).raycastTarget = false;
+        ProtoUI.CreateButton("RetreatBtn", _root, "逃げる", 20, new Vector2(632, -374), new Vector2(212, 68),
+            new Color(0.16f, 0.14f, 0.18f, 0.96f), () => _main.ShowMap());
 
         // 点滅チャレンジ
         _challengeRoot = ProtoUI.CreateFullScreen("Challenge", _root);
@@ -194,7 +253,7 @@ public class ProtoBattle : MonoBehaviour
 
         // 結果＋報酬
         _resultRoot = ProtoUI.CreateFullScreen("Result", _root);
-        _resultRoot.gameObject.AddComponent<Image>().color = new Color(0, 0, 0, 0.85f);
+        _resultRoot.gameObject.AddComponent<Image>().color = new Color(0, 0, 0, 0.55f); // 元画面を少し暗く
         _resultText = ProtoUI.CreateText("RText", _resultRoot, "", 54, new Vector2(0, 300), new Vector2(900, 80));
         ProtoUI.StyleTitle(_resultText, ProtoUI.Gold, 8f);
         _resultSub = ProtoUI.CreateText("RSub", _resultRoot, "", 22, new Vector2(0, 235), new Vector2(900, 50), new Color(0.9f, 0.95f, 1f));
@@ -210,7 +269,7 @@ public class ProtoBattle : MonoBehaviour
         _pHpText.text = $"HP {_playerHP}/{_playerMaxHP}";
         ProtoUI.SetGauge(_enemyFill, _enemyHP / (float)_enemyMaxHP, GaugeWidth);
         _enemyHPText.text = $"{_enemyHP}/{_enemyMaxHP}";
-        _manaText.text = $"マナ {_mana}/{_main.MaxMana}";
+        RefreshMana();
 
         var st = new List<string>();
         if (_block > 0) st.Add($"<color=#7FB0FF>ブロック{_block}</color>");
@@ -226,7 +285,9 @@ public class ProtoBattle : MonoBehaviour
 
     void RefreshHand(bool dealAnimation = false)
     {
+        HideBoardOverlay();
         foreach (Transform c in _handArea) Destroy(c.gameObject);
+        _cardRects.Clear();
         int n = _hand.Count;
         float cardW = 200f;
         float startX = -(n - 1) * cardW / 2f;
@@ -235,40 +296,192 @@ public class ProtoBattle : MonoBehaviour
             int idx = i;
             Vector2 pos = new Vector2(startX + i * cardW, 0);
             bool affordable = !_inputLocked && _mana >= _hand[i].ManaCost;
-            var btn = CreateCardUI(_hand[i], pos, () => OnCardClicked(idx), affordable);
-            if (dealAnimation) StartCoroutine(DealCard((RectTransform)btn.transform, pos, i * 0.06f));
+            var btn = CreateCardUI(_hand[i], pos, null, affordable);
+            var crt = (RectTransform)btn.transform;
+            _cardRects.Add(crt);
+            if (affordable)
+            {
+                var slide = btn.gameObject.AddComponent<CardSlide>();
+                slide.Setup(crt, pos, () => SelectCard(idx), () => TryPlayCard(idx));
+            }
+            if (dealAnimation) StartCoroutine(DealCard(crt, pos, i * 0.06f));
         }
+    }
+
+    // カードをクリック＝選択：中央に盤面を表示し、対応マスを光らせる
+    void SelectCard(int index)
+    {
+        if (_inputLocked || index < 0 || index >= _hand.Count) return;
+        _selectedIndex = index;
+        // 選択カードを少し上げて拡大、ほかは元に戻す
+        for (int i = 0; i < _cardRects.Count; i++)
+        {
+            var rt = _cardRects[i];
+            if (rt == null) continue;
+            bool sel = i == index;
+            rt.anchoredPosition = new Vector2(rt.anchoredPosition.x, sel ? 44f : 0f);
+            rt.localScale = sel ? Vector3.one * 1.08f : Vector3.one;
+            rt.SetAsLastSibling();
+        }
+        if (index < _cardRects.Count && _cardRects[index] != null) _cardRects[index].SetAsLastSibling();
+        // 種別＋マス数を画面上部のメッセージに表示
+        var sc = _hand[index];
+        _message.text = $"{sc.displayName}　{(sc.kind == CardKind.Attack ? "攻撃" : "スキル")} {sc.Size}マス";
+        ShowBoardForCard(sc, index);
+    }
+
+    // カードを上にスライド＝発動
+    void TryPlayCard(int index)
+    {
+        if (_inputLocked || index < 0 || index >= _hand.Count) return;
+        var card = _hand[index];
+        if (_mana < card.ManaCost) { _message.text = "マナが足りない！"; return; }
+        HideBoardOverlay();
+        _selectedIndex = -1;
+        _inputLocked = true;
+        var rt = index < _cardRects.Count ? _cardRects[index] : null;
+        StartCoroutine(PlayWithDisappear(index, rt));
+    }
+
+    IEnumerator PlayWithDisappear(int index, RectTransform rt)
+    {
+        if (rt != null) yield return CardDisappear(rt);
+        RefreshHand();
+        yield return PlayCard(index);
+    }
+
+    // カードを上に消える演出（上昇＋縮小＋フェード）
+    IEnumerator CardDisappear(RectTransform rt)
+    {
+        if (rt == null) yield break;
+        var cg = rt.GetComponent<CanvasGroup>();
+        if (cg == null) cg = rt.gameObject.AddComponent<CanvasGroup>();
+        Vector2 start = rt.anchoredPosition;
+        float startScale = rt.localScale.x;
+        float t = 0f; const float dur = 0.24f;
+        while (t < dur)
+        {
+            if (rt == null) yield break;
+            t += Time.deltaTime; float p = Mathf.SmoothStep(0, 1, t / dur);
+            rt.anchoredPosition = start + new Vector2(0, 150f * p);
+            rt.localScale = Vector3.one * Mathf.Lerp(startScale, 0.25f, p);
+            cg.alpha = 1f - p;
+            yield return null;
+        }
+    }
+
+    void HideBoardOverlay()
+    {
+        if (_glowCo != null) { StopCoroutine(_glowCo); _glowCo = null; }
+        _glowImgs.Clear(); _glowBase.Clear();
+        if (_boardOverlay == null) return;
+        if (_boardContent != null) foreach (Transform c in _boardContent) Destroy(c.gameObject);
+        _boardOverlay.gameObject.SetActive(false);
+    }
+
+    // 配置マスを発光させるパルス
+    IEnumerator GlowLoop()
+    {
+        while (true)
+        {
+            float t = Mathf.PingPong(Time.unscaledTime * 2.2f, 1f);
+            for (int i = 0; i < _glowImgs.Count; i++)
+            {
+                if (_glowImgs[i] == null) continue;
+                _glowImgs[i].color = Color.Lerp(_glowBase[i], Color.white, 0.15f + 0.55f * t);
+            }
+            yield return null;
+        }
+    }
+
+    // 選択中カードに対応するマスを盤面上で発光表示
+    void ShowBoardForCard(CardDef card, int handIndex)
+    {
+        if (_boardOverlay == null) return;
+        foreach (Transform c in _boardContent) Destroy(c.gameObject);
+        _boardOverlay.gameObject.SetActive(true);
+
+        var panel = _main.Panel;
+        int W = panel.W, H = panel.H;
+        float area = 250f; // マス数が増えるほど1マスは自動的に小さくなる（最大10×10想定）
+        float cell = Mathf.Min(area / W, area / H);
+        float ox = -(W - 1) * cell / 2f, oy = (H - 1) * cell / 2f;
+
+        // 手札内で同じカードが複数ある場合、その「何番目か」に対応する1配置だけを光らせる
+        var matches = panel.Placements.Where(pp => pp.card == card).ToList();
+        int rank = 0;
+        for (int i = 0; i < handIndex && i < _hand.Count; i++)
+            if (_hand[i] == card) rank++;
+
+        var cellColor = new Dictionary<Vector2Int, Color>();
+        Color hi = new Color(1f, 0.86f, 0.28f, 0.97f);
+        if (matches.Count > 0)
+            foreach (var c in matches[rank % matches.Count].cells)
+                cellColor[c] = hi;
+
+        ProtoUI.CreateText("OVTitle", _boardContent, "選択カードの配置マス", 18,
+            new Vector2(0, 150), new Vector2(330, 26), Color.white);
+
+        _glowImgs.Clear(); _glowBase.Clear();
+        for (int x = 0; x < W; x++)
+            for (int y = 0; y < H; y++)
+            {
+                var pl = panel.GetAt(x, y);
+                bool match = cellColor.TryGetValue(new Vector2Int(x, y), out var hc);
+                Color col = match ? hc
+                          : pl != null ? new Color(0.30f, 0.32f, 0.42f, 0.7f)
+                                       : new Color(0.10f, 0.12f, 0.18f, 0.55f);
+                var p = ProtoUI.CreatePanel($"BC_{x}_{y}", _boardContent,
+                    new Vector2(ox + x * cell, oy - y * cell), new Vector2(cell - 3, cell - 3), col);
+                p.raycastTarget = false;
+                if (match) { _glowImgs.Add(p); _glowBase.Add(hc); }   // 発光対象
+            }
+
+        if (_glowCo != null) StopCoroutine(_glowCo);
+        if (_glowImgs.Count > 0) _glowCo = StartCoroutine(GlowLoop());
+
+        ProtoUI.CreateText("OVHint", _boardContent, "↑ カードを上にスライドで発動", 15,
+            new Vector2(0, -150), new Vector2(330, 24), new Color(0.85f, 0.92f, 1f));
+    }
+
+    void RefreshMana()
+    {
+        _manaText.text = $"{_mana}/{_main.MaxMana}";
     }
 
     Button CreateCardUI(CardDef card, Vector2 pos, System.Action onClick, bool affordable)
     {
         Color accent = card.color;
         var frame = ProtoUI.CreatePanel("Card", _handArea, pos, new Vector2(190, 262),
-            affordable ? new Color(0.66f, 0.55f, 0.34f) : new Color(0.3f, 0.28f, 0.3f));
+            affordable ? Color.Lerp(accent, ProtoUI.Border, 0.45f) : new Color(0.24f, 0.24f, 0.27f, 0.92f));
         var btn = frame.gameObject.AddComponent<Button>();
         btn.targetGraphic = frame;
-        btn.onClick.AddListener(() => onClick());
+        if (onClick != null) btn.onClick.AddListener(() => onClick());
         btn.interactable = affordable;
 
-        var inner = ProtoUI.CreatePanel("Inner", frame.transform, Vector2.zero, new Vector2(180, 252), new Color(0.10f, 0.08f, 0.16f));
+        var inner = ProtoUI.CreatePanel("Inner", frame.transform, Vector2.zero, new Vector2(180, 252), affordable ? new Color(0.045f, 0.055f, 0.075f, 0.98f) : new Color(0.065f, 0.06f, 0.07f, 0.92f));
         inner.raycastTarget = false;
+        ProtoUI.AddPanelTrim(inner, new Vector2(180, 252), Color.Lerp(accent, Color.black, 0.35f), new Color(1f, 1f, 1f, 0.06f));
 
-        var header = ProtoUI.CreatePanel("Header", inner.transform, new Vector2(0, 105), new Vector2(168, 34), Color.Lerp(accent, Color.black, 0.6f));
+        var accentLine = ProtoUI.CreatePanel("AccentLine", inner.transform, new Vector2(0, 123), new Vector2(168, 5), affordable ? accent : new Color(0.30f, 0.30f, 0.34f));
+        accentLine.raycastTarget = false;
+        var header = ProtoUI.CreatePanel("Header", inner.transform, new Vector2(0, 101), new Vector2(168, 38), Color.Lerp(accent, Color.black, affordable ? 0.72f : 0.86f));
         header.raycastTarget = false;
-        var nameText = ProtoUI.CreateText("Name", header.transform, card.displayName, 19, Vector2.zero, new Vector2(162, 32));
-        nameText.fontStyle = FontStyles.Bold; nameText.enableAutoSizing = true; nameText.fontSizeMin = 10; nameText.fontSizeMax = 19;
+        // カード名：コストバッジの右側に左詰め、文字数に応じて枠内に収まるよう自動縮小
+        var nameText = ProtoUI.CreateText("Name", header.transform, card.displayName, 18, new Vector2(18, 0), new Vector2(126, 32));
+        nameText.alignment = TextAlignmentOptions.Left;
+        nameText.fontStyle = FontStyles.Bold;
+        nameText.enableWordWrapping = false;
+        nameText.overflowMode = TextOverflowModes.Overflow;
+        nameText.enableAutoSizing = true; nameText.fontSizeMin = 8; nameText.fontSizeMax = 19;
 
         // マナコストバッジ（左上）
-        var manaBadge = ProtoUI.CreatePanel("Mana", inner.transform, new Vector2(-72, 105), new Vector2(34, 34), new Color(0.2f, 0.4f, 0.85f));
+        var manaBadge = ProtoUI.CreatePanel("Mana", inner.transform, new Vector2(-72, 101), new Vector2(34, 34), new Color(0.08f, 0.27f, 0.68f, 0.96f));
         manaBadge.raycastTarget = false;
         ProtoUI.CreateText("M", manaBadge.transform, card.ManaCost.ToString(), 20, Vector2.zero, new Vector2(34, 34)).fontStyle = FontStyles.Bold;
 
-        // 種別＋マス数
-        ProtoUI.CreateText("Kind", inner.transform, card.kind == CardKind.Attack ? $"攻撃 {card.Size}マス" : $"スキル {card.Size}マス",
-            12, new Vector2(0, 74), new Vector2(168, 18), new Color(0.8f, 0.8f, 0.9f)).raycastTarget = false;
-
         // アート（形状）
-        var art = ProtoUI.CreatePanel("Art", inner.transform, new Vector2(0, 8), new Vector2(160, 96), new Color(0.05f, 0.04f, 0.10f));
+        var art = ProtoUI.CreatePanel("Art", inner.transform, new Vector2(0, 4), new Vector2(160, 94), new Color(0.018f, 0.024f, 0.034f, 0.92f));
         art.raycastTarget = false;
         var shape = card.Shape;
         float cs = 14f, gap = 2f;
@@ -277,13 +490,13 @@ public class ProtoBattle : MonoBehaviour
         foreach (var v in shape)
             ProtoUI.CreatePanel("Mas", art.transform, new Vector2(ox + (v.x - minX) * (cs + gap), oy - (v.y - minY) * (cs + gap)), new Vector2(cs, cs), card.color).raycastTarget = false;
 
-        // 下部：威力 or 効果説明
-        var footer = ProtoUI.CreatePanel("Footer", inner.transform, new Vector2(0, -102), new Vector2(168, 44), new Color(0.16f, 0.13f, 0.24f));
+        // 効果説明：マス背景（形状アート）のすぐ下に配置
+        var footer = ProtoUI.CreatePanel("Footer", inner.transform, new Vector2(0, -76), new Vector2(168, 64), new Color(0.075f, 0.08f, 0.105f, 0.94f));
         footer.raycastTarget = false;
         string footText = card.kind == CardKind.Attack
             ? (card.HasEffect(CardEffectType.BlinkOnUse) ? $"威力{card.power}・点滅" : $"威力 {card.power}")
             : (string.IsNullOrEmpty(card.description) ? "" : card.description);
-        var ft = ProtoUI.CreateText("FT", footer.transform, footText, 13, Vector2.zero, new Vector2(162, 42), ProtoUI.Gold);
+        var ft = ProtoUI.CreateText("FT", footer.transform, footText, 13, Vector2.zero, new Vector2(160, 60), ProtoUI.Gold);
         ft.enableAutoSizing = true; ft.fontSizeMin = 9; ft.fontSizeMax = 14;
 
         return btn;
@@ -316,9 +529,32 @@ public class ProtoBattle : MonoBehaviour
 
         if (_enemyHP <= 0) { yield return Victory(); yield break; }
 
+        if (_pendingDrawn.Count > 0)
+        {
+            RefreshHand();
+            yield return RevealDrawnCards();
+        }
+
         _inputLocked = false;
         RefreshHand();
-        if (_mana <= 0) _message.text = "マナ切れ。『ターン終了』へ。";
+
+        // 使えるカードが無くなったら自動でターン終了
+        if (!HasAffordableCard())
+        {
+            _inputLocked = true;
+            RefreshHand();
+            _message.text = _hand.Count == 0 ? "手札がない。ターンを終了します…" : "マナ切れ。ターンを終了します…";
+            yield return new WaitForSeconds(0.8f);
+            _inputLocked = false;
+            OnEndTurn();
+        }
+    }
+
+    bool HasAffordableCard()
+    {
+        foreach (var c in _hand)
+            if (_mana >= c.ManaCost) return true;
+        return false;
     }
 
     IEnumerator ResolveAttack(CardDef card)
@@ -361,7 +597,11 @@ public class ProtoBattle : MonoBehaviour
                 case CardEffectType.Draw:
                     var deck = _main.Panel.BuildDeck();
                     for (int i = 0; i < e.amount; i++)
-                        _hand.Add((deck.Count > 0 ? deck[Random.Range(0, deck.Count)] : null) ?? _main.Db.normalAttack);
+                    {
+                        var drawn = (deck.Count > 0 ? deck[Random.Range(0, deck.Count)] : null) ?? _main.Db.normalAttack;
+                        _hand.Add(drawn);
+                        _pendingDrawn.Add(drawn);
+                    }
                     break;
                 case CardEffectType.Block: _block += e.amount; break;
                 case CardEffectType.Protect: _protectPct = Mathf.Max(_protectPct, e.amount); break;
@@ -403,9 +643,39 @@ public class ProtoBattle : MonoBehaviour
 
         if (_weakTurns > 0) _weakTurns--;
 
-        if (_playerHP <= 0) { ShowDefeat(); yield break; }
+        if (_playerHP <= 0) { yield return Defeat(); yield break; }
 
         StartPlayerTurn();
+    }
+
+    // HP0：足元に倒れる → 画面を少し暗くして GAME OVER（専用オーバーレイを最前面に生成）
+    IEnumerator Defeat()
+    {
+        _dead = true;
+        _inputLocked = true;
+        HideBoardOverlay();
+
+        // 倒れ絵を元キャラの足元あたりに配置（以降は動かさない）
+        if (_actorImg != null) { _actorImg.sprite = ProtoPixelArt.DownMama(); _actorImg.color = Color.white; }
+        if (_faceImg != null) _faceImg.sprite = ProtoPixelArt.DamageMama();
+        if (_actorRt != null) { _actorRt.anchoredPosition = new Vector2(-470, GroundY + 6f); _actorRt.sizeDelta = new Vector2(320, 130); _actorRt.localRotation = Quaternion.identity; _actorRt.localScale = Vector3.one; }
+        if (_playerInner != null) _playerInner.sizeDelta = new Vector2(320, 130);
+        _message.text = "";
+        yield return new WaitForSeconds(0.8f);
+
+        // GAME OVER オーバーレイ（元画面を少し暗く＋中央に文字＋選択肢）
+        var go = ProtoUI.CreateFullScreen("GameOver", _root);
+        var bg = go.gameObject.AddComponent<Image>();
+        bg.color = new Color(0, 0, 0, 0.74f);
+        go.SetAsLastSibling();
+
+        var t = ProtoUI.CreateText("GOText", go, "GAME OVER", 64, new Vector2(0, 180), new Vector2(900, 100), new Color(1f, 0.36f, 0.36f));
+        ProtoUI.StyleTitle(t, new Color(1f, 0.4f, 0.4f), 8f);
+        ProtoUI.CreateText("GOSub", go, "MAMAは倒れてしまった…", 24, new Vector2(0, 110), new Vector2(900, 40), new Color(0.92f, 0.92f, 1f));
+        ProtoUI.CreateButton("Retry", go, "もう一度やり直す", 24, new Vector2(0, 30), new Vector2(330, 68),
+            new Color(0.30f, 0.45f, 0.32f), () => _main.RestartRun());
+        ProtoUI.CreateButton("Quit", go, "ゲームを終了する", 22, new Vector2(0, -60), new Vector2(330, 62),
+            new Color(0.45f, 0.25f, 0.25f), () => { /* ここでは何もしない */ });
     }
 
     IEnumerator EnemyAttackSequence()
@@ -441,12 +711,14 @@ public class ProtoBattle : MonoBehaviour
             }
             else
             {
+                if (_faceImg != null) _faceImg.sprite = ProtoPixelArt.DamageMama(); // 被弾の瞬間だけ顔写真を差し替え
                 yield return Impact(_actorRt, _actorImg, null, dmg, 1f, sfxTier);
                 _playerHP = Mathf.Max(0, _playerHP - dmg);
                 _message.text = atk.hits > 1 ? $"{h + 1}ヒット！{dmg} のダメージ！" : $"{dmg} のダメージ！";
             }
             RefreshAll();
             yield return new WaitForSeconds(0.35f);
+            if (_faceImg != null) _faceImg.sprite = ProtoPixelArt.FrontMama(); // 顔写真を通常に戻す
             if (_playerHP <= 0) yield break;
         }
         yield return new WaitForSeconds(0.3f);
@@ -457,6 +729,11 @@ public class ProtoBattle : MonoBehaviour
     IEnumerator Victory()
     {
         _inputLocked = true;
+        // レイアウトを通常（勝利）配置に戻す
+        ((RectTransform)_resultText.transform).anchoredPosition = new Vector2(0, 300);
+        _resultText.color = ProtoUI.Gold;
+        ((RectTransform)_resultSub.transform).anchoredPosition = new Vector2(0, 235);
+        _rewardArea.anchoredPosition = new Vector2(0, 20);
         _main.AddMoney(_enemy.moneyReward);
         _resultText.text = $"{_enemy.enemyName}を倒した！";
         _resultSub.text = $"お金 +{_enemy.moneyReward}　（所持 {_main.Money}）　報酬ピースを1つ選ぼう";
@@ -524,16 +801,6 @@ public class ProtoBattle : MonoBehaviour
         var d = ProtoUI.CreateText("D", inner.transform, eff, 14, new Vector2(0, -100), new Vector2(220, 70),
             new Color(0.9f, 0.92f, 1f), TextAlignmentOptions.Top);
         d.raycastTarget = false;
-    }
-
-    void ShowDefeat()
-    {
-        foreach (Transform c in _rewardArea) Destroy(c.gameObject);
-        _resultText.text = "MAMAは倒れてしまった…";
-        _resultSub.text = "";
-        ProtoUI.CreateButton("Back", _rewardArea, "マップへ戻る", 24, new Vector2(0, -120), new Vector2(280, 64),
-            new Color(0.35f, 0.3f, 0.55f), () => _main.ShowMap());
-        _resultRoot.gameObject.SetActive(true);
     }
 
     // ==================== 点滅順番当て（効果発動時のみ） ====================
@@ -665,7 +932,8 @@ public class ProtoBattle : MonoBehaviour
         if (esc) { _main.ShowMap(); return; }
 
         float t = Time.time;
-        if (_playerInner != null) _playerInner.anchoredPosition = new Vector2(0, Mathf.Sin(t * 3f) * 4f);
+        // 倒れたら主人公は揺らさない
+        if (_playerInner != null) _playerInner.anchoredPosition = _dead ? Vector2.zero : new Vector2(0, Mathf.Sin(t * 3f) * 4f);
         if (_enemyInner != null) _enemyInner.anchoredPosition = new Vector2(0, Mathf.Sin(t * 2.1f + 1.7f) * 9f);
     }
 
@@ -709,6 +977,53 @@ public class ProtoBattle : MonoBehaviour
             yield return null;
         }
         rt.anchoredPosition = finalPos; rt.localScale = Vector3.one; rt.localRotation = Quaternion.identity;
+    }
+
+    // カード効果でドローしたカードを目立たせる演出
+    IEnumerator RevealDrawnCards()
+    {
+        int count = _pendingDrawn.Count;
+        string names = string.Join("、", _pendingDrawn.ConvertAll(c => c.displayName));
+        _pendingDrawn.Clear();
+        _message.text = $"<color=#7FE0FF>＋{count}枚ドロー！</color> {names}";
+
+        int total = _cardRects.Count;
+        int from = Mathf.Max(0, total - count);
+        for (int k = from; k < total; k++)
+            StartCoroutine(DrawPop(_cardRects[k], (k - from) * 0.12f));
+        yield return new WaitForSeconds(0.45f + count * 0.12f);
+    }
+
+    IEnumerator DrawPop(RectTransform rt, float delay)
+    {
+        if (rt == null) yield break;
+        Vector2 finalPos = rt.anchoredPosition;
+        Vector2 startPos = finalPos + new Vector2(0, -280);
+        rt.anchoredPosition = startPos; rt.localScale = Vector3.one * 0.2f;
+        var glow = ProtoUI.CreatePanel("DrawGlow", rt, Vector2.zero, new Vector2(214, 286), new Color(0.5f, 0.9f, 1f, 0f));
+        glow.raycastTarget = false; glow.transform.SetAsFirstSibling();
+        yield return new WaitForSeconds(delay);
+        if (rt == null) yield break;
+        float t = 0f; const float dur = 0.3f;
+        while (t < dur)
+        {
+            if (rt == null) yield break;
+            t += Time.deltaTime; float p = Mathf.SmoothStep(0, 1, t / dur);
+            rt.anchoredPosition = Vector2.Lerp(startPos, finalPos, p);
+            rt.localScale = Vector3.one * Mathf.Lerp(0.2f, 1.12f, p);
+            if (glow != null) glow.color = new Color(0.5f, 0.9f, 1f, 0.6f * (1f - p));
+            yield return null;
+        }
+        t = 0f;
+        while (t < 0.1f)
+        {
+            if (rt == null) yield break;
+            t += Time.deltaTime;
+            rt.localScale = Vector3.one * Mathf.Lerp(1.12f, 1f, t / 0.1f);
+            yield return null;
+        }
+        if (rt != null) { rt.anchoredPosition = finalPos; rt.localScale = Vector3.one; }
+        if (glow != null) Destroy(glow.gameObject);
     }
 
     IEnumerator Lunge(RectTransform rt, Vector2 dir)
@@ -933,5 +1248,46 @@ public class ProtoBattle : MonoBehaviour
         float t = 0f; const float dur = 0.35f;
         while (t < dur) { t += Time.deltaTime; float a = Mathf.Lerp(maxAlpha, 0f, t / dur); img.color = new Color(color.r, color.g, color.b, a); yield return null; }
         Destroy(flash.gameObject);
+    }
+}
+
+// 手札カードの操作: タップ＝選択 / 上にスライド＝発動
+public class CardSlide : MonoBehaviour, IBeginDragHandler, IDragHandler, IEndDragHandler, IPointerClickHandler
+{
+    RectTransform _rt;
+    Vector2 _home;
+    System.Action _onSelect, _onPlay;
+    bool _dragging;
+
+    public void Setup(RectTransform rt, Vector2 home, System.Action onSelect, System.Action onPlay)
+    {
+        _rt = rt; _home = home; _onSelect = onSelect; _onPlay = onPlay;
+    }
+
+    public void OnPointerClick(PointerEventData e)
+    {
+        if (!_dragging) _onSelect?.Invoke();
+    }
+
+    public void OnBeginDrag(PointerEventData e)
+    {
+        _dragging = true;
+        _onSelect?.Invoke();
+    }
+
+    public void OnDrag(PointerEventData e)
+    {
+        if (_rt == null) return;
+        float up = Mathf.Clamp(e.position.y - e.pressPosition.y, 0f, 260f);
+        _rt.anchoredPosition = _home + new Vector2(0, up);
+    }
+
+    public void OnEndDrag(PointerEventData e)
+    {
+        _dragging = false;
+        if (_rt == null) return;
+        float up = e.position.y - e.pressPosition.y;
+        if (up > Screen.height * 0.12f) { _onPlay?.Invoke(); }
+        else { _rt.anchoredPosition = _home; }
     }
 }

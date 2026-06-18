@@ -8,6 +8,12 @@ public static class ProtoUI
 {
     static TMP_FontAsset _font;
     static bool _fontLoaded;
+    public static readonly Color Gold = new Color(0.92f, 0.82f, 0.55f);
+    public static readonly Color Ink = new Color(0.025f, 0.027f, 0.04f, 0.88f);
+    public static readonly Color Panel = new Color(0.055f, 0.065f, 0.085f, 0.90f);
+    public static readonly Color PanelSoft = new Color(0.09f, 0.105f, 0.13f, 0.82f);
+    public static readonly Color Border = new Color(0.72f, 0.62f, 0.38f, 0.78f);
+    public static readonly Color Cyan = new Color(0.45f, 0.82f, 1f, 0.95f);
 
     public static TMP_FontAsset Font
     {
@@ -104,18 +110,43 @@ public static class ProtoUI
         t.color = color;
     }
 
-    // シャンパンゴールド（アクセントカラー）
-    public static readonly Color Gold = new Color(0.92f, 0.82f, 0.55f);
-
     public static Button CreateButton(string name, Transform parent, string label, float fontSize,
         Vector2 pos, Vector2 size, Color bg, System.Action onClick)
     {
         var img = CreatePanel(name, parent, pos, size, bg);
         var btn = img.gameObject.AddComponent<Button>();
         btn.targetGraphic = img;
+        var colors = btn.colors;
+        colors.normalColor = Color.white;
+        colors.highlightedColor = new Color(1.15f, 1.12f, 1.05f, 1f);
+        colors.pressedColor = new Color(0.78f, 0.75f, 0.70f, 1f);
+        colors.disabledColor = new Color(0.42f, 0.42f, 0.45f, 0.65f);
+        colors.fadeDuration = 0.08f;
+        btn.colors = colors;
+        AddPanelTrim(img, size, Color.Lerp(bg, Gold, 0.38f), new Color(1f, 1f, 1f, 0.08f));
         if (onClick != null) btn.onClick.AddListener(() => onClick());
-        CreateText("Label", img.transform, label, fontSize, Vector2.zero, size);
+        var text = CreateText("Label", img.transform, label, fontSize, Vector2.zero, size);
+        text.fontStyle = FontStyles.Bold;
         return btn;
+    }
+
+    public static void AddPanelTrim(Image panel, Vector2 size, Color border, Color shine)
+    {
+        var top = CreatePanel("TopTrim", panel.transform, new Vector2(0, size.y * 0.5f - 2f), new Vector2(size.x, 3f), shine);
+        top.raycastTarget = false;
+        var bottom = CreatePanel("BottomTrim", panel.transform, new Vector2(0, -size.y * 0.5f + 2f), new Vector2(size.x, 2f), border);
+        bottom.raycastTarget = false;
+    }
+
+    public static Image CreateFramedPanel(string name, Transform parent, Vector2 pos, Vector2 size, Color fill, Color border)
+    {
+        var shadow = CreatePanel(name + "Shadow", parent, pos + new Vector2(0, -4), size + new Vector2(8, 8), new Color(0, 0, 0, 0.28f));
+        shadow.raycastTarget = false;
+        var frame = CreatePanel(name + "Frame", parent, pos, size, border);
+        frame.raycastTarget = false;
+        var inner = CreatePanel(name, frame.transform, Vector2.zero, size - new Vector2(8, 8), fill);
+        inner.raycastTarget = false;
+        return inner;
     }
 
     // 数字入力欄（点滅チャレンジの手入力用）
@@ -158,6 +189,7 @@ public static class ProtoUI
         fillRt.sizeDelta = new Vector2(size.x, 0);
         fill = fillRt.gameObject.AddComponent<Image>();
         fill.color = fillColor;
+        AddPanelTrim(bg, size, Color.Lerp(bgColor, Border, 0.5f), new Color(1f, 1f, 1f, 0.06f));
         return bg;
     }
 

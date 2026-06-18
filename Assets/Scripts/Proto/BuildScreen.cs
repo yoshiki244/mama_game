@@ -55,11 +55,17 @@ public class BuildScreen : MonoBehaviour
     {
         _root = ProtoUI.CreateFullScreen("BuildScreen", _main.Canvas.transform);
 
-        _title = ProtoUI.CreateText("Title", _root, "ビルド画面", 34, new Vector2(-330, 410), new Vector2(560, 50));
+        _title = ProtoUI.CreateText("Title", _root, "スキルビルド", 34, new Vector2(0, 410), new Vector2(560, 50));
         ProtoUI.StyleTitle(_title, ProtoUI.Gold, 6f);
 
         _manaText = ProtoUI.CreateText("Mana", _root, "", 20, new Vector2(-330, 360), new Vector2(560, 30),
             new Color(0.7f, 0.85f, 1f));
+
+        // 盤面の外枠（色付きで見やすく）
+        ProtoUI.CreatePanel("BoardBorder", _root, new Vector2(-330, 70),
+            new Vector2(BoardArea + 16, BoardArea + 16), new Color(0.85f, 0.72f, 0.4f, 0.95f)).raycastTarget = false;
+        ProtoUI.CreatePanel("BoardBorderInner", _root, new Vector2(-330, 70),
+            new Vector2(BoardArea + 6, BoardArea + 6), new Color(0.12f, 0.10f, 0.18f, 0.95f)).raycastTarget = false;
 
         // 盤面の土台
         _boardBg = ProtoUI.CreatePanel("Board", _root, new Vector2(-330, 70),
@@ -103,10 +109,12 @@ public class BuildScreen : MonoBehaviour
             new Vector2(330, -235), new Vector2(470, 80), new Color(0.7f, 0.7f, 0.8f));
 
         _info = ProtoUI.CreateText("Info", _root, "", 16,
-            new Vector2(-330, -250), new Vector2(560, 230), new Color(0.85f, 0.8f, 1f), TextAlignmentOptions.Top);
+            new Vector2(-330, -300), new Vector2(560, 190), new Color(0.85f, 0.8f, 1f), TextAlignmentOptions.Top);
 
+        ProtoUI.CreateButton("MenuBackBtn", _root, "メニューへ戻る", 22,
+            new Vector2(190, -330), new Vector2(250, 64), new Color(0.3f, 0.28f, 0.5f), () => _main.ShowMenu());
         ProtoUI.CreateButton("BackBtn", _root, "マップへ戻る", 22,
-            new Vector2(330, -330), new Vector2(260, 64), new Color(0.7f, 0.3f, 0.45f), () => _main.ShowMap());
+            new Vector2(470, -330), new Vector2(250, 64), new Color(0.7f, 0.3f, 0.45f), () => _main.ShowMap());
     }
 
     // ==================== 盤面 ====================

@@ -9,7 +9,7 @@ public class MenuScreen : MonoBehaviour
 {
     ProtoMain _main;
     RectTransform _root;
-    RectTransform _statusContent, _settingsContent;
+    RectTransform _statusContent, _settingsContent, _statsArea;
     TextMeshProUGUI _statusText, _volumeText, _bgmLabel, _notice;
 
     readonly List<(Image img, System.Action action)> _items = new List<(Image, System.Action)>();
@@ -105,16 +105,18 @@ public class MenuScreen : MonoBehaviour
         _statusContent.sizeDelta = new Vector2(700, 560);
 
         var charRt = ProtoUI.CreateRect("Chara", _statusContent);
-        charRt.anchoredPosition = new Vector2(-220, 20);
+        charRt.anchoredPosition = new Vector2(-220, 0);
         charRt.sizeDelta = new Vector2(190, 280);
         var img = charRt.gameObject.AddComponent<Image>();
-        img.sprite = ProtoPixelArt.Mama(); img.preserveAspect = true;
+        img.sprite = ProtoPixelArt.MamaMapPhoto(); img.preserveAspect = true;
 
-        var name = ProtoUI.CreateText("Name", _statusContent, "MAMA", 30, new Vector2(-220, 180), new Vector2(250, 40));
+        var name = ProtoUI.CreateText("Name", _statusContent, "MAMA", 30, new Vector2(-220, 215), new Vector2(250, 40));
         ProtoUI.StyleTitle(name, new Color(0.96f, 0.93f, 1f));
 
-        _statusText = ProtoUI.CreateText("Stats", _statusContent, "", 24, new Vector2(140, 10), new Vector2(420, 400), Color.white, TextAlignmentOptions.TopLeft);
-        _statusText.lineSpacing = 22f;
+        // 各ステータスを枠で囲って並べる領域
+        _statsArea = ProtoUI.CreateRect("StatsArea", _statusContent);
+        _statsArea.anchoredPosition = new Vector2(150, 0);
+        _statsArea.sizeDelta = new Vector2(420, 480);
 
         _statusContent.gameObject.SetActive(false);
     }
@@ -123,14 +125,30 @@ public class MenuScreen : MonoBehaviour
     {
         _settingsContent.gameObject.SetActive(false);
         _statusContent.gameObject.SetActive(true);
-        _statusText.text =
-            $"HP　　　 {_main.Stats.MaxHP}\n" +
-            $"攻撃力　 {_main.Stats.Attack}\n" +
-            $"盤面　　 {_main.BoardSize}×{_main.BoardSize}\n" +
-            $"最大マナ {_main.MaxMana}\n" +
-            $"お金　　 {_main.Money}\n" +
-            $"所持カード {_main.OwnedCardIds.Count}種\n" +
-            $"現在地　 Wave {_main.Wave}";
+
+        foreach (Transform c in _statsArea) Destroy(c.gameObject);
+        var rows = new (string, string)[]
+        {
+            ("HP",        $"{_main.Stats.MaxHP}"),
+            ("攻撃力",     $"{_main.Stats.Attack}"),
+            ("盤面",       $"{_main.BoardSize}×{_main.BoardSize}"),
+            ("最大マナ",   $"{_main.MaxMana}"),
+            ("お金",       $"{_main.Money}"),
+            ("所持カード", $"{_main.OwnedCardIds.Count}種"),
+            ("現在地",     $"Wave {_main.Wave}"),
+        };
+        float rowH = 50f, gap = 14f, top = 200f;
+        for (int i = 0; i < rows.Length; i++)
+        {
+            float y = top - i * (rowH + gap);
+            var box = ProtoUI.CreateFramedPanel($"Stat{i}", _statsArea, new Vector2(0, y), new Vector2(400, rowH),
+                new Color(0.06f, 0.07f, 0.11f, 0.92f), new Color(0.65f, 0.55f, 0.36f, 0.7f));
+            box.raycastTarget = false;
+            var lab = ProtoUI.CreateText("L", box.transform, rows[i].Item1, 22, new Vector2(-110, 0), new Vector2(170, rowH - 8), new Color(0.78f, 0.85f, 1f));
+            lab.alignment = TextAlignmentOptions.Left;
+            var val = ProtoUI.CreateText("V", box.transform, rows[i].Item2, 24, new Vector2(95, 0), new Vector2(180, rowH - 8), Color.white);
+            val.alignment = TextAlignmentOptions.Right; val.fontStyle = FontStyles.Bold;
+        }
     }
 
     // ---- 設定 ----

@@ -45,6 +45,63 @@ public static class ProtoPixelArt
         return _mamaPhoto != null ? _mamaPhoto : Mama(); // 無ければ従来のドット絵にフォールバック
     }
 
+    // バトル背景画像（Assets/Resources/battle_bg.png）。無ければコード生成の自然背景にフォールバック
+    static Sprite _battleBg;
+    static bool _battleBgLoaded;
+    public static Sprite BattleBackground()
+    {
+        if (!_battleBgLoaded)
+        {
+            _battleBg = Resources.Load<Sprite>("battle_bg");
+            _battleBgLoaded = true;
+            if (_battleBg == null)
+                Debug.LogWarning("battle_bg.png が Assets/Resources に見つかりません（Sprite設定を確認）");
+        }
+        return _battleBg != null ? _battleBg : NatureBackground();
+    }
+
+    // 敵・オブジェクト用の画像（Assets/Resources/<name>.png）。無ければnull（＝コード生成にフォールバック）
+    static readonly Dictionary<string, Sprite> _enemyPhotoCache = new Dictionary<string, Sprite>();
+    static bool TryPhoto(string name, out Sprite sp)
+    {
+        if (!_enemyPhotoCache.TryGetValue(name, out sp))
+        {
+            sp = Resources.Load<Sprite>(name);
+            _enemyPhotoCache[name] = sp;
+        }
+        return sp != null;
+    }
+
+    // マップの「樹」用の木画像（Assets/Resources/tree.png）。無ければnull
+    public static Sprite TreePhoto() { TryPhoto("tree", out var sp); return sp; }
+
+    // マップの「？」イベント用の画像（Assets/Resources/event_block.png）。無ければnull
+    public static Sprite EventPhoto() { TryPhoto("event_block", out var sp); return sp; }
+
+    // 戦闘UI左上の顔アイコン（Assets/Resources/front_mama.png）。無ければ立ち絵
+    public static Sprite FrontMama() { return TryPhoto("front_mama", out var sp) ? sp : MamaPhoto(); }
+
+    // 被弾時の差し替え画像（Assets/Resources/damage_mama.png）。無ければ通常立ち絵
+    public static Sprite DamageMama() { return TryPhoto("damage_mama", out var sp) ? sp : MamaPhoto(); }
+
+    // HP0で倒れた画像（Assets/Resources/mama_down.png）。無ければ通常立ち絵
+    public static Sprite DownMama() { return TryPhoto("mama_down", out var sp) ? sp : MamaPhoto(); }
+
+    // ダンジョンマップ用の主人公画像（Assets/Resources/mama_map.png）。無ければドット絵にフォールバック
+    static Sprite _mamaMap;
+    static bool _mamaMapLoaded;
+    public static Sprite MamaMapPhoto()
+    {
+        if (!_mamaMapLoaded)
+        {
+            _mamaMap = Resources.Load<Sprite>("mama_map");
+            _mamaMapLoaded = true;
+            if (_mamaMap == null)
+                Debug.LogWarning("mama_map.png が Assets/Resources に見つかりません（Sprite設定を確認）");
+        }
+        return _mamaMap != null ? _mamaMap : Mama();
+    }
+
     // 主人公画像の「髪の銀色部分だけ」を指定色に塗り替えた版を作る（仲間の色違い用）
     static readonly Dictionary<int, Sprite> _tintCache = new Dictionary<int, Sprite>();
     public static Sprite MamaPhotoTinted(Color hairColor)
@@ -235,6 +292,102 @@ public static class ProtoPixelArt
         return Sprite.Create(tex, new Rect(0, 0, w, h), new Vector2(0.5f, 0.5f), 16f);
     }
 
+    public static Sprite DungeonMapBackground()
+    {
+        int w = 160, h = 90;
+        var tex = new Texture2D(w, h, TextureFormat.RGBA32, false);
+        tex.filterMode = FilterMode.Point;
+        var rng = new System.Random(31);
+
+        for (int y = 0; y < h; y++)
+        {
+            for (int x = 0; x < w; x++)
+            {
+                float center = Mathf.Abs(x - w * 0.5f) / (w * 0.5f);
+                float depth = y / (float)h;
+                var c = Color.Lerp(new Color(0.015f, 0.018f, 0.035f), new Color(0.025f, 0.055f, 0.09f), depth);
+                c *= Mathf.Lerp(1.08f, 0.42f, center);
+                if (rng.NextDouble() < 0.12) c *= rng.NextDouble() < 0.5 ? 0.72f : 1.18f;
+                tex.SetPixel(x, y, c);
+            }
+        }
+
+        // stone floor perspective
+        for (int y = 0; y < 28; y++)
+        {
+            int yy = y;
+            float t = y / 28f;
+            var floor = Color.Lerp(new Color(0.03f, 0.04f, 0.055f), new Color(0.15f, 0.12f, 0.085f), t);
+            for (int x = 0; x < w; x++)
+            {
+                float lane = Mathf.Abs(x - w * 0.5f) / (w * 0.5f);
+                var c = floor * Mathf.Lerp(1.15f, 0.5f, lane);
+                if ((x + y * 3) % 17 == 0) c *= 1.35f;
+                tex.SetPixel(x, yy, c);
+            }
+        }
+        for (int y = 4; y < 28; y += 5)
+            for (int x = 14; x < w - 14; x++)
+                SafeSet(tex, x, y, new Color(0.42f, 0.30f, 0.13f, 0.35f));
+        for (int x = 25; x < w - 20; x += 15)
+            for (int y = 0; y < 28; y++)
+                SafeSet(tex, x + (28 - y) / 5, y, new Color(0.04f, 0.035f, 0.03f, 0.35f));
+
+        // arches and side pillars
+        for (int i = 0; i < 6; i++)
+        {
+            int left = 8 + i * 18;
+            int right = w - 9 - i * 18;
+            DrawPillar(tex, left, 25, 58, rng);
+            DrawPillar(tex, right, 25, 58, rng);
+            DrawArch(tex, left + 6, 66, 10);
+            DrawArch(tex, right - 6, 66, 10);
+        }
+
+        // distant blue flames
+        for (int i = 0; i < 12; i++)
+        {
+            int x = 16 + i * 12 + rng.Next(-2, 3);
+            int y = 42 + rng.Next(0, 22);
+            DrawCircle(tex, x, y, 2, new Color(0.12f, 0.28f, 0.78f, 0.42f));
+            SafeSet(tex, x, y, new Color(0.75f, 0.92f, 1f, 0.8f));
+        }
+
+        tex.Apply();
+        return Sprite.Create(tex, new Rect(0, 0, w, h), new Vector2(0.5f, 0.5f), 16f);
+    }
+
+    static void DrawPillar(Texture2D tex, int cx, int y0, int height, System.Random rng)
+    {
+        for (int y = y0; y < y0 + height && y < tex.height; y++)
+        {
+            for (int x = cx - 3; x <= cx + 3; x++)
+            {
+                var c = new Color(0.07f, 0.065f, 0.08f);
+                if (x == cx - 3 || x == cx + 3) c = new Color(0.02f, 0.018f, 0.024f);
+                if (rng.NextDouble() < 0.18) c *= 1.55f;
+                SafeSet(tex, x, y, c);
+            }
+        }
+        for (int x = cx - 5; x <= cx + 5; x++)
+        {
+            SafeSet(tex, x, y0, new Color(0.36f, 0.24f, 0.09f, 0.42f));
+            SafeSet(tex, x, y0 + height - 1, new Color(0.36f, 0.24f, 0.09f, 0.42f));
+        }
+    }
+
+    static void DrawArch(Texture2D tex, int cx, int cy, int r)
+    {
+        for (int a = 0; a <= 180; a += 3)
+        {
+            float rad = a * Mathf.Deg2Rad;
+            int x = cx + Mathf.RoundToInt(Mathf.Cos(rad) * r);
+            int y = cy + Mathf.RoundToInt(Mathf.Sin(rad) * r);
+            SafeSet(tex, x, y, new Color(0.30f, 0.20f, 0.08f, 0.35f));
+            SafeSet(tex, x, y - 1, new Color(0.02f, 0.018f, 0.025f, 0.55f));
+        }
+    }
+
     static void DrawCircle(Texture2D tex, int cx, int cy, int r, Color c)
     {
         for (int dy = -r; dy <= r; dy++)
@@ -257,6 +410,7 @@ public static class ProtoPixelArt
     // ボスドラゴン（バトル用・横向き）: 緑の竜が二本足で立ち、片翼を立てた姿（左を向く）
     public static Sprite Dragon()
     {
+        if (TryPhoto("dragon", out var photo)) return photo;
         var rows = new string[]
         {
             ".....HH...................dddd............",
@@ -302,6 +456,7 @@ public static class ProtoPixelArt
     // ボスドラゴン（マップ用・正面向き）: こちらを向いて翼を左右に広げた姿
     public static Sprite DragonFront()
     {
+        if (TryPhoto("dragon_mini", out var photo)) return photo;
         var rows = new string[]
         {
             ".....H.........H.....",
@@ -615,6 +770,7 @@ public static class ProtoPixelArt
     // 紫のコウモリ（大きな翼・金色の目・牙）
     public static Sprite Bat()
     {
+        if (TryPhoto("enemy_bat", out var photo)) return photo;
         var rows = new string[]
         {
             ".WW................WW.",
@@ -642,6 +798,7 @@ public static class ProtoPixelArt
     // 岩のゴーレム（光る青い目・体のヒビ）
     public static Sprite Golem()
     {
+        if (TryPhoto("enemy_golem", out var photo)) return photo;
         var rows = new string[]
         {
             "......GGGGGGGGG.......",
@@ -678,6 +835,7 @@ public static class ProtoPixelArt
 
     public static Sprite Slime()
     {
+        if (TryPhoto("enemy_slime", out var photo)) return photo;
         var rows = new string[]
         {
             "......GGGGGG......",
