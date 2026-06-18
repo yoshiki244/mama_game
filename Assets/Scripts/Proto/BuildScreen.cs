@@ -163,8 +163,8 @@ public class BuildScreen : MonoBehaviour
         _trayButtons.Clear();
 
         var owned = _main.OwnedCards();
-        const float rowH = 64f, pad = 6f;
-        _trayContent.sizeDelta = new Vector2(0, owned.Count * rowH + pad * 2);
+        const float rowH = 64f, pad = 6f, bottomPad = 40f; // 最後のカードが見切れないよう下に余白
+        _trayContent.sizeDelta = new Vector2(0, owned.Count * rowH + pad * 2 + bottomPad);
 
         for (int i = 0; i < owned.Count; i++)
         {
