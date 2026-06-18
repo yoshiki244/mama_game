@@ -29,7 +29,11 @@ public class MenuScreen : MonoBehaviour
         RefreshSelection();
     }
 
-    public void Hide() { if (_root != null) _root.gameObject.SetActive(false); }
+    public void Hide()
+    {
+        if (_confirmOverlay != null) { Destroy(_confirmOverlay); _confirmOverlay = null; }
+        if (_root != null) _root.gameObject.SetActive(false);
+    }
 
     void BuildUI()
     {
@@ -48,10 +52,35 @@ public class MenuScreen : MonoBehaviour
         CreateMenuButton(panel.transform, "セーブ", ref by, SaveGame);
         CreateMenuButton(panel.transform, "閉じる", ref by, () => _main.ShowMap());
 
+        // 最初から（すべてリセット）＝赤ボタン・一番下（間隔を1つ空ける）
+        by -= 30;
+        ProtoUI.CreateButton("Menu_Restart", panel.transform, "最初から", 22, new Vector2(-380, by), new Vector2(260, 62),
+            new Color(0.62f, 0.16f, 0.16f, 0.98f), ShowRestartConfirm);
+
         _notice = ProtoUI.CreateText("Notice", panel.transform, "", 18, new Vector2(-380, -300), new Vector2(320, 30), new Color(0.6f, 1f, 0.6f));
 
         BuildStatusContent(panel.transform);
         BuildSettingsContent(panel.transform);
+    }
+
+    GameObject _confirmOverlay;
+
+    // 「最初から」確認ダイアログ（はい＝リセット / いいえ＝メニューへ戻る）
+    void ShowRestartConfirm()
+    {
+        if (_confirmOverlay != null) Destroy(_confirmOverlay);
+        var ov = ProtoUI.CreateFullScreen("RestartConfirm", _root);
+        _confirmOverlay = ov.gameObject;
+        ov.gameObject.AddComponent<Image>().color = new Color(0, 0, 0, 0.6f);
+
+        var box = ProtoUI.CreateFramedPanel("ConfirmBox", ov, Vector2.zero, new Vector2(560, 280),
+            new Color(0.10f, 0.08f, 0.16f, 0.98f), new Color(0.85f, 0.72f, 0.4f, 0.9f));
+        ProtoUI.CreateText("CMsg", box.transform, "最初からやり直しますか？", 26, new Vector2(0, 70), new Vector2(520, 40), Color.white);
+        ProtoUI.CreateText("CSub", box.transform, "すべての進行がリセットされます", 18, new Vector2(0, 26), new Vector2(520, 30), new Color(1f, 0.7f, 0.7f));
+        ProtoUI.CreateButton("CYes", box.transform, "はい", 24, new Vector2(-130, -70), new Vector2(200, 64),
+            new Color(0.62f, 0.16f, 0.16f, 0.98f), () => { Destroy(_confirmOverlay); _confirmOverlay = null; _main.RestartRun(); });
+        ProtoUI.CreateButton("CNo", box.transform, "いいえ", 24, new Vector2(130, -70), new Vector2(200, 64),
+            new Color(0.3f, 0.3f, 0.4f, 0.98f), () => { Destroy(_confirmOverlay); _confirmOverlay = null; });
     }
 
     void CreateMenuButton(Transform parent, string label, ref float y, System.Action onClick, System.Action onPreview = null)
@@ -130,7 +159,6 @@ public class MenuScreen : MonoBehaviour
         var rows = new (string, string)[]
         {
             ("HP",        $"{_main.Stats.MaxHP}"),
-            ("攻撃力",     $"{_main.Stats.Attack}"),
             ("盤面",       $"{_main.BoardSize}×{_main.BoardSize}"),
             ("最大マナ",   $"{_main.MaxMana}"),
             ("お金",       $"{_main.Money}"),

@@ -12,8 +12,9 @@ public class MapScreen : MonoBehaviour
     ProtoMain _main;
     RectTransform _root, _nodeLayer, _playerIcon;
     ScrollRect _scroll;
-    TextMeshProUGUI _moneyText, _notice;
+    TextMeshProUGUI _moneyText, _notice, _waveText;
     GameObject _shopOverlay, _clearOverlay;
+    const int MaxWave = 3;
     bool _moving;
 
     enum TileType { Start, Enemy, Event, SpiritTree, Boss }
@@ -34,7 +35,7 @@ public class MapScreen : MonoBehaviour
     Node _current, _engaged;
     float _contentWidth, _halfWidth;
 
-    const int MidColumns = 9;
+    const int MidColumns = 18;
     const float ColSpacing = 215f;
     const float LaneSpacing = 185f;
     static readonly int[] Lanes = { -1, 0, 1 };
@@ -74,6 +75,11 @@ public class MapScreen : MonoBehaviour
         _moneyText = ProtoUI.CreateText("Money", _root, "", 24, new Vector2(-545, 405), new Vector2(250, 36), ProtoUI.Gold, TextAlignmentOptions.Left);
         _moneyText.fontStyle = FontStyles.Bold;
         CreateTitleOrnament(new Vector2(-555, 365), 190f);
+
+        // Wave表示（右上）
+        _waveText = ProtoUI.CreateText("Wave", _root, "", 26, new Vector2(540, 405), new Vector2(260, 38), new Color(1f, 0.84f, 0.34f), TextAlignmentOptions.Right);
+        _waveText.fontStyle = FontStyles.Bold;
+        CreateTitleOrnament(new Vector2(560, 365), 190f);
 
         var viewport = ProtoUI.CreateRect("MapViewport", _root);
         viewport.anchoredPosition = new Vector2(42, 8);
@@ -363,7 +369,8 @@ public class MapScreen : MonoBehaviour
         }
         _playerIcon.anchoredPosition = _current.pos;
         _playerIcon.SetAsLastSibling();
-        _moneyText.text = $"お金: {_main.Money}";
+        _moneyText.text = $"￥{_main.Money}";
+        if (_waveText != null) _waveText.text = $"WAVE {_main.Wave} / {MaxWave}";
         ScrollToCurrent();
     }
 
@@ -422,7 +429,26 @@ public class MapScreen : MonoBehaviour
         if (_engaged == null) return;
         var node = _engaged; _engaged = null;
         node.cleared = true; _current = node; _moving = false;
-        if (node.type == TileType.Boss) ShowClear();
+        if (node.type == TileType.Boss)
+        {
+            if (_main.Wave < MaxWave) { _main.SetWave(_main.Wave + 1); AdvanceWave(); }
+            else ShowClear();
+        }
+    }
+
+    // 次のWaveへ（マップを最初から・敵はWaveに応じて強くなる）
+    void AdvanceWave()
+    {
+        ResetNodesToStart();
+        if (_notice != null) _notice.text = $"WAVE {_main.Wave} 突入！";
+        RefreshNodes();
+    }
+
+    void ResetNodesToStart()
+    {
+        foreach (var n in _nodes) n.cleared = n.type == TileType.Start;
+        _current = _nodes[0];
+        _playerIcon.anchoredPosition = _current.pos;
     }
 
     // ==================== 精神樹ショップ ====================
@@ -541,9 +567,7 @@ public class MapScreen : MonoBehaviour
     public void ResetRun()
     {
         if (_clearOverlay != null) { Destroy(_clearOverlay); _clearOverlay = null; }
-        foreach (var n in _nodes) n.cleared = n.type == TileType.Start;
-        _current = _nodes[0];
-        _playerIcon.anchoredPosition = _current.pos;
+        ResetNodesToStart();
         RefreshNodes();
     }
 

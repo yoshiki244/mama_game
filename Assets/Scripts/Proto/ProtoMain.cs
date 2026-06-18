@@ -189,12 +189,20 @@ public class ProtoMain : MonoBehaviour
         _map.Show();
     }
 
-    // ゲームオーバーから最初(Wave1・最初のマス)へやり直す
+    // 最初から（すべてリセット：ステータス・Wave・お金・盤面・拡張・所持カード）
     public void RestartRun()
     {
         Stats = new PlayerStats(Cfg);
         Wave = 1;
         Money = 0;
+        Expansions = 0;
+        Panel = new PanelModel(BoardSize, BoardSize);
+        OwnedCardIds.Clear();
+        if (Cfg != null && Cfg.initialOwned != null)
+            foreach (var id in Cfg.initialOwned)
+                if (Db != null && Db.FindCard(id) != null && !OwnedCardIds.Contains(id))
+                    OwnedCardIds.Add(id);
+        ProtoSave.Clear();   // セーブも消去（次回起動でも初期状態に）
         _map.ResetRun();
         ShowMap();
     }

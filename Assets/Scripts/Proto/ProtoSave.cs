@@ -38,6 +38,13 @@ public static class ProtoSave
 
     public static bool HasSave() => PlayerPrefs.HasKey(Key);
 
+    // セーブデータを完全消去（「最初から」用）
+    public static void Clear()
+    {
+        if (PlayerPrefs.HasKey(Key)) PlayerPrefs.DeleteKey(Key);
+        PlayerPrefs.Save();
+    }
+
     public static bool Load(ProtoMain main)
     {
         if (!PlayerPrefs.HasKey(Key)) return false;

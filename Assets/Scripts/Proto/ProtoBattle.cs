@@ -216,7 +216,7 @@ public class ProtoBattle : MonoBehaviour
 
         // 手札
         _handArea = ProtoUI.CreateRect("Hand", _root);
-        _handArea.anchoredPosition = new Vector2(-64, -302);
+        _handArea.anchoredPosition = new Vector2(-30, -302);
         _handArea.sizeDelta = new Vector2(1500, 240);
 
         // カード選択時に中央へ出す盤面プレビュー：外周だけ金色、内側は不透明パネル（背景と同化しない）
