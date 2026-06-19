@@ -45,6 +45,8 @@ public class BuildScreen : MonoBehaviour
     TextMeshProUGUI _addBtnText;
     TextMeshProUGUI _stockText;
     Image _addBtnImg;
+    GameObject _resetBtnGO;        // 配置モード中のみ表示「リセットする」
+    GameObject _confirmGO;         // 「これで配置します」確認ポップアップ
     static readonly Color AddBtnOff = new Color(0.28f, 0.42f, 0.32f, 0.98f); // 緑：マスを配置する
     static readonly Color AddBtnOn = new Color(0.62f, 0.16f, 0.16f, 0.98f);  // 赤：配置をやめる
 
@@ -55,10 +57,20 @@ public class BuildScreen : MonoBehaviour
         _root.gameObject.SetActive(true);
         RefreshTray();
         BuildBoard();
+        // 配置モードは毎回OFFで開始
+        _addMode = false;
+        if (_addBtnText != null) _addBtnText.text = "マスを配置する";
+        if (_addBtnImg != null) _addBtnImg.color = AddBtnOff;
+        if (_resetBtnGO != null) _resetBtnGO.SetActive(false);
+        if (_confirmGO != null) { Destroy(_confirmGO); _confirmGO = null; }
         RefreshBoard();
     }
 
-    public void Hide() { if (_root != null) _root.gameObject.SetActive(false); }
+    public void Hide()
+    {
+        if (_confirmGO != null) { Destroy(_confirmGO); _confirmGO = null; }
+        if (_root != null) _root.gameObject.SetActive(false);
+    }
 
     void BuildUI()
     {
@@ -72,7 +84,7 @@ public class BuildScreen : MonoBehaviour
 
         // マス配置モード切替（マスストックをロック中のセルへ配置して盤面を広げる）
         var addBtn = ProtoUI.CreateButton("AddCellBtn", _root, "マスを配置する", 22, new Vector2(-330, 318), new Vector2(340, 46),
-            AddBtnOff, ToggleAddMode);
+            AddBtnOff, OnAddButton);
         _addBtnText = addBtn.GetComponentInChildren<TextMeshProUGUI>();
         _addBtnImg = (Image)addBtn.targetGraphic;
 
@@ -88,6 +100,12 @@ public class BuildScreen : MonoBehaviour
         ProtoUI.CreateText("StockLabel", _root, "マスストック", 16, new Vector2(-665, 110), new Vector2(150, 24), new Color(0.7f, 1f, 0.7f));
         _stockText = ProtoUI.CreateText("StockVal", _root, "0", 44, new Vector2(-665, 55), new Vector2(150, 56), Color.white);
         _stockText.fontStyle = FontStyles.Bold;
+
+        // リセットするボタン（配置モード中のみ表示・拡張したマスを初期化）
+        var resetBtn = ProtoUI.CreateButton("ResetCellsBtn", _root, "リセットする", 18, new Vector2(-665, -18), new Vector2(150, 46),
+            new Color(0.6f, 0.2f, 0.2f, 0.98f), OnResetCells);
+        _resetBtnGO = resetBtn.gameObject;
+        _resetBtnGO.SetActive(false);
 
         // 盤面の土台
         _boardBg = ProtoUI.CreatePanel("Board", _root, new Vector2(-330, 25),
@@ -253,14 +271,44 @@ public class BuildScreen : MonoBehaviour
             : $"選択中: {_selected.displayName}（マナ{_selected.ManaCost}）\n回転 {_rotation * 90}°";
     }
 
-    void ToggleAddMode()
+    void OnAddButton()
     {
-        _addMode = !_addMode;
-        if (_addBtnText != null) _addBtnText.text = _addMode ? "配置をやめる" : "マスを配置する";
-        if (_addBtnImg != null) _addBtnImg.color = _addMode ? AddBtnOn : AddBtnOff;
+        if (!_addMode) SetAddMode(true);   // 配置開始
+        else ShowPlaceConfirm();           // 配置をやめる→確認
+    }
+
+    void SetAddMode(bool on)
+    {
+        _addMode = on;
+        if (_addBtnText != null) _addBtnText.text = on ? "配置をやめる" : "マスを配置する";
+        if (_addBtnImg != null) _addBtnImg.color = on ? AddBtnOn : AddBtnOff;
+        if (_resetBtnGO != null) _resetBtnGO.SetActive(on);
         _selected = null; _boardSel = null;
         foreach (var (card, img) in _trayButtons) img.color = TrayNormal;
         UpdateSelectedText(); RefreshBoard();
+    }
+
+    void OnResetCells()
+    {
+        _main.ResetExpansion();
+        RefreshBoard();
+        ShowNotice("拡張したマスをリセットしました");
+    }
+
+    // 「これで配置します。よろしいですか？」確認ポップアップ
+    void ShowPlaceConfirm()
+    {
+        if (_confirmGO != null) Destroy(_confirmGO);
+        var ov = ProtoUI.CreateFullScreen("PlaceConfirm", _root);
+        _confirmGO = ov.gameObject;
+        ov.gameObject.AddComponent<Image>().color = new Color(0, 0, 0, 0.6f);
+        var box = ProtoUI.CreateFramedPanel("Box", ov, Vector2.zero, new Vector2(540, 240),
+            new Color(0.10f, 0.08f, 0.16f, 0.98f), new Color(0.85f, 0.72f, 0.4f, 0.9f));
+        ProtoUI.CreateText("M", box.transform, "これで配置します。よろしいですか？", 24, new Vector2(0, 50), new Vector2(500, 40), Color.white);
+        ProtoUI.CreateButton("Yes", box.transform, "はい", 22, new Vector2(-120, -50), new Vector2(190, 62),
+            new Color(0.30f, 0.45f, 0.32f, 0.98f), () => { Destroy(_confirmGO); _confirmGO = null; SetAddMode(false); });
+        ProtoUI.CreateButton("No", box.transform, "いいえ", 22, new Vector2(120, -50), new Vector2(190, 62),
+            new Color(0.3f, 0.3f, 0.4f, 0.98f), () => { Destroy(_confirmGO); _confirmGO = null; });
     }
 
     void OnCellLeftClick(int x, int y)

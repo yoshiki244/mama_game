@@ -69,6 +69,17 @@ public class ProtoMain : MonoBehaviour
         return true;
     }
 
+    // 拡張したマスを初期状態(30)へ戻し、消費分をマスストックへ払い戻す
+    public void ResetExpansion()
+    {
+        int before = Panel.UnlockedCount();
+        Panel.RelockAll();
+        Panel.UnlockInitial(InitialCols, InitialRows);
+        Panel.RemovePlacementsOnLocked();
+        int after = Panel.UnlockedCount();
+        CellStock += Mathf.Max(0, before - after);
+    }
+
     public bool BuyCard(string id)
     {
         int price = Cfg != null ? Cfg.shopBuyPrice : 40;

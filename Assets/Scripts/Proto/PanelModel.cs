@@ -55,6 +55,30 @@ public class PanelModel
         return n;
     }
 
+    // すべて未解放に戻す
+    public void RelockAll()
+    {
+        for (int x = 0; x < W; x++)
+            for (int y = 0; y < H; y++)
+                _unlocked[x, y] = false;
+    }
+
+    // 未解放マスに掛かっている配置を除去（リセット時に呼ぶ）
+    public void RemovePlacementsOnLocked()
+    {
+        for (int i = Placements.Count - 1; i >= 0; i--)
+        {
+            var p = Placements[i];
+            bool bad = false;
+            foreach (var c in p.cells) if (!_unlocked[c.x, c.y]) { bad = true; break; }
+            if (bad)
+            {
+                foreach (var c in p.cells) _grid[c.x, c.y] = null;
+                Placements.RemoveAt(i);
+            }
+        }
+    }
+
     public List<Vector2Int> GetUnlockedCells()
     {
         var list = new List<Vector2Int>();
