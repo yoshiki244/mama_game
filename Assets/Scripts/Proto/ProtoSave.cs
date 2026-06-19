@@ -4,7 +4,7 @@ using System.Collections.Generic;
 // セーブ/ロード（PlayerPrefsにJSON）。本設：単一キャラ・お金・盤面拡張・所持カード・盤面配置。
 public static class ProtoSave
 {
-    const string Key = "mama_save_v2";
+    const string Key = "mama_save_v3";
 
     [System.Serializable]
     public class PieceSave { public string cardId; public int[] xs; public int[] ys; }
@@ -13,19 +13,25 @@ public static class ProtoSave
     public class SaveData
     {
         public int money;
-        public int expansions;
+        public int cellStock;          // マスストック
+        public int[] ux;               // 解放マスX
+        public int[] uy;               // 解放マスY
         public List<string> owned = new List<string>();
         public List<PieceSave> pieces = new List<PieceSave>();
     }
 
     public static void Save(ProtoMain main)
     {
+        var unlocked = main.Panel.GetUnlockedCells();
         var d = new SaveData
         {
             money = main.Money,
-            expansions = main.Expansions,
+            cellStock = main.CellStock,
+            ux = new int[unlocked.Count],
+            uy = new int[unlocked.Count],
             owned = new List<string>(main.OwnedCardIds),
         };
+        for (int i = 0; i < unlocked.Count; i++) { d.ux[i] = unlocked[i].x; d.uy[i] = unlocked[i].y; }
         foreach (var p in main.Panel.Placements)
         {
             var ps = new PieceSave { cardId = p.card.id, xs = new int[p.cells.Count], ys = new int[p.cells.Count] };
@@ -51,8 +57,12 @@ public static class ProtoSave
         var d = JsonUtility.FromJson<SaveData>(PlayerPrefs.GetString(Key));
         if (d == null) return false;
 
-        // お金・拡張・所持カードを反映（盤面サイズもここでResizeされる）
-        main.ApplyLoaded(d.money, d.expansions, d.owned);
+        // お金・マスストック・解放マス・所持カードを反映
+        var unlocked = new List<Vector2Int>();
+        if (d.ux != null && d.uy != null)
+            for (int i = 0; i < d.ux.Length && i < d.uy.Length; i++)
+                unlocked.Add(new Vector2Int(d.ux[i], d.uy[i]));
+        main.ApplyLoaded(d.money, d.cellStock, d.owned, unlocked);
 
         // 盤面の配置を復元
         if (d.pieces != null)

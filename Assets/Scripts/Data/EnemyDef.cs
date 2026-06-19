@@ -1,7 +1,7 @@
 using UnityEngine;
 
 // 敵の見た目（ProtoPixelArtのドット絵を選ぶ）
-public enum EnemySpriteKey { Slime, Bat, Golem, Dragon, Oni }
+public enum EnemySpriteKey { Slime, Bat, Golem, Dragon, Oni, Knight }
 
 [System.Serializable]
 public class EnemyAttackDef
@@ -41,6 +41,7 @@ public class EnemyDef : ScriptableObject
             case EnemySpriteKey.Golem:  return ProtoPixelArt.Golem();
             case EnemySpriteKey.Dragon: return ProtoPixelArt.Dragon();
             case EnemySpriteKey.Oni:    return ProtoPixelArt.Oni();
+            case EnemySpriteKey.Knight: return ProtoPixelArt.Knight();
             default:                    return ProtoPixelArt.Slime();
         }
     }

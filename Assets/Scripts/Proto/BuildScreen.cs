@@ -36,8 +36,17 @@ public class BuildScreen : MonoBehaviour
     const float BoardArea = 460f; // 盤面の表示領域（おおよそ正方形）
 
     static readonly Color EmptyColor = new Color(0.16f, 0.14f, 0.24f);
+    static readonly Color LockedColor = new Color(0.05f, 0.05f, 0.07f, 0.85f);   // 未解放マス
+    static readonly Color LockedAddColor = new Color(0.18f, 0.30f, 0.22f, 0.9f); // 追加モード時の未解放マス
     static readonly Color TraySelected = new Color(0.45f, 0.35f, 0.65f);
     static readonly Color TrayNormal = new Color(0.22f, 0.18f, 0.32f);
+
+    bool _addMode;                 // マス配置モード（マスストックを解放）
+    TextMeshProUGUI _addBtnText;
+    TextMeshProUGUI _stockText;
+    Image _addBtnImg;
+    static readonly Color AddBtnOff = new Color(0.28f, 0.42f, 0.32f, 0.98f); // 緑：マスを配置する
+    static readonly Color AddBtnOn = new Color(0.62f, 0.16f, 0.16f, 0.98f);  // 赤：配置をやめる
 
     public void Init(ProtoMain main) { _main = main; BuildUI(); Hide(); }
 
@@ -58,17 +67,30 @@ public class BuildScreen : MonoBehaviour
         _title = ProtoUI.CreateText("Title", _root, "スキルビルド", 34, new Vector2(0, 410), new Vector2(560, 50));
         ProtoUI.StyleTitle(_title, ProtoUI.Gold, 6f);
 
-        _manaText = ProtoUI.CreateText("Mana", _root, "", 20, new Vector2(-330, 360), new Vector2(560, 30),
+        _manaText = ProtoUI.CreateText("Mana", _root, "", 20, new Vector2(-330, 366), new Vector2(560, 30),
             new Color(0.7f, 0.85f, 1f));
 
+        // マス配置モード切替（マスストックをロック中のセルへ配置して盤面を広げる）
+        var addBtn = ProtoUI.CreateButton("AddCellBtn", _root, "マスを配置する", 22, new Vector2(-330, 318), new Vector2(340, 46),
+            AddBtnOff, ToggleAddMode);
+        _addBtnText = addBtn.GetComponentInChildren<TextMeshProUGUI>();
+        _addBtnImg = (Image)addBtn.targetGraphic;
+
         // 盤面の外枠（色付きで見やすく）
-        ProtoUI.CreatePanel("BoardBorder", _root, new Vector2(-330, 70),
+        ProtoUI.CreatePanel("BoardBorder", _root, new Vector2(-330, 25),
             new Vector2(BoardArea + 16, BoardArea + 16), new Color(0.85f, 0.72f, 0.4f, 0.95f)).raycastTarget = false;
-        ProtoUI.CreatePanel("BoardBorderInner", _root, new Vector2(-330, 70),
+        ProtoUI.CreatePanel("BoardBorderInner", _root, new Vector2(-330, 25),
             new Vector2(BoardArea + 6, BoardArea + 6), new Color(0.12f, 0.10f, 0.18f, 0.95f)).raycastTarget = false;
 
+        // マスストック表示（盤面の左横に別枠）
+        ProtoUI.CreateFramedPanel("StockBox", _root, new Vector2(-665, 70), new Vector2(150, 130),
+            new Color(0.06f, 0.09f, 0.07f, 0.96f), new Color(0.5f, 0.8f, 0.45f, 0.85f));
+        ProtoUI.CreateText("StockLabel", _root, "マスストック", 16, new Vector2(-665, 110), new Vector2(150, 24), new Color(0.7f, 1f, 0.7f));
+        _stockText = ProtoUI.CreateText("StockVal", _root, "0", 44, new Vector2(-665, 55), new Vector2(150, 56), Color.white);
+        _stockText.fontStyle = FontStyles.Bold;
+
         // 盤面の土台
-        _boardBg = ProtoUI.CreatePanel("Board", _root, new Vector2(-330, 70),
+        _boardBg = ProtoUI.CreatePanel("Board", _root, new Vector2(-330, 25),
             new Vector2(BoardArea, BoardArea), new Color(0.05f, 0.04f, 0.10f, 0.6f));
         _boardBg.raycastTarget = false;
         var grid = ProtoUI.CreateRect("Grid", _boardBg.transform);
@@ -109,7 +131,7 @@ public class BuildScreen : MonoBehaviour
             new Vector2(330, -235), new Vector2(470, 80), new Color(0.7f, 0.7f, 0.8f));
 
         _info = ProtoUI.CreateText("Info", _root, "", 16,
-            new Vector2(-330, -300), new Vector2(560, 190), new Color(0.85f, 0.8f, 1f), TextAlignmentOptions.Top);
+            new Vector2(-330, -320), new Vector2(560, 170), new Color(0.85f, 0.8f, 1f), TextAlignmentOptions.Top);
 
         ProtoUI.CreateButton("MenuBackBtn", _root, "メニューへ戻る", 22,
             new Vector2(190, -330), new Vector2(250, 64), new Color(0.3f, 0.28f, 0.5f), () => _main.ShowMenu());
@@ -231,8 +253,29 @@ public class BuildScreen : MonoBehaviour
             : $"選択中: {_selected.displayName}（マナ{_selected.ManaCost}）\n回転 {_rotation * 90}°";
     }
 
+    void ToggleAddMode()
+    {
+        _addMode = !_addMode;
+        if (_addBtnText != null) _addBtnText.text = _addMode ? "配置をやめる" : "マスを配置する";
+        if (_addBtnImg != null) _addBtnImg.color = _addMode ? AddBtnOn : AddBtnOff;
+        _selected = null; _boardSel = null;
+        foreach (var (card, img) in _trayButtons) img.color = TrayNormal;
+        UpdateSelectedText(); RefreshBoard();
+    }
+
     void OnCellLeftClick(int x, int y)
     {
+        // マス追加モード：未解放マスをクリックで解放（マスストックを1消費）
+        if (_addMode)
+        {
+            if (!P.IsUnlocked(x, y))
+            {
+                if (_main.UnlockCell(x, y)) RefreshBoard();
+                else ShowNotice(_main.CellStock <= 0 ? "マスストックがありません" : "これ以上拡張できません(最大100)");
+            }
+            return;
+        }
+
         var placed = P.GetAt(x, y);
         if (placed != null)
         {
@@ -392,6 +435,11 @@ public class BuildScreen : MonoBehaviour
         for (int x = 0; x < panel.W; x++)
             for (int y = 0; y < panel.H; y++)
             {
+                if (!panel.IsUnlocked(x, y))
+                {
+                    _cellImages[x, y].color = _addMode ? LockedAddColor : LockedColor; // 未解放
+                    continue;
+                }
                 var p = panel.GetAt(x, y);
                 _cellImages[x, y].color = p == null ? EmptyColor : p.card.color;
             }
@@ -408,7 +456,8 @@ public class BuildScreen : MonoBehaviour
         int occupied = panel.OccupiedCount();
         var counts = panel.CountByCard();
 
-        _manaText.text = $"盤面 {panel.W}×{panel.H}（{total}マス）　最大マナ {_main.MaxMana}　お金 {_main.Money}";
+        _manaText.text = $"盤面 {total}/{ProtoMain.MaxCells}マス　マナ {_main.MaxMana}";
+        if (_stockText != null) _stockText.text = $"{_main.CellStock}";
 
         var parts = new List<string> { $"通常攻撃: {Pct(total - occupied, total)}%" };
         foreach (var kv in counts)

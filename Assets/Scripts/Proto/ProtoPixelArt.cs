@@ -833,6 +833,13 @@ public static class ProtoPixelArt
         return FromMap(rows, palette);
     }
 
+    // 中ボス（騎士）。enemy_knight 画像、無ければ鬼にフォールバック
+    public static Sprite Knight()
+    {
+        if (TryPhoto("enemy_knight", out var photo)) return photo;
+        return Oni();
+    }
+
     public static Sprite Slime()
     {
         if (TryPhoto("enemy_slime", out var photo)) return photo;

@@ -159,7 +159,8 @@ public class MenuScreen : MonoBehaviour
         var rows = new (string, string)[]
         {
             ("HP",        $"{_main.Stats.MaxHP}"),
-            ("盤面",       $"{_main.BoardSize}×{_main.BoardSize}"),
+            ("盤面マス",   $"{_main.BoardCells} / {ProtoMain.MaxCells}"),
+            ("マスストック", $"{_main.CellStock}"),
             ("最大マナ",   $"{_main.MaxMana}"),
             ("お金",       $"{_main.Money}"),
             ("所持カード", $"{_main.OwnedCardIds.Count}種"),

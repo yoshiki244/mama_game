@@ -17,7 +17,7 @@ public class MapScreen : MonoBehaviour
     const int MaxWave = 3;
     bool _moving;
 
-    enum TileType { Start, Enemy, Event, SpiritTree, Boss }
+    enum TileType { Start, Enemy, Event, SpiritTree, Shop, MidBoss, Boss }
 
     class Node
     {
@@ -108,7 +108,7 @@ public class MapScreen : MonoBehaviour
         ProtoUI.CreateButton("MenuBtn", _root, "メニュー", 18, new Vector2(-700, -424), new Vector2(178, 42),
             new Color(0.18f, 0.14f, 0.35f, 0.98f), () => _main.ShowMenu());
         ProtoUI.CreateText("Hint", _root,
-            "メニュー：Bボタン　　移動：ブロックをクリック　　エネミーマス：戦闘　　？マス：イベント　　樹マス：神聖樹イベント",
+            "メニュー：Bボタン　移動：クリック　敵：戦闘　騎士：中ボス(+5マス)　？：イベント　樹：神聖樹(+3マス)　店：ショップ",
             17, new Vector2(120, -424), new Vector2(1480, 30), ProtoUI.Gold);
     }
 
@@ -180,14 +180,26 @@ public class MapScreen : MonoBehaviour
         byCol[0] = new List<Node> { start };
         TileType[] cycle = {
             TileType.Enemy, TileType.Enemy, TileType.Enemy, TileType.Enemy, TileType.Enemy,
-            TileType.Event, TileType.Event, TileType.Event, TileType.SpiritTree
+            TileType.Event, TileType.Event, TileType.Shop, TileType.SpiritTree
         };
+        // 中ボス列（その列は全レーン中ボス＝どのルートでも必ず遭遇）。1Waveで2回
+        int mb1 = Mathf.Clamp(MidColumns / 3, 1, MidColumns);
+        int mb2 = Mathf.Clamp(MidColumns * 2 / 3, 1, MidColumns);
+
         int k = 0;
         for (int col = 1; col <= MidColumns; col++)
         {
+            bool midbossCol = (col == mb1 || col == mb2);
             var list = new List<Node>();
             foreach (int lane in Lanes)
             {
+                if (midbossCol)
+                {
+                    var mbn = NewNode(col, lane, TileType.MidBoss);
+                    mbn.enemy = MakeMidBoss(col);
+                    list.Add(mbn);
+                    continue;
+                }
                 var type = cycle[k % cycle.Length]; k++;
                 var n = NewNode(col, lane, type);
                 if (type == TileType.Enemy) n.enemy = EnemyForColumn(col);
@@ -248,6 +260,28 @@ public class MapScreen : MonoBehaviour
         }
     }
 
+    // 中ボス（騎士）を実行時生成。通常敵より頑丈・強力
+    EnemyDef MakeMidBoss(int col)
+    {
+        var e = ScriptableObject.CreateInstance<EnemyDef>();
+        e.id = "midboss_knight";
+        e.enemyName = "騎士";
+        e.spriteKey = EnemySpriteKey.Knight;
+        e.baseHP = 220 + col * 12;
+        e.minAtk = 12; e.maxAtk = 20;
+        e.battleSize = new Vector2(360, 360);
+        e.mapSize = new Vector2(90, 90);
+        e.levelOffset = 1;
+        e.moneyReward = 60;
+        e.attacks = new[]
+        {
+            new EnemyAttackDef { name = "斬撃", mult = 1f, hits = 1, weight = 50 },
+            new EnemyAttackDef { name = "連撃", mult = 0.7f, hits = 2, weight = 30 },
+            new EnemyAttackDef { name = "強打", mult = 1.6f, hits = 1, weight = 20 },
+        };
+        return e;
+    }
+
     EnemyDef EnemyForColumn(int col)
     {
         if (_main.Db == null) return null;
@@ -279,13 +313,14 @@ public class MapScreen : MonoBehaviour
 
         var iconRt = ProtoUI.CreateRect($"Nd_{n.col}_{n.lane}", _nodeLayer);
         iconRt.anchoredPosition = n.pos;
-        iconRt.sizeDelta = n.type == TileType.Boss ? new Vector2(104, 104) : new Vector2(62, 62);
+        iconRt.sizeDelta = n.type == TileType.Boss ? new Vector2(104, 104) : n.type == TileType.MidBoss ? new Vector2(88, 88) : new Vector2(62, 62);
         n.icon = iconRt.gameObject.AddComponent<Image>(); n.icon.preserveAspect = true;
 
         switch (n.type)
         {
             case TileType.Start: n.icon.sprite = ProtoPixelArt.MamaMapPhoto(); break;
             case TileType.Enemy: n.icon.sprite = n.enemy != null ? n.enemy.MapSprite() : ProtoPixelArt.Slime(); break;
+            case TileType.MidBoss: n.icon.sprite = n.enemy != null ? n.enemy.MapSprite() : ProtoPixelArt.Knight(); break;
             case TileType.Boss:  n.icon.sprite = n.enemy != null ? n.enemy.MapSprite() : ProtoPixelArt.Dragon(); break;
             case TileType.Event:
             {
@@ -301,6 +336,12 @@ public class MapScreen : MonoBehaviour
                 else { n.icon.sprite = null; n.icon.color = new Color(0.24f, 0.58f, 0.34f, 0.96f); AddLabel(iconRt, "樹", 28, new Color(0.78f, 1f, 0.74f)); }
                 break;
             }
+            case TileType.Shop:
+            {
+                n.icon.sprite = null; n.icon.color = new Color(0.85f, 0.65f, 0.18f, 0.96f);
+                AddLabel(iconRt, "店", 28, new Color(0.20f, 0.12f, 0.02f));
+                break;
+            }
         }
 
         n.button = iconRt.gameObject.AddComponent<Button>();
@@ -311,7 +352,7 @@ public class MapScreen : MonoBehaviour
 
     void CreateNodeFrame(Node n)
     {
-        Vector2 size = n.type == TileType.Boss ? new Vector2(112, 112) : new Vector2(78, 78);
+        Vector2 size = n.type == TileType.Boss ? new Vector2(112, 112) : n.type == TileType.MidBoss ? new Vector2(98, 98) : new Vector2(78, 78);
         Color frameColor = n.type == TileType.SpiritTree
             ? new Color(0.38f, 0.72f, 0.28f, 0.92f)
             : new Color(0.86f, 0.55f, 0.14f, 0.94f);
@@ -357,9 +398,11 @@ public class MapScreen : MonoBehaviour
             n.marker.color = reachable ? new Color(1f, 0.82f, 0.28f, 0.42f) : Color.clear;
 
             // 種別の基本色を保ちつつ、クリア済みは暗く
-            if (n.type == TileType.Event || n.type == TileType.SpiritTree)
+            if (n.type == TileType.Event || n.type == TileType.SpiritTree || n.type == TileType.Shop)
             {
-                Color baseC = n.type == TileType.Event ? new Color(0.82f, 0.58f, 0.18f, 0.96f) : new Color(0.24f, 0.58f, 0.34f, 0.96f);
+                Color baseC = n.type == TileType.Event ? new Color(0.82f, 0.58f, 0.18f, 0.96f)
+                            : n.type == TileType.Shop ? new Color(0.85f, 0.65f, 0.18f, 0.96f)
+                            : new Color(0.24f, 0.58f, 0.34f, 0.96f);
                 n.icon.color = n.cleared ? baseC * 0.4f : baseC;
             }
             else
@@ -406,6 +449,7 @@ public class MapScreen : MonoBehaviour
         switch (n.type)
         {
             case TileType.Enemy:
+            case TileType.MidBoss:
             case TileType.Boss:
                 _engaged = n;
                 _main.StartBattle(n.enemy);
@@ -418,7 +462,13 @@ public class MapScreen : MonoBehaviour
                 break;
             case TileType.SpiritTree:
                 _current = n; _moving = false;
-                OpenShop(n);
+                if (!n.cleared) { _main.AwardCells(3); n.cleared = true; }   // 神聖樹で+3マス（確定・1回）
+                _notice.text = "神聖樹！　盤面マス +3";
+                RefreshNodes();
+                break;
+            case TileType.Shop:
+                _current = n; _moving = false;
+                OpenShop(n);   // 店マス：カード購入
                 break;
         }
     }
@@ -429,6 +479,18 @@ public class MapScreen : MonoBehaviour
         if (_engaged == null) return;
         var node = _engaged; _engaged = null;
         node.cleared = true; _current = node; _moving = false;
+
+        // 盤面マス入手：中ボス=5確定 / 雑魚=10%で1
+        if (node.type == TileType.MidBoss)
+        {
+            _main.AwardCells(5);
+            if (_notice != null) _notice.text = "中ボス撃破！　盤面マス +5";
+        }
+        else if (node.type == TileType.Enemy)
+        {
+            if (Random.value < 0.1f) { _main.AwardCells(1); if (_notice != null) _notice.text = "盤面マスを 1 入手！"; }
+        }
+
         if (node.type == TileType.Boss)
         {
             if (_main.Wave < MaxWave) { _main.SetWave(_main.Wave + 1); AdvanceWave(); }
@@ -460,16 +522,13 @@ public class MapScreen : MonoBehaviour
         _shopOverlay = rt.gameObject;
         rt.gameObject.AddComponent<Image>().color = new Color(0, 0, 0, 0.85f);
 
-        var title = ProtoUI.CreateText("ST", rt, "精神樹", 40, new Vector2(0, 380), new Vector2(600, 50));
+        var title = ProtoUI.CreateText("ST", rt, "ショップ", 40, new Vector2(0, 380), new Vector2(600, 50));
         ProtoUI.StyleTitle(title, new Color(0.6f, 1f, 0.7f), 6f);
 
         var money = ProtoUI.CreateText("M", rt, "", 24, new Vector2(0, 330), new Vector2(600, 30), ProtoUI.Gold);
 
-        // 盤面拡張ボタン（この訪問で1回まで）
-        var expandBtnGO = ProtoUI.CreateButton("Expand", rt, "", 20, new Vector2(0, 250), new Vector2(560, 60),
-            new Color(0.3f, 0.45f, 0.5f), null);
-        var expandLabel = expandBtnGO.GetComponentInChildren<TextMeshProUGUI>();
-        bool[] expandedThisVisit = { false };
+        // 盤面マスの所持状況（神聖樹では入場時に+3マス入手済み）
+        var cellInfo = ProtoUI.CreateText("CellInfo", rt, "", 20, new Vector2(0, 250), new Vector2(600, 30), new Color(0.6f, 1f, 0.7f));
 
         System.Action refresh = null;
 
@@ -509,13 +568,8 @@ public class MapScreen : MonoBehaviour
 
         refresh = () =>
         {
-            money.text = $"お金: {_main.Money}";
-            int cost = _main.NextExpansionCost();
-            bool canExpand = !expandedThisVisit[0] && _main.CanExpand();
-            if (_main.Expansions >= 5) expandLabel.text = "盤面は最大(10×10)です";
-            else if (expandedThisVisit[0]) expandLabel.text = "拡張はこの訪問で使用済み";
-            else expandLabel.text = $"盤面拡張 {_main.BoardSize}×{_main.BoardSize}→{_main.BoardSize + 1}×{_main.BoardSize + 1}（{cost}）";
-            expandBtnGO.interactable = canExpand;
+            money.text = $"￥{_main.Money}";
+            cellInfo.text = $"マスストック: {_main.CellStock}　／　盤面 {_main.BoardCells}/{ProtoMain.MaxCells}マス";
 
             int price = _main.Cfg != null ? _main.Cfg.shopBuyPrice : 40;
             foreach (var o in offerButtons)
@@ -528,7 +582,6 @@ public class MapScreen : MonoBehaviour
             }
         };
 
-        expandBtnGO.onClick.AddListener(() => { if (_main.ExpandBoard()) { expandedThisVisit[0] = true; refresh(); } });
         refresh();
     }
 

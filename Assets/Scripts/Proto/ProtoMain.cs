@@ -11,12 +11,17 @@ public class ProtoMain : MonoBehaviour
     public GameConfig Cfg => Db != null ? Db.config : null;
 
     // ---- プレイヤー状態 ----
+    public const int GridDim = 10;        // 盤面グリッド（10×10＝最大100マス）
+    public const int InitialCols = 6;     // 初期解放 横6
+    public const int InitialRows = 5;     // 初期解放 縦5 （6×5＝30マス）
+    public const int MaxCells = 100;      // 最大マス数
+
     public PlayerStats Stats { get; private set; }
     public PanelModel Panel { get; private set; }
     public int Money { get; private set; }
-    public int Expansions { get; private set; }   // 盤面拡張回数 0..5
-    public int BoardSize => 5 + Expansions;        // 5×5 → 10×10
-    public int MaxMana => (Cfg != null ? Cfg.baseMana : 3) + Expansions;
+    public int CellStock { get; private set; }     // 入手済み・未配置のマス数
+    public int BoardCells => Panel != null ? Panel.UnlockedCount() : 0; // 現在の解放マス数
+    public int MaxMana => BoardCells / 10;   // マナ＝盤面マス数÷10（切り捨て）。初期30マス→3
     public int Wave { get; private set; } = 1;
     public int CurrentDepth { get; set; } = 1; // 現在地の深度（マップの列番号）。報酬/ショップの抽選に使う
 
@@ -51,17 +56,16 @@ public class ProtoMain : MonoBehaviour
     // ---- 経済 ----
     public void AddMoney(int amount) => Money = Mathf.Max(0, Money + amount);
 
-    public int NextExpansionCost()
-        => (Cfg != null && Expansions < Cfg.expansionCosts.Length) ? Cfg.expansionCosts[Expansions] : -1;
+    // ---- 盤面マス入手・解放 ----
+    public void AwardCells(int n) { if (n > 0) CellStock += n; }
 
-    public bool CanExpand() => Expansions < 5 && NextExpansionCost() >= 0 && Money >= NextExpansionCost();
-
-    public bool ExpandBoard()
+    // ビルド画面でロック中のマスを解放（マスストックを1消費・最大100まで）
+    public bool UnlockCell(int x, int y)
     {
-        if (!CanExpand()) return false;
-        Money -= NextExpansionCost();
-        Expansions++;
-        Panel.Resize(BoardSize, BoardSize);
+        if (CellStock <= 0) return false;
+        if (Panel.UnlockedCount() >= MaxCells) return false;
+        if (!Panel.Unlock(x, y)) return false;
+        CellStock--;
         return true;
     }
 
@@ -105,9 +109,10 @@ public class ProtoMain : MonoBehaviour
 
         // プレイヤー初期化
         Stats = new PlayerStats(Cfg);
-        Expansions = 0;
         Money = 0;
-        Panel = new PanelModel(BoardSize, BoardSize);
+        CellStock = 0;
+        Panel = new PanelModel(GridDim, GridDim);
+        Panel.UnlockInitial(InitialCols, InitialRows);
 
         // 初期所持カード
         OwnedCardIds.Clear();
@@ -143,11 +148,12 @@ public class ProtoMain : MonoBehaviour
     void Start() => ShowMap();
 
     // セーブから状態を流し込む（ProtoSaveが呼ぶ）
-    public void ApplyLoaded(int money, int expansions, List<string> owned)
+    public void ApplyLoaded(int money, int cellStock, List<string> owned, List<Vector2Int> unlocked)
     {
         Money = Mathf.Max(0, money);
-        Expansions = Mathf.Clamp(expansions, 0, 5);
-        Panel.Resize(BoardSize, BoardSize);
+        CellStock = Mathf.Max(0, cellStock);
+        if (unlocked != null && unlocked.Count > 0)
+            foreach (var c in unlocked) Panel.Unlock(c.x, c.y);   // 解放マスを復元
         if (owned != null && owned.Count > 0)
         {
             OwnedCardIds.Clear();
@@ -195,8 +201,9 @@ public class ProtoMain : MonoBehaviour
         Stats = new PlayerStats(Cfg);
         Wave = 1;
         Money = 0;
-        Expansions = 0;
-        Panel = new PanelModel(BoardSize, BoardSize);
+        CellStock = 0;
+        Panel = new PanelModel(GridDim, GridDim);
+        Panel.UnlockInitial(InitialCols, InitialRows);
         OwnedCardIds.Clear();
         if (Cfg != null && Cfg.initialOwned != null)
             foreach (var id in Cfg.initialOwned)

@@ -17,6 +17,7 @@ public class PanelModel
     }
 
     Placement[,] _grid;
+    bool[,] _unlocked;   // そのマスが解放済み（配置可能）か
     int _nextId = 1;
     public List<Placement> Placements = new List<Placement>();
 
@@ -24,6 +25,43 @@ public class PanelModel
     {
         W = w; H = h;
         _grid = new Placement[w, h];
+        _unlocked = new bool[w, h];
+    }
+
+    // 中央に cols×rows マス（横cols×縦rows）を初期解放
+    public void UnlockInitial(int cols, int rows)
+    {
+        int sx = (W - cols) / 2, sy = (H - rows) / 2;
+        for (int x = sx; x < sx + cols && x < W; x++)
+            for (int y = sy; y < sy + rows && y < H; y++)
+                if (x >= 0 && y >= 0) _unlocked[x, y] = true;
+    }
+
+    public bool IsUnlocked(int x, int y) => IsValid(x, y) && _unlocked[x, y];
+
+    public bool Unlock(int x, int y)
+    {
+        if (!IsValid(x, y) || _unlocked[x, y]) return false;
+        _unlocked[x, y] = true;
+        return true;
+    }
+
+    public int UnlockedCount()
+    {
+        int n = 0;
+        for (int x = 0; x < W; x++)
+            for (int y = 0; y < H; y++)
+                if (_unlocked[x, y]) n++;
+        return n;
+    }
+
+    public List<Vector2Int> GetUnlockedCells()
+    {
+        var list = new List<Vector2Int>();
+        for (int x = 0; x < W; x++)
+            for (int y = 0; y < H; y++)
+                if (_unlocked[x, y]) list.Add(new Vector2Int(x, y));
+        return list;
     }
 
     // 盤面拡張（既存配置は座標そのまま保持。範囲外になった配置は除去）
@@ -67,6 +105,7 @@ public class PanelModel
         foreach (var cell in Cells(c, anchor, rot))
         {
             if (!IsValid(cell.x, cell.y)) return false;
+            if (!_unlocked[cell.x, cell.y]) return false;
             if (_grid[cell.x, cell.y] != null) return false;
         }
         return true;
@@ -90,6 +129,7 @@ public class PanelModel
         foreach (var c in cells)
         {
             if (!IsValid(c.x, c.y)) return false;
+            if (!_unlocked[c.x, c.y]) return false;
             if (_grid[c.x, c.y] != null) return false;
         }
         return true;
@@ -165,15 +205,15 @@ public class PanelModel
         return d;
     }
 
-    public int ValidCount() => W * H;
+    public int ValidCount() => UnlockedCount();   // 山札母数＝解放済みマス
 
-    // 山札（盤面マス＝カード。null＝通常攻撃）。確率サンプリングの母集団。
+    // 山札（解放マスのみ。マス＝カード。null＝通常攻撃）。確率サンプリングの母集団。
     public List<CardDef> BuildDeck()
     {
         var deck = new List<CardDef>();
         for (int x = 0; x < W; x++)
             for (int y = 0; y < H; y++)
-                deck.Add(_grid[x, y]?.card);
+                if (_unlocked[x, y]) deck.Add(_grid[x, y]?.card);
         return deck;
     }
 }
