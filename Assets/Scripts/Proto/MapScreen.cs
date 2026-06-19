@@ -338,8 +338,9 @@ public class MapScreen : MonoBehaviour
             }
             case TileType.Shop:
             {
-                n.icon.sprite = null; n.icon.color = new Color(0.85f, 0.65f, 0.18f, 0.96f);
-                AddLabel(iconRt, "店", 28, new Color(0.20f, 0.12f, 0.02f));
+                var sp = ProtoPixelArt.ShopPhoto();
+                if (sp != null) { n.icon.sprite = sp; n.icon.color = Color.white; }
+                else { n.icon.sprite = null; n.icon.color = new Color(0.85f, 0.65f, 0.18f, 0.96f); AddLabel(iconRt, "店", 28, new Color(0.20f, 0.12f, 0.02f)); }
                 break;
             }
         }
@@ -400,10 +401,18 @@ public class MapScreen : MonoBehaviour
             // 種別の基本色を保ちつつ、クリア済みは暗く
             if (n.type == TileType.Event || n.type == TileType.SpiritTree || n.type == TileType.Shop)
             {
-                Color baseC = n.type == TileType.Event ? new Color(0.82f, 0.58f, 0.18f, 0.96f)
-                            : n.type == TileType.Shop ? new Color(0.85f, 0.65f, 0.18f, 0.96f)
-                            : new Color(0.24f, 0.58f, 0.34f, 0.96f);
-                n.icon.color = n.cleared ? baseC * 0.4f : baseC;
+                if (n.icon.sprite != null)
+                {
+                    // 画像アイコンは色を塗らず、クリア済みのみ暗く
+                    n.icon.color = n.cleared ? new Color(0.5f, 0.5f, 0.55f) : Color.white;
+                }
+                else
+                {
+                    Color baseC = n.type == TileType.Event ? new Color(0.82f, 0.58f, 0.18f, 0.96f)
+                                : n.type == TileType.Shop ? new Color(0.85f, 0.65f, 0.18f, 0.96f)
+                                : new Color(0.24f, 0.58f, 0.34f, 0.96f);
+                    n.icon.color = n.cleared ? baseC * 0.4f : baseC;
+                }
             }
             else
             {
@@ -463,7 +472,8 @@ public class MapScreen : MonoBehaviour
             case TileType.SpiritTree:
                 _current = n; _moving = false;
                 if (!n.cleared) { _main.AwardCells(3); n.cleared = true; }   // 神聖樹で+3マス（確定・1回）
-                _notice.text = "神聖樹！　盤面マス +3";
+                _main.HealFull();                                            // HP全回復
+                _notice.text = "神聖樹！　盤面マス +3　HP全回復";
                 RefreshNodes();
                 break;
             case TileType.Shop:

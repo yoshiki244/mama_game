@@ -17,6 +17,7 @@ public enum CardEffectType
     Poison,               // 敵に amount の毒（毎ターンダメージ）
     Strength,             // 自分の攻撃力を amount 上昇（戦闘中持続）
     Heal,                 // amount 回復
+    HealPercent,          // 最大HPの amount% を回復
 }
 
 [System.Serializable]

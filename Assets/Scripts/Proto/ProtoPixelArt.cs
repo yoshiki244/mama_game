@@ -78,6 +78,9 @@ public static class ProtoPixelArt
     // マップの「？」イベント用の画像（Assets/Resources/event_block.png）。無ければnull
     public static Sprite EventPhoto() { TryPhoto("event_block", out var sp); return sp; }
 
+    // マップの店マス用の画像（Assets/Resources/shop.png）。無ければnull
+    public static Sprite ShopPhoto() { TryPhoto("shop", out var sp); return sp; }
+
     // 戦闘UI左上の顔アイコン（Assets/Resources/front_mama.png）。無ければ立ち絵
     public static Sprite FrontMama() { return TryPhoto("front_mama", out var sp) ? sp : MamaPhoto(); }
 

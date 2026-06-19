@@ -20,6 +20,7 @@ public class ProtoMain : MonoBehaviour
     public PanelModel Panel { get; private set; }
     public int Money { get; private set; }
     public int CellStock { get; private set; }     // 入手済み・未配置のマス数
+    public int CurrentHP { get; private set; }     // 戦闘をまたいで継続するHP
     public int BoardCells => Panel != null ? Panel.UnlockedCount() : 0; // 現在の解放マス数
     public int MaxMana => BoardCells / 10;   // マナ＝盤面マス数÷10（切り捨て）。初期30マス→3
     public int Wave { get; private set; } = 1;
@@ -56,6 +57,10 @@ public class ProtoMain : MonoBehaviour
     // ---- 経済 ----
     public void AddMoney(int amount) => Money = Mathf.Max(0, Money + amount);
 
+    // ---- HP（戦闘間で継続） ----
+    public void SetCurrentHP(int hp) => CurrentHP = Mathf.Clamp(hp, 0, Stats != null ? Stats.MaxHP : hp);
+    public void HealFull() { if (Stats != null) CurrentHP = Stats.MaxHP; }
+
     // ---- 盤面マス入手・解放 ----
     public void AwardCells(int n) { if (n > 0) CellStock += n; }
 
@@ -69,12 +74,12 @@ public class ProtoMain : MonoBehaviour
         return true;
     }
 
-    // 拡張したマスを初期状態(30)へ戻し、消費分をマスストックへ払い戻す
-    public void ResetExpansion()
+    // 配置セッション開始時の状態(keep)まで戻し、その間に解放したマスをマスストックへ払い戻す
+    public void ResetToBaseline(List<Vector2Int> keep)
     {
         int before = Panel.UnlockedCount();
         Panel.RelockAll();
-        Panel.UnlockInitial(InitialCols, InitialRows);
+        if (keep != null) foreach (var c in keep) Panel.Unlock(c.x, c.y);
         Panel.RemovePlacementsOnLocked();
         int after = Panel.UnlockedCount();
         CellStock += Mathf.Max(0, before - after);
@@ -120,6 +125,7 @@ public class ProtoMain : MonoBehaviour
 
         // プレイヤー初期化
         Stats = new PlayerStats(Cfg);
+        CurrentHP = Stats.MaxHP;
         Money = 0;
         CellStock = 0;
         Panel = new PanelModel(GridDim, GridDim);
@@ -210,6 +216,7 @@ public class ProtoMain : MonoBehaviour
     public void RestartRun()
     {
         Stats = new PlayerStats(Cfg);
+        CurrentHP = Stats.MaxHP;
         Wave = 1;
         Money = 0;
         CellStock = 0;
@@ -255,9 +262,9 @@ public class ProtoMain : MonoBehaviour
     }
 
     // 戦闘勝利（報酬処理はProtoBattle側で完了済み）→ マップへ
+    // ※Waveは「ボス撃破時のみ」MapScreen.OnEnemyDefeated内で加算する
     public void OnBattleWon()
     {
-        Wave++;
         _map.OnEnemyDefeated();
         ShowMap();
     }

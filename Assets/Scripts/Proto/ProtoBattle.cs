@@ -100,7 +100,7 @@ public class ProtoBattle : MonoBehaviour
         if (oldGo != null) Destroy(oldGo.gameObject);
 
         _playerMaxHP = _main.Stats.MaxHP;
-        _playerHP = _playerMaxHP;
+        _playerHP = Mathf.Clamp(_main.CurrentHP, 1, _playerMaxHP); // 前回の戦闘後HPを継続
         _block = 0; _strength = 0; _protectPct = 0; _weakPct = 0; _weakTurns = 0; _poison = 0;
         _manaBoostNext = 0; _primeBlink = false;
 
@@ -240,7 +240,7 @@ public class ProtoBattle : MonoBehaviour
             new Color(0.38f, 0.13f, 0.12f, 0.96f), OnEndTurn);
         ProtoUI.CreatePanel("RetreatBorder", _root, new Vector2(632, -374), new Vector2(224, 80), new Color(0.85f, 0.72f, 0.4f, 0.95f)).raycastTarget = false;
         ProtoUI.CreateButton("RetreatBtn", _root, "逃げる", 20, new Vector2(632, -374), new Vector2(212, 68),
-            new Color(0.16f, 0.14f, 0.18f, 0.96f), () => _main.ShowMap());
+            new Color(0.16f, 0.14f, 0.18f, 0.96f), () => { _main.SetCurrentHP(_playerHP); _main.ShowMap(); });
 
         // 点滅チャレンジ
         _challengeRoot = ProtoUI.CreateFullScreen("Challenge", _root);
@@ -608,6 +608,7 @@ public class ProtoBattle : MonoBehaviour
                 case CardEffectType.ManaBoostNextTurn: _manaBoostNext += e.amount; break;
                 case CardEffectType.Strength: _strength += e.amount; break;
                 case CardEffectType.Heal: _playerHP = Mathf.Min(_playerMaxHP, _playerHP + e.amount); break;
+                case CardEffectType.HealPercent: _playerHP = Mathf.Min(_playerMaxHP, _playerHP + Mathf.RoundToInt(_playerMaxHP * e.amount / 100f)); break;
                 case CardEffectType.Weak: _weakPct = e.amount; _weakTurns = Mathf.Max(_weakTurns, e.duration); break;
                 case CardEffectType.Poison: _poison += e.amount; break;
                 case CardEffectType.PrimeNextAttackBlink: _primeBlink = true; break;
@@ -729,6 +730,7 @@ public class ProtoBattle : MonoBehaviour
     IEnumerator Victory()
     {
         _inputLocked = true;
+        _main.SetCurrentHP(_playerHP);   // 戦闘後HPを保存（次戦闘へ継続）
         // レイアウトを通常（勝利）配置に戻す
         ((RectTransform)_resultText.transform).anchoredPosition = new Vector2(0, 300);
         _resultText.color = ProtoUI.Gold;

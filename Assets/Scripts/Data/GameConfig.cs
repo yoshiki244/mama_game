@@ -35,5 +35,5 @@ public class GameConfig : ScriptableObject
     public float blinkTimeScale = 2f;
 
     [Header("初期所持カードid")]
-    public string[] initialOwned = { "slash", "fireball", "draw", "blink", "defend" };
+    public string[] initialOwned = { "slash", "fireball", "draw", "blink", "defend", "heal" };
 }

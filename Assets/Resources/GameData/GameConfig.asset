@@ -30,3 +30,4 @@ MonoBehaviour:
   - draw
   - blink
   - defend
+  - heal

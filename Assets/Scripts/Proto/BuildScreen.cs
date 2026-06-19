@@ -47,6 +47,7 @@ public class BuildScreen : MonoBehaviour
     Image _addBtnImg;
     GameObject _resetBtnGO;        // 配置モード中のみ表示「リセットする」
     GameObject _confirmGO;         // 「これで配置します」確認ポップアップ
+    List<Vector2Int> _sessionBaseline;  // 配置開始時点の解放マス（リセットの基準）
     static readonly Color AddBtnOff = new Color(0.28f, 0.42f, 0.32f, 0.98f); // 緑：マスを配置する
     static readonly Color AddBtnOn = new Color(0.62f, 0.16f, 0.16f, 0.98f);  // 赤：配置をやめる
 
@@ -102,7 +103,7 @@ public class BuildScreen : MonoBehaviour
         _stockText.fontStyle = FontStyles.Bold;
 
         // リセットするボタン（配置モード中のみ表示・拡張したマスを初期化）
-        var resetBtn = ProtoUI.CreateButton("ResetCellsBtn", _root, "リセットする", 18, new Vector2(-665, -18), new Vector2(150, 46),
+        var resetBtn = ProtoUI.CreateButton("ResetCellsBtn", _root, "リセットする", 18, new Vector2(-665, -110), new Vector2(150, 46),
             new Color(0.6f, 0.2f, 0.2f, 0.98f), OnResetCells);
         _resetBtnGO = resetBtn.gameObject;
         _resetBtnGO.SetActive(false);
@@ -118,11 +119,11 @@ public class BuildScreen : MonoBehaviour
 
         // ピース一覧（右・スクロール）
         ProtoUI.CreateText("TrayTitle", _root, "所持カード（クリックで選択）", 22,
-            new Vector2(330, 360), new Vector2(440, 30));
+            new Vector2(180, 360), new Vector2(440, 30));
 
         var viewport = ProtoUI.CreateRect("TrayViewport", _root);
-        viewport.anchoredPosition = new Vector2(330, 110);
-        viewport.sizeDelta = new Vector2(470, 440);
+        viewport.anchoredPosition = new Vector2(180, 110);
+        viewport.sizeDelta = new Vector2(430, 440);
         var vpImg = viewport.gameObject.AddComponent<Image>();
         vpImg.color = new Color(0.08f, 0.06f, 0.14f, 0.55f);
         viewport.gameObject.AddComponent<RectMask2D>();
@@ -139,22 +140,29 @@ public class BuildScreen : MonoBehaviour
         sr.content = _trayContent;
         _trayScroll = sr;
 
-        _selectedText = ProtoUI.CreateText("Selected", _root, "カード未選択", 18,
-            new Vector2(230, -160), new Vector2(300, 60));
+        _selectedText = ProtoUI.CreateText("Selected", _root, "カード未選択", 16,
+            new Vector2(125, -160), new Vector2(320, 64), null, TextAlignmentOptions.Left);
+        _selectedText.enableWordWrapping = true;   // 回転ボタンと重ならないよう折り返す
         ProtoUI.CreateButton("RotateBtn", _root, "回転", 20,
-            new Vector2(470, -160), new Vector2(120, 44), new Color(0.3f, 0.25f, 0.45f), RotateAny);
+            new Vector2(360, -160), new Vector2(120, 44), new Color(0.3f, 0.25f, 0.45f), RotateAny);
 
-        ProtoUI.CreateText("Hint", _root,
-            "カード選択→盤面でマウス移動でプレビュー／左クリックで確定\n右クリック=撤去　ドラッグ=移動　盤面のカードをクリックで選択→Rキーで回転\n出現率 = カードのマス数 ÷ 盤面マス数　空白マスは「通常攻撃」", 14,
-            new Vector2(330, -235), new Vector2(470, 80), new Color(0.7f, 0.7f, 0.8f));
+        var hint = ProtoUI.CreateText("Hint", _root,
+            "カード選択→マウスでプレビュー→左クリックで確定　右クリック=撤去　ドラッグ=移動　カードをクリック→Rキーで回転　出現率=マス数÷盤面マス数　空白=通常攻撃", 15,
+            new Vector2(0, -408), new Vector2(1560, 30), new Color(0.72f, 0.72f, 0.82f));
+        hint.enableWordWrapping = false;
+        hint.enableAutoSizing = true; hint.fontSizeMin = 10; hint.fontSizeMax = 15;
 
+        // カードの出現率（カード一覧の右側に別枠・縦サイズは一覧と同じ）
+        ProtoUI.CreateFramedPanel("ProbBox", _root, new Vector2(585, 110), new Vector2(320, 440),
+            new Color(0.06f, 0.07f, 0.11f, 0.96f), new Color(0.65f, 0.55f, 0.36f, 0.85f));
+        ProtoUI.CreateText("ProbTitle", _root, "出現率", 22, new Vector2(585, 305), new Vector2(300, 30), ProtoUI.Gold);
         _info = ProtoUI.CreateText("Info", _root, "", 16,
-            new Vector2(-330, -320), new Vector2(560, 170), new Color(0.85f, 0.8f, 1f), TextAlignmentOptions.Top);
+            new Vector2(585, 90), new Vector2(292, 380), new Color(0.88f, 0.85f, 1f), TextAlignmentOptions.Top);
 
         ProtoUI.CreateButton("MenuBackBtn", _root, "メニューへ戻る", 22,
-            new Vector2(190, -330), new Vector2(250, 64), new Color(0.3f, 0.28f, 0.5f), () => _main.ShowMenu());
+            new Vector2(340, -330), new Vector2(250, 64), new Color(0.3f, 0.28f, 0.5f), () => _main.ShowMenu());
         ProtoUI.CreateButton("BackBtn", _root, "マップへ戻る", 22,
-            new Vector2(470, -330), new Vector2(250, 64), new Color(0.7f, 0.3f, 0.45f), () => _main.ShowMap());
+            new Vector2(620, -330), new Vector2(250, 64), new Color(0.7f, 0.3f, 0.45f), () => _main.ShowMap());
     }
 
     // ==================== 盤面 ====================
@@ -273,13 +281,18 @@ public class BuildScreen : MonoBehaviour
 
     void OnAddButton()
     {
-        if (!_addMode) SetAddMode(true);   // 配置開始
+        if (!_addMode)
+        {
+            if (_main.CellStock <= 0) { ShowNotice("エラー：マスストックが0です！配置できません"); return; } // ストック無しは入れない
+            SetAddMode(true);   // 配置開始
+        }
         else ShowPlaceConfirm();           // 配置をやめる→確認
     }
 
     void SetAddMode(bool on)
     {
         _addMode = on;
+        if (on) _sessionBaseline = P.GetUnlockedCells();   // この配置セッションの基準を記録
         if (_addBtnText != null) _addBtnText.text = on ? "配置をやめる" : "マスを配置する";
         if (_addBtnImg != null) _addBtnImg.color = on ? AddBtnOn : AddBtnOff;
         if (_resetBtnGO != null) _resetBtnGO.SetActive(on);
@@ -290,9 +303,9 @@ public class BuildScreen : MonoBehaviour
 
     void OnResetCells()
     {
-        _main.ResetExpansion();
+        _main.ResetToBaseline(_sessionBaseline);   // この配置セッションで解放した分だけ戻す
         RefreshBoard();
-        ShowNotice("拡張したマスをリセットしました");
+        ShowNotice("今回配置したマスをリセットしました");
     }
 
     // 「これで配置します。よろしいですか？」確認ポップアップ
@@ -319,7 +332,7 @@ public class BuildScreen : MonoBehaviour
             if (!P.IsUnlocked(x, y))
             {
                 if (_main.UnlockCell(x, y)) RefreshBoard();
-                else ShowNotice(_main.CellStock <= 0 ? "マスストックがありません" : "これ以上拡張できません(最大100)");
+                else ShowNotice(_main.CellStock <= 0 ? "エラー：マスストックが0です！配置できません" : "これ以上拡張できません(最大100)");
             }
             return;
         }
@@ -513,7 +526,7 @@ public class BuildScreen : MonoBehaviour
             string hex = ColorUtility.ToHtmlStringRGB(kv.Key.color);
             parts.Add($"<color=#{hex}>{kv.Key.displayName}: {Pct(kv.Value, total)}%（マナ{kv.Key.ManaCost}）</color>");
         }
-        _info.text = $"占有 {occupied}/{total} マス\n" + string.Join("\n", parts);
+        _info.text = string.Join("\n", parts);
     }
 
     static int Pct(int n, int total) => total > 0 ? Mathf.RoundToInt(100f * n / total) : 0;
