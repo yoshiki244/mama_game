@@ -2,7 +2,7 @@ using UnityEngine;
 using System.Collections.Generic;
 
 // カードの種別
-public enum CardKind { Attack, Skill }
+public enum CardKind { Attack, Defense, Heal, Skill }
 
 // カード効果の種類
 public enum CardEffectType
@@ -64,6 +64,30 @@ public class CardDef : ScriptableObject
     public int Size => Shape.Length;
 
     public int ManaCost => manaCostOverride >= 0 ? manaCostOverride : Mathf.CeilToInt(Size / 10f);
+
+    // 効果から自動分類した種別。
+    // 攻撃=ダメージを与える / 回復=HPを回復する / 防御=被ダメージを軽減する / スキル=それ以外
+    public CardKind Category
+    {
+        get
+        {
+            if (power > 0) return CardKind.Attack;
+            if (HasEffect(CardEffectType.Heal) || HasEffect(CardEffectType.HealPercent)) return CardKind.Heal;
+            if (HasEffect(CardEffectType.Protect) || HasEffect(CardEffectType.Block)) return CardKind.Defense;
+            return CardKind.Skill;
+        }
+    }
+
+    public static string KindLabel(CardKind k)
+    {
+        switch (k)
+        {
+            case CardKind.Attack: return "攻撃";
+            case CardKind.Defense: return "防御";
+            case CardKind.Heal: return "回復";
+            default: return "スキル";
+        }
+    }
 
     public bool HasEffect(CardEffectType t)
     {

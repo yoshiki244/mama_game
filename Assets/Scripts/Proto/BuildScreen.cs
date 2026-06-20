@@ -44,7 +44,7 @@ public class BuildScreen : MonoBehaviour
     // 絞り込み・並び替え
     readonly HashSet<int> _fSizes = new HashSet<int>();   // マス数フィルタ（空＝全部）
     readonly HashSet<int> _fMana = new HashSet<int>();    // マナ数フィルタ（空＝全部）
-    bool _fAttack, _fSkill;                               // 種別フィルタ
+    bool _fAttack, _fDefense, _fHeal, _fSkill;            // 種別フィルタ
     readonly List<(string key, bool asc)> _sorts = new List<(string, bool)>(); // 並び替え（順序付き複数）
     GameObject _sortOverlay;
     int _sortTab;                                         // 0=絞り込み 1=並び替え
@@ -245,9 +245,11 @@ public class BuildScreen : MonoBehaviour
         {
             if (_fSizes.Count > 0 && !_fSizes.Contains(c.Size)) continue;
             if (_fMana.Count > 0 && !_fMana.Contains(c.ManaCost)) continue;
-            if (_fAttack || _fSkill)
+            if (_fAttack || _fDefense || _fHeal || _fSkill)
             {
-                bool ok = (_fAttack && c.kind == CardKind.Attack) || (_fSkill && c.kind == CardKind.Skill);
+                var cat = c.Category;
+                bool ok = (_fAttack && cat == CardKind.Attack) || (_fDefense && cat == CardKind.Defense)
+                          || (_fHeal && cat == CardKind.Heal) || (_fSkill && cat == CardKind.Skill);
                 if (!ok) continue;
             }
             list.Add(c);
@@ -291,7 +293,7 @@ public class BuildScreen : MonoBehaviour
         ProtoUI.StyleTitle(title, Color.white, 4f);
 
         var content = ProtoUI.CreateRect("SContent", ov);
-        content.anchoredPosition = new Vector2(0, -20); content.sizeDelta = new Vector2(720, 420);
+        content.anchoredPosition = new Vector2(-30, -20); content.sizeDelta = new Vector2(720, 420);
 
         // タブ（金枠・選択側を発光）
         var tabOff = new Color(0.22f, 0.2f, 0.34f, 0.98f);
@@ -318,7 +320,7 @@ public class BuildScreen : MonoBehaviour
         // 初期設定に戻す（赤）＋適用して閉じる を横並び・少し上に
         ProtoUI.CreatePanel("SResetB", ov, new Vector2(-175, -210), new Vector2(310, 66), new Color(0.85f, 0.72f, 0.4f, 0.95f)).raycastTarget = false;
         ProtoUI.CreateButton("SReset", ov, "初期設定に戻す", 22, new Vector2(-175, -210), new Vector2(300, 56),
-            new Color(0.62f, 0.18f, 0.18f, 0.98f), () => { _fSizes.Clear(); _fMana.Clear(); _fAttack = false; _fSkill = false; _sorts.Clear(); rebuild(); });
+            new Color(0.62f, 0.18f, 0.18f, 0.98f), () => { _fSizes.Clear(); _fMana.Clear(); _fAttack = false; _fDefense = false; _fHeal = false; _fSkill = false; _sorts.Clear(); rebuild(); });
         ProtoUI.CreatePanel("SApplyB", ov, new Vector2(175, -210), new Vector2(310, 66), new Color(0.85f, 0.72f, 0.4f, 0.95f)).raycastTarget = false;
         ProtoUI.CreateButton("SApply", ov, "適用して閉じる", 22, new Vector2(175, -210), new Vector2(300, 56),
             new Color(0.45f, 0.3f, 0.55f, 0.98f), () => { Destroy(_sortOverlay); _sortOverlay = null; RefreshTray(); });
@@ -326,24 +328,26 @@ public class BuildScreen : MonoBehaviour
 
     void BuildFilterTab(Transform p)
     {
-        ProtoUI.CreateText("FL1", p, "マス数", 18, new Vector2(-292, 112), new Vector2(110, 26), Color.white, TextAlignmentOptions.Left);
+        ProtoUI.CreateText("FL1", p, "マス数", 18, new Vector2(-262, 112), new Vector2(110, 26), Color.white, TextAlignmentOptions.Left);
         for (int i = 1; i <= 10; i++) { int n = i; MakeToggle(p, new Vector2(-190 + (i - 1) * 56, 112), new Vector2(48, 42), n.ToString(), () => _fSizes.Contains(n), v => { if (v) _fSizes.Add(n); else _fSizes.Remove(n); }); }
-        ProtoUI.CreateText("FL2", p, "マナ数", 18, new Vector2(-292, 42), new Vector2(110, 26), Color.white, TextAlignmentOptions.Left);
+        ProtoUI.CreateText("FL2", p, "マナ数", 18, new Vector2(-262, 42), new Vector2(110, 26), Color.white, TextAlignmentOptions.Left);
         for (int i = 1; i <= 10; i++) { int n = i; MakeToggle(p, new Vector2(-190 + (i - 1) * 56, 42), new Vector2(48, 42), n.ToString(), () => _fMana.Contains(n), v => { if (v) _fMana.Add(n); else _fMana.Remove(n); }); }
-        ProtoUI.CreateText("FL3", p, "種別", 18, new Vector2(-292, -38), new Vector2(110, 26), Color.white, TextAlignmentOptions.Left);
-        MakeToggle(p, new Vector2(-150, -38), new Vector2(150, 44), "攻撃マス", () => _fAttack, v => _fAttack = v);
-        MakeToggle(p, new Vector2(20, -38), new Vector2(150, 44), "スキルマス", () => _fSkill, v => _fSkill = v);
+        ProtoUI.CreateText("FL3", p, "スキル種別", 18, new Vector2(-262, -38), new Vector2(130, 26), Color.white, TextAlignmentOptions.Left);
+        MakeToggle(p, new Vector2(-159, -38), new Vector2(110, 44), "攻撃", () => _fAttack, v => _fAttack = v);
+        MakeToggle(p, new Vector2(-39, -38), new Vector2(110, 44), "防御", () => _fDefense, v => _fDefense = v);
+        MakeToggle(p, new Vector2(81, -38), new Vector2(110, 44), "回復", () => _fHeal, v => _fHeal = v);
+        MakeToggle(p, new Vector2(201, -38), new Vector2(110, 44), "スキル", () => _fSkill, v => _fSkill = v);
         ProtoUI.CreateText("FHint", p, "未選択＝すべて表示", 15, new Vector2(0, -110), new Vector2(600, 24), new Color(0.7f, 0.7f, 0.8f));
     }
 
     void BuildSortTab(Transform p)
     {
-        ProtoUI.CreateText("ZL1", p, "マナ数", 20, new Vector2(-300, 110), new Vector2(160, 28), Color.white, TextAlignmentOptions.Left);
-        MakeToggle(p, new Vector2(-90, 110), new Vector2(160, 46), "昇順", () => HasSort("mana", true), v => SetSort("mana", true, v), _sortRebuild);
-        MakeToggle(p, new Vector2(110, 110), new Vector2(160, 46), "降順", () => HasSort("mana", false), v => SetSort("mana", false, v), _sortRebuild);
-        ProtoUI.CreateText("ZL2", p, "ピース数", 20, new Vector2(-300, 30), new Vector2(160, 28), Color.white, TextAlignmentOptions.Left);
-        MakeToggle(p, new Vector2(-90, 30), new Vector2(160, 46), "昇順", () => HasSort("size", true), v => SetSort("size", true, v), _sortRebuild);
-        MakeToggle(p, new Vector2(110, 30), new Vector2(160, 46), "降順", () => HasSort("size", false), v => SetSort("size", false, v), _sortRebuild);
+        ProtoUI.CreateText("ZL1", p, "マナ数", 20, new Vector2(-220, 110), new Vector2(160, 28), Color.white, TextAlignmentOptions.Left);
+        MakeToggle(p, new Vector2(-65, 110), new Vector2(160, 46), "昇順", () => HasSort("mana", true), v => SetSort("mana", true, v), _sortRebuild);
+        MakeToggle(p, new Vector2(125, 110), new Vector2(160, 46), "降順", () => HasSort("mana", false), v => SetSort("mana", false, v), _sortRebuild);
+        ProtoUI.CreateText("ZL2", p, "ピース数", 20, new Vector2(-220, 30), new Vector2(160, 28), Color.white, TextAlignmentOptions.Left);
+        MakeToggle(p, new Vector2(-65, 30), new Vector2(160, 46), "昇順", () => HasSort("size", true), v => SetSort("size", true, v), _sortRebuild);
+        MakeToggle(p, new Vector2(125, 30), new Vector2(160, 46), "降順", () => HasSort("size", false), v => SetSort("size", false, v), _sortRebuild);
         ProtoUI.CreateText("ZHint", p, "複数選択可（上の項目が優先）", 15, new Vector2(0, -60), new Vector2(600, 24), new Color(0.7f, 0.7f, 0.8f));
     }
 
@@ -392,13 +396,13 @@ public class BuildScreen : MonoBehaviour
                     new Vector2(ox + (v.x - minX) * (cs + cgap), oy - (v.y - minY) * (cs + cgap)),
                     new Vector2(cs, cs), c.color).raycastTarget = false;
 
-            string kindTag = c.kind == CardKind.Attack ? "攻撃" : "スキル";
+            string kindTag = CardDef.KindLabel(c.Category);
             var title = ProtoUI.CreateText("T", img.transform,
                 $"{c.displayName}　<size=13>[{kindTag}] {c.Size}マス / マナ{c.ManaCost}</size>", 16,
                 new Vector2(40, 12), new Vector2(360, 24), Color.white, TextAlignmentOptions.Left);
             title.raycastTarget = false;
             var desc = ProtoUI.CreateText("D", img.transform,
-                c.kind == CardKind.Attack && string.IsNullOrEmpty(c.description) ? $"威力 {c.power}" :
+                c.Category == CardKind.Attack && string.IsNullOrEmpty(c.description) ? $"威力 {c.power}" :
                 (string.IsNullOrEmpty(c.description) ? "" : c.description), 13,
                 new Vector2(40, -13), new Vector2(360, 22), new Color(0.8f, 0.82f, 0.95f), TextAlignmentOptions.Left);
             desc.raycastTarget = false;

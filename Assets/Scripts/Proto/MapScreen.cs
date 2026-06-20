@@ -678,7 +678,7 @@ public class MapScreen : MonoBehaviour
             inner.raycastTarget = false;
             var nm = ProtoUI.CreateText("N", inner.transform, card.displayName, 18, new Vector2(0, 116), new Vector2(220, 26), Color.white);
             nm.fontStyle = FontStyles.Bold;
-            ProtoUI.CreateText("K", inner.transform, $"{(card.kind == CardKind.Attack ? "攻撃" : "スキル")} / {card.Size}マス / マナ{card.ManaCost}",
+            ProtoUI.CreateText("K", inner.transform, $"{(CardDef.KindLabel(card.Category))} / {card.Size}マス / マナ{card.ManaCost}",
                 13, new Vector2(0, 90), new Vector2(220, 20), new Color(0.8f, 0.85f, 1f));
             var art = ProtoUI.CreatePanel("Art", inner.transform, new Vector2(0, 20), new Vector2(200, 110), new Color(0.05f, 0.04f, 0.10f));
             art.raycastTarget = false;

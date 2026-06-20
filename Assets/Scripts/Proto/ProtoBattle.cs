@@ -356,7 +356,7 @@ public class ProtoBattle : MonoBehaviour
         _detailPanel.gameObject.SetActive(true);
 
         ProtoUI.CreateText("DName", _detailContent, card.displayName, 24, new Vector2(0, 118), new Vector2(250, 32), ProtoUI.Gold);
-        ProtoUI.CreateText("DKind", _detailContent, $"{(card.kind == CardKind.Attack ? "攻撃" : "スキル")}　{card.Size}マス　マナ{card.ManaCost}", 15,
+        ProtoUI.CreateText("DKind", _detailContent, $"{(CardDef.KindLabel(card.Category))}　{card.Size}マス　マナ{card.ManaCost}", 15,
             new Vector2(0, 88), new Vector2(250, 22), new Color(0.8f, 0.88f, 1f));
 
         // 形状アート
@@ -816,7 +816,7 @@ public class ProtoBattle : MonoBehaviour
         var nm = ProtoUI.CreateText("N", inner.transform, card.displayName, 20, new Vector2(0, 120), new Vector2(230, 30), Color.white);
         nm.fontStyle = FontStyles.Bold;
         ProtoUI.CreateText("K", inner.transform,
-            $"{(card.kind == CardKind.Attack ? "攻撃" : "スキル")} / {card.Size}マス / マナ{card.ManaCost}", 14,
+            $"{(CardDef.KindLabel(card.Category))} / {card.Size}マス / マナ{card.ManaCost}", 14,
             new Vector2(0, 92), new Vector2(230, 22), new Color(0.8f, 0.85f, 1f));
 
         var art = ProtoUI.CreatePanel("Art", inner.transform, new Vector2(0, 20), new Vector2(210, 120), new Color(0.05f, 0.04f, 0.10f));
