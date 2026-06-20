@@ -14,6 +14,7 @@ public class MapScreen : MonoBehaviour
     ScrollRect _scroll;
     TextMeshProUGUI _moneyText, _notice, _waveText;
     GameObject _shopOverlay, _clearOverlay;
+    Coroutine _shopMsgCo; // 店員セリフのタイプライター制御
     const int MaxWave = 3;
     bool _moving;
 
@@ -103,6 +104,13 @@ public class MapScreen : MonoBehaviour
 
         _notice = ProtoUI.CreateText("Notice", _root, "", 19, new Vector2(0, 328), new Vector2(1200, 30), new Color(1f, 0.92f, 0.6f));
 
+        // ▼▼ デバッグ用（一時的）：左上からすぐショップへ。動作確認が終わったら削除する ▼▼
+        ProtoUI.CreateGoldButton("DebugShop", _root, "ショップへ(デバッグ用)", 16, new Vector2(-690, 330), new Vector2(180, 44),
+            new Color(0.5f, 0.3f, 0.15f, 0.98f), () => OpenShop(new Node { col = Mathf.Max(4, _current != null ? _current.col : 4), type = TileType.Shop }));
+        ProtoUI.CreateGoldButton("DebugContract", _root, "契約へ(デバッグ用)", 16, new Vector2(-690, 278), new Vector2(180, 44),
+            new Color(0.4f, 0.15f, 0.2f, 0.98f), () => OpenContract(new Node { col = Mathf.Max(4, _current != null ? _current.col : 4), type = TileType.Contract }));
+        // ▲▲ デバッグ用ここまで ▲▲
+
         ProtoUI.CreatePanel("BottomBar", _root, new Vector2(0, -424), new Vector2(1700, 56), new Color(0.015f, 0.014f, 0.02f, 0.90f)).raycastTarget = false;
         ProtoUI.CreatePanel("BottomBarLine", _root, new Vector2(0, -395), new Vector2(1700, 2), new Color(0.95f, 0.72f, 0.26f, 0.70f)).raycastTarget = false;
         var gold = new Color(0.9f, 0.78f, 0.42f, 0.95f);
@@ -155,7 +163,7 @@ public class MapScreen : MonoBehaviour
             (ProtoPixelArt.Knight(),       "中ボス：強敵。倒すと盤面マス+5"),
             (ProtoPixelArt.DragonFront(),  "ボス：各Waveのボス。倒すと次のWaveへ"),
             (ProtoPixelArt.EventPhoto(),   "？マス：イベント。お金を獲得"),
-            (ProtoPixelArt.TreePhoto(),    "樹マス：神聖樹。盤面マス+3＆HP全回復"),
+            (ProtoPixelArt.TreePhoto(),    "樹マス：神聖樹。HP全回復＋盤面マス+3か最大HP+10を選択"),
             (ProtoPixelArt.ShopPhoto(),    "店マス：ショップ。お金でカード購入"),
             (ProtoPixelArt.ContractPhoto(),"契約マス：最大HPを10払うごとに盤面マス+1"),
         };
@@ -179,7 +187,7 @@ public class MapScreen : MonoBehaviour
             y -= 70f;
         }
 
-        ProtoUI.CreateButton("TClose", rt, "閉じる", 24, new Vector2(0, -330), new Vector2(280, 60),
+        ProtoUI.CreateGoldButton("TClose", rt, "閉じる", 24, new Vector2(0, -330), new Vector2(280, 60),
             new Color(0.45f, 0.3f, 0.55f), () => { Destroy(_shopOverlay); _shopOverlay = null; });
     }
 
@@ -265,10 +273,12 @@ public class MapScreen : MonoBehaviour
         for (int col = 1; col <= MidColumns; col++)
         {
             bool midbossCol = mbCols.Contains(col);
+            // 中ボス列でも全レーンを中ボスにはせず、1レーンだけ中ボス＝回避ルートを残す
+            int midLane = midbossCol ? Lanes[Random.Range(0, Lanes.Length)] : int.MinValue;
             var list = new List<Node>();
             foreach (int lane in Lanes)
             {
-                if (midbossCol) { list.Add(NewNode(col, lane, TileType.MidBoss)); continue; }
+                if (midbossCol && lane == midLane) { list.Add(NewNode(col, lane, TileType.MidBoss)); continue; }
                 TileType t;
                 if (col == 1) t = TileType.Enemy;             // 初手は必ず戦闘
                 else if (col >= 3) { float r = Random.value; t = r < 0.60f ? TileType.Enemy : r < 0.82f ? TileType.Event : TileType.SpiritTree; }
@@ -595,10 +605,7 @@ public class MapScreen : MonoBehaviour
                 break;
             case TileType.SpiritTree:
                 _current = n; _moving = false;
-                if (!n.cleared) { _main.AwardCells(3); n.cleared = true; }   // 神聖樹で+3マス（確定・1回）
-                _main.HealFull();                                            // HP全回復
-                _notice.text = "神聖樹！　盤面マス +3　HP全回復";
-                RefreshNodes();
+                OpenSpiritTree(n);   // 神聖樹：HP全回復＋選択イベント
                 break;
             case TileType.Shop:
                 _current = n; _moving = false;
@@ -652,15 +659,33 @@ public class MapScreen : MonoBehaviour
         if (_shopOverlay != null) Destroy(_shopOverlay);
         var rt = ProtoUI.CreateFullScreen("Shop", _root);
         _shopOverlay = rt.gameObject;
-        rt.gameObject.AddComponent<Image>().color = new Color(0, 0, 0, 0.85f);
+
+        // 背景画像（無ければ暗幕）
+        var bgImg = rt.gameObject.AddComponent<Image>();
+        var bg = ProtoPixelArt.ShopEvent();
+        if (bg != null) { bgImg.sprite = bg; bgImg.color = Color.white; bgImg.preserveAspect = false; }
+        else bgImg.color = new Color(0, 0, 0, 0.85f);
+        ProtoUI.CreatePanel("ShopVeil", rt, Vector2.zero, new Vector2(1700, 900), new Color(0, 0, 0, 0.42f)).raycastTarget = false;
 
         var title = ProtoUI.CreateText("ST", rt, "ショップ", 40, new Vector2(0, 380), new Vector2(600, 50));
         ProtoUI.StyleTitle(title, new Color(0.6f, 1f, 0.7f), 6f);
 
-        var money = ProtoUI.CreateText("M", rt, "", 24, new Vector2(0, 330), new Vector2(600, 30), ProtoUI.Gold);
+        // 店員のセリフ（順番に表示）
+        ProtoUI.CreateFramedPanel("ShopMsgBox", rt, new Vector2(0, 300), new Vector2(900, 58),
+            new Color(0.05f, 0.06f, 0.10f, 0.9f), new Color(0.6f, 0.85f, 0.55f, 0.85f));
+        var keeper = ProtoUI.CreateText("ShopMsg", rt, "", 22, new Vector2(0, 300), new Vector2(870, 44), new Color(0.92f, 1f, 0.92f));
+        System.Action<string> say = (s) =>
+        {
+            if (_shopMsgCo != null) StopCoroutine(_shopMsgCo);
+            _shopMsgCo = StartCoroutine(Typewriter(keeper, s, 40f));
+        };
+        say("いらっしゃい、旅人さん！　さあ、どれにするんだい？");
 
-        // 盤面マスの所持状況（神聖樹では入場時に+3マス入手済み）
-        var cellInfo = ProtoUI.CreateText("CellInfo", rt, "", 20, new Vector2(0, 250), new Vector2(600, 30), new Color(0.6f, 1f, 0.7f));
+        // 所持金（右上・枠付き）
+        ProtoUI.CreateFramedPanel("MoneyBox", rt, new Vector2(640, 300), new Vector2(220, 64),
+            new Color(0.06f, 0.07f, 0.04f, 0.92f), new Color(0.85f, 0.72f, 0.4f, 0.9f));
+        var money = ProtoUI.CreateText("M", rt, "", 30, new Vector2(640, 300), new Vector2(200, 44), ProtoUI.Gold);
+        money.fontStyle = FontStyles.Bold;
 
         System.Action refresh = null;
 
@@ -686,22 +711,36 @@ public class MapScreen : MonoBehaviour
             string eff = card.kind == CardKind.Attack
                 ? (card.HasEffect(CardEffectType.BlinkOnUse) ? $"威力{card.power}・点滅" : $"威力 {card.power}")
                 : card.description;
-            ProtoUI.CreateText("D", inner.transform, eff, 13, new Vector2(0, -90), new Vector2(212, 56), new Color(0.9f, 0.92f, 1f), TextAlignmentOptions.Top).raycastTarget = false;
-            var price = ProtoUI.CreateText("P", inner.transform, "", 16, new Vector2(0, -128), new Vector2(220, 24), ProtoUI.Gold);
+            ProtoUI.CreateText("D", inner.transform, eff, 13, new Vector2(0, -100), new Vector2(212, 64), new Color(0.9f, 0.92f, 1f), TextAlignmentOptions.Top).raycastTarget = false;
+            // 価格はカードの上に枠を作って表示
+            float topY = -10 + 290f / 2f + 42f; // カード上端から少し離す
+            ProtoUI.CreateFramedPanel($"PriceBox_{card.id}", rt, new Vector2(startX + i * spacing, topY), new Vector2(150, 46),
+                new Color(0.06f, 0.07f, 0.04f, 0.95f), new Color(0.85f, 0.72f, 0.4f, 0.9f));
+            var price = ProtoUI.CreateText("P", rt, "", 20, new Vector2(startX + i * spacing, topY), new Vector2(140, 34), ProtoUI.Gold);
+            price.fontStyle = FontStyles.Bold;
 
             var btn = frame.gameObject.AddComponent<Button>(); btn.targetGraphic = frame;
             var c = card;
-            btn.onClick.AddListener(() => { if (_main.BuyCard(c.id)) refresh(); });
+            btn.onClick.AddListener(() =>
+            {
+                int pr = _main.Cfg != null ? _main.Cfg.shopBuyPrice : 40;
+                if (!_main.OwnsCard(c.id) && _main.Money < pr) { say("おっと、お金が足りないようだね……"); return; }
+                if (_main.BuyCard(c.id)) { say("毎度あり！　いい買い物だ。"); refresh(); }
+            });
             offerButtons.Add((card, btn, price, frame));
         }
 
-        ProtoUI.CreateButton("Close", rt, "出発する", 22, new Vector2(0, -380), new Vector2(260, 60),
-            new Color(0.45f, 0.3f, 0.55f), () => CloseShop(treeNode));
+        var closeBtn = ProtoUI.CreateGoldButton("Close", rt, "店を出る", 22, new Vector2(0, -380), new Vector2(260, 60),
+            new Color(0.45f, 0.3f, 0.55f), null);
+        closeBtn.onClick.AddListener(() =>
+        {
+            closeBtn.interactable = false;
+            StartCoroutine(ShopExit(keeper, treeNode));
+        });
 
         refresh = () =>
         {
             money.text = $"￥{_main.Money}";
-            cellInfo.text = $"マスストック: {_main.CellStock}　／　盤面 {_main.BoardCells}/{ProtoMain.MaxCells}マス";
 
             int price = _main.Cfg != null ? _main.Cfg.shopBuyPrice : 40;
             foreach (var o in offerButtons)
@@ -709,12 +748,22 @@ public class MapScreen : MonoBehaviour
                 bool owned = _main.OwnsCard(o.card.id);
                 bool afford = _main.Money >= price;
                 o.label.text = owned ? "購入済み" : $"購入 {price}";
-                o.btn.interactable = !owned && afford;
-                o.frame.color = owned ? new Color(0.3f, 0.3f, 0.32f) : new Color(0.66f, 0.55f, 0.34f);
+                o.btn.interactable = !owned; // 所持金不足でも押せる（押すとセリフで知らせる）
+                o.frame.color = owned ? new Color(0.3f, 0.3f, 0.32f)
+                    : afford ? new Color(0.66f, 0.55f, 0.34f) : new Color(0.45f, 0.38f, 0.26f);
             }
         };
 
         refresh();
+    }
+
+    // 店を出るときのセリフ → マップへ
+    IEnumerator ShopExit(TextMeshProUGUI keeper, Node node)
+    {
+        if (_shopMsgCo != null) StopCoroutine(_shopMsgCo);
+        yield return Typewriter(keeper, "まいどあり！　またどうぞ！", 40f);
+        yield return new WaitForSeconds(0.8f);
+        CloseShop(node);
     }
 
     void DrawMini(Transform parent, CardDef card, float cs)
@@ -724,7 +773,7 @@ public class MapScreen : MonoBehaviour
         foreach (var v in shape) { minX = Mathf.Min(minX, v.x); minY = Mathf.Min(minY, v.y); maxX = Mathf.Max(maxX, v.x); maxY = Mathf.Max(maxY, v.y); }
         float gap = 2f, ox = -(maxX - minX) * (cs + gap) / 2f, oy = (maxY - minY) * (cs + gap) / 2f;
         foreach (var v in shape)
-            ProtoUI.CreatePanel("M", parent, new Vector2(ox + (v.x - minX) * (cs + gap), oy - (v.y - minY) * (cs + gap)), new Vector2(cs, cs), card.color).raycastTarget = false;
+            ProtoUI.CreatePanel("M", parent, new Vector2(ox + (v.x - minX) * (cs + gap), oy - (v.y - minY) * (cs + gap)), new Vector2(cs, cs), card.CategoryColor).raycastTarget = false;
     }
 
     void CloseShop(Node treeNode)
@@ -734,36 +783,163 @@ public class MapScreen : MonoBehaviour
         RefreshNodes();
     }
 
+    // ==================== 神聖樹マス ====================
+    void OpenSpiritTree(Node node)
+    {
+        _main.HealFull(); // 立ち寄るとHP全回復
+
+        if (_shopOverlay != null) Destroy(_shopOverlay);
+        var rt = ProtoUI.CreateFullScreen("SpiritTree", _root);
+        _shopOverlay = rt.gameObject;
+
+        // 背景画像（無ければ暗幕）
+        var bgImg = rt.gameObject.AddComponent<Image>();
+        var bg = ProtoPixelArt.ShiningTree();
+        if (bg != null) { bgImg.sprite = bg; bgImg.color = Color.white; bgImg.preserveAspect = false; }
+        else bgImg.color = new Color(0.04f, 0.10f, 0.06f, 0.96f);
+        ProtoUI.CreatePanel("STVeil", rt, Vector2.zero, new Vector2(1700, 900), new Color(0, 0, 0, 0.32f)).raycastTarget = false;
+
+        var title = ProtoUI.CreateText("STT", rt, "神聖樹", 44, new Vector2(0, 320), new Vector2(700, 56), new Color(0.7f, 1f, 0.78f));
+        ProtoUI.StyleTitle(title, new Color(0.7f, 1f, 0.78f), 8f);
+
+        // 木のセリフ（順番に表示）
+        ProtoUI.CreateFramedPanel("STMsgBox", rt, new Vector2(0, 210), new Vector2(1080, 116),
+            new Color(0.04f, 0.10f, 0.06f, 0.92f), new Color(0.5f, 0.85f, 0.55f, 0.9f));
+        var msg = ProtoUI.CreateText("STMsg", rt, "",
+            22, new Vector2(0, 210), new Vector2(1040, 100), new Color(0.92f, 1f, 0.92f));
+
+        var healTxt = ProtoUI.CreateText("STHeal", rt, "HPは全回復した！", 24, new Vector2(0, 120), new Vector2(900, 34), ProtoUI.Gold);
+        healTxt.gameObject.SetActive(false);
+
+        var gold = new Color(0.85f, 0.72f, 0.4f, 0.95f);
+
+        // 選択ボタン（金枠付き）。セリフ表示が終わるまで隠す
+        var cellBorder = ProtoUI.CreatePanel("STCellBorder", rt, new Vector2(-250, 10), new Vector2(432, 96), gold);
+        cellBorder.raycastTarget = false;
+        var cellBtn = ProtoUI.CreateButton("STCell", rt, "盤面マス ＋3", 24, new Vector2(-250, 10), new Vector2(420, 84),
+            new Color(0.24f, 0.5f, 0.32f, 0.98f), null);
+        var hpBorder = ProtoUI.CreatePanel("STHpBorder", rt, new Vector2(250, 10), new Vector2(432, 96), gold);
+        hpBorder.raycastTarget = false;
+        var hpBtn = ProtoUI.CreateButton("STHp", rt, "最大HP ＋10", 24, new Vector2(250, 10), new Vector2(420, 84),
+            new Color(0.5f, 0.28f, 0.30f, 0.98f), null);
+
+        cellBorder.gameObject.SetActive(false); cellBtn.gameObject.SetActive(false);
+        hpBorder.gameObject.SetActive(false); hpBtn.gameObject.SetActive(false);
+
+        System.Action<string> choose = (notice) =>
+        {
+            cellBtn.interactable = false; hpBtn.interactable = false;
+            if (_notice != null) _notice.text = notice;
+            StartCoroutine(SpiritTreeFarewell(msg, node));
+        };
+        cellBtn.onClick.AddListener(() => { _main.AwardCells(3); choose("神聖樹の恵み：盤面マス +3"); });
+        hpBtn.onClick.AddListener(() =>
+        {
+            if (_main.Stats != null) _main.Stats.MaxHP += 10;
+            _main.HealFull();
+            choose("神聖樹の恵み：最大HP +10");
+        });
+
+        // 導入のセリフを順番に表示 → 終わったらHP回復表示とボタンを出す
+        StartCoroutine(Typewriter(msg,
+            "おお、よくぞ来たな旅人よ。\nその傷、わしが癒やそう……ほれ、もう大丈夫じゃ。\nさらに我が恵み、ひとつだけ授けよう。どちらが望みじゃ？",
+            40f, () =>
+            {
+                healTxt.gameObject.SetActive(true);
+                cellBorder.gameObject.SetActive(true); cellBtn.gameObject.SetActive(true);
+                hpBorder.gameObject.SetActive(true); hpBtn.gameObject.SetActive(true);
+            }));
+    }
+
+    // 一文字ずつ表示する演出
+    IEnumerator Typewriter(TextMeshProUGUI t, string full, float cps, System.Action onDone = null)
+    {
+        if (t == null) yield break;
+        t.text = full;
+        t.ForceMeshUpdate();
+        int total = t.textInfo.characterCount;
+        t.maxVisibleCharacters = 0;
+        float shown = 0f;
+        while (shown < total)
+        {
+            shown += cps * Time.deltaTime;
+            t.maxVisibleCharacters = Mathf.Min(total, Mathf.FloorToInt(shown));
+            yield return null;
+        }
+        t.maxVisibleCharacters = total;
+        onDone?.Invoke();
+    }
+
+    // 選択後の締めのセリフ → マップへ
+    IEnumerator SpiritTreeFarewell(TextMeshProUGUI msg, Node node)
+    {
+        yield return Typewriter(msg, "汝に神のご加護があらんことを。", 28f);
+        yield return new WaitForSeconds(0.9f);
+        CloseShop(node);
+    }
+
     // ==================== 契約マス ====================
     void OpenContract(Node node)
     {
         if (_shopOverlay != null) Destroy(_shopOverlay);
         var rt = ProtoUI.CreateFullScreen("Contract", _root);
         _shopOverlay = rt.gameObject;
-        rt.gameObject.AddComponent<Image>().color = new Color(0, 0, 0, 0.82f);
 
-        var title = ProtoUI.CreateText("CT", rt, "契約", 40, new Vector2(0, 300), new Vector2(600, 50));
-        ProtoUI.StyleTitle(title, new Color(0.85f, 0.6f, 1f), 8f);
-        ProtoUI.CreateText("CD", rt, "最大HPを10支払うごとに マスストックを1得る", 22, new Vector2(0, 230), new Vector2(900, 30), new Color(0.92f, 0.9f, 1f));
+        // 背景画像（悪魔）。無ければ暗幕
+        var bgImg = rt.gameObject.AddComponent<Image>();
+        var bg = ProtoPixelArt.EvilEvent();
+        if (bg != null) { bgImg.sprite = bg; bgImg.color = Color.white; bgImg.preserveAspect = false; }
+        else bgImg.color = new Color(0.10f, 0.02f, 0.05f, 0.96f);
+        ProtoUI.CreatePanel("EvilVeil", rt, Vector2.zero, new Vector2(1700, 900), new Color(0, 0, 0, 0.45f)).raycastTarget = false;
 
-        TextMeshProUGUI info = ProtoUI.CreateText("CInfo", rt, "", 26, new Vector2(0, 120), new Vector2(900, 40), ProtoUI.Gold);
+        var title = ProtoUI.CreateText("CT", rt, "悪魔の契約", 42, new Vector2(0, 330), new Vector2(700, 52), new Color(0.95f, 0.4f, 0.45f));
+        ProtoUI.StyleTitle(title, new Color(0.95f, 0.4f, 0.45f), 8f);
+
+        // 悪魔のセリフ（順番に表示）
+        ProtoUI.CreateFramedPanel("EvilMsgBox", rt, new Vector2(0, 225), new Vector2(1080, 120),
+            new Color(0.10f, 0.02f, 0.05f, 0.92f), new Color(0.85f, 0.3f, 0.35f, 0.9f));
+        var demon = ProtoUI.CreateText("EvilMsg", rt, "", 22, new Vector2(0, 225), new Vector2(1040, 104), new Color(1f, 0.88f, 0.9f));
+        demon.lineSpacing = 24f; // 行間を少し広げる
+        System.Action<string> say = (s) =>
+        {
+            if (_shopMsgCo != null) StopCoroutine(_shopMsgCo);
+            _shopMsgCo = StartCoroutine(Typewriter(demon, s, 38f));
+        };
+        say("クククッ……よく来たな、欲深き者よ。\nおまえの「生命」を寄こせ。代わりに更なる力を授けてやろう。");
+
+        TextMeshProUGUI info = ProtoUI.CreateText("CInfo", rt, "", 26, new Vector2(0, 130), new Vector2(900, 40), ProtoUI.Gold);
 
         System.Action refresh = () =>
         {
             info.text = $"最大HP {_main.Stats.MaxHP}　／　マスストック {_main.CellStock}";
         };
 
-        var payBtn = ProtoUI.CreateButton("Pay", rt, "最大HP -10 → マスストック +1", 22, new Vector2(0, 20), new Vector2(460, 70),
-            new Color(0.55f, 0.25f, 0.6f, 0.98f), null);
+        var payBtn = ProtoUI.CreateGoldButton("Pay", rt, "最大HP -10 → マスストック +1", 22, new Vector2(0, 20), new Vector2(460, 70),
+            new Color(0.55f, 0.18f, 0.22f, 0.98f), null);
         payBtn.onClick.AddListener(() =>
         {
-            if (!_main.ContractTradeHpForCell() && _notice != null) _notice.text = "これ以上は最大HPを払えません";
+            if (_main.ContractTradeHpForCell()) say("くくく、よい契約だ……命を糧に力は増した。");
+            else say("もう差し出す命がないとはな。これ以上は無理な相談よ。");
             refresh();
         });
 
-        ProtoUI.CreateButton("CClose", rt, "出発する", 22, new Vector2(0, -120), new Vector2(280, 60),
-            new Color(0.45f, 0.3f, 0.55f), () => CloseShop(node));
+        var closeBtn = ProtoUI.CreateGoldButton("CClose", rt, "立ち去る", 22, new Vector2(0, -380), new Vector2(280, 60),
+            new Color(0.45f, 0.2f, 0.25f, 0.98f), null);
+        closeBtn.onClick.AddListener(() =>
+        {
+            closeBtn.interactable = false;
+            StartCoroutine(EvilFarewell(demon, node));
+        });
         refresh();
+    }
+
+    // 悪魔から立ち去るときのセリフ → マップへ
+    IEnumerator EvilFarewell(TextMeshProUGUI demon, Node node)
+    {
+        if (_shopMsgCo != null) StopCoroutine(_shopMsgCo);
+        yield return Typewriter(demon, "後悔するなよ。", 38f);
+        yield return new WaitForSeconds(0.8f);
+        CloseShop(node);
     }
 
     // ==================== クリア ====================
@@ -777,7 +953,7 @@ public class MapScreen : MonoBehaviour
         var t = ProtoUI.CreateText("CT", rt, "ゲームクリア！", 64, new Vector2(0, 80), new Vector2(900, 100));
         ProtoUI.StyleTitle(t, ProtoUI.Gold, 10f);
         ProtoUI.CreateText("CS", rt, "ボスを撃破した！", 24, new Vector2(0, -10), new Vector2(900, 50), new Color(0.9f, 0.9f, 1f));
-        ProtoUI.CreateButton("Replay", rt, "もう一度挑戦", 24, new Vector2(0, -90), new Vector2(280, 64),
+        ProtoUI.CreateGoldButton("Replay", rt, "もう一度挑戦", 24, new Vector2(0, -90), new Vector2(280, 64),
             new Color(0.35f, 0.3f, 0.55f), ResetRun);
     }
 

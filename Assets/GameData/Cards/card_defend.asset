@@ -13,7 +13,7 @@ MonoBehaviour:
   m_Name: card_defend
   m_EditorClassIdentifier: Assembly-CSharp::CardDef
   id: defend
-  displayName: "\u9632\u5FA1"
+  displayName: "\u30AC\u30FC\u30C9"
   description: "\u30D6\u30ED\u30C3\u30AF\u30928\u5F97\u308B\uFF08\u88AB\u30C0\u30E1\u30FC\u30B8\u3092\u80A9\u4EE3\u308F\u308A\uFF09\u3002"
   kind: 1
   shapeRows:

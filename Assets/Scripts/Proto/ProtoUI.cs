@@ -130,6 +130,14 @@ public static class ProtoUI
         return btn;
     }
 
+    // 金枠付きボタン（周囲を金色の枠で囲む）
+    public static Button CreateGoldButton(string name, Transform parent, string label, float fontSize,
+        Vector2 pos, Vector2 size, Color bg, System.Action onClick)
+    {
+        CreatePanel(name + "Border", parent, pos, size + new Vector2(10f, 10f), new Color(0.85f, 0.72f, 0.4f, 0.95f)).raycastTarget = false;
+        return CreateButton(name, parent, label, fontSize, pos, size, bg, onClick);
+    }
+
     public static void AddPanelTrim(Image panel, Vector2 size, Color border, Color shine)
     {
         var top = CreatePanel("TopTrim", panel.transform, new Vector2(0, size.y * 0.5f - 2f), new Vector2(size.x, 3f), shine);

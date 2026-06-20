@@ -129,11 +129,11 @@ public class ProtoBattle : MonoBehaviour
         _mana = _main.MaxMana + _manaBoostNext;
         _manaBoostNext = 0;
 
-        // 手札は戦闘開始時に6枚だけ配る。以降は補充しない（使ったら無くなる）
-        if (firstTurn) DealHand();
+        // 毎ターン、盤面構成の確率（出現率）に従って手札を5枚配り直す
+        DealHand();
 
         _inputLocked = false;
-        RefreshAll(dealAnimation: firstTurn);
+        RefreshAll(dealAnimation: true);
         _message.text = firstTurn ? "戦闘開始！カードを選ぼう！" : "あなたのターン！";
     }
 
@@ -355,8 +355,13 @@ public class ProtoBattle : MonoBehaviour
         foreach (Transform c in _detailContent) Destroy(c.gameObject);
         _detailPanel.gameObject.SetActive(true);
 
-        ProtoUI.CreateText("DName", _detailContent, card.displayName, 24, new Vector2(0, 118), new Vector2(250, 32), ProtoUI.Gold);
-        ProtoUI.CreateText("DKind", _detailContent, $"{(CardDef.KindLabel(card.Category))}　{card.Size}マス　マナ{card.ManaCost}", 15,
+        // マナコストバッジ（左上）
+        var dMana = ProtoUI.CreatePanel("DMana", _detailContent, new Vector2(-92, 118), new Vector2(34, 34), new Color(0.08f, 0.27f, 0.68f, 0.98f));
+        dMana.raycastTarget = false;
+        ProtoUI.CreateText("DManaT", dMana.transform, card.ManaCost.ToString(), 20, Vector2.zero, new Vector2(34, 34)).fontStyle = FontStyles.Bold;
+
+        ProtoUI.CreateText("DName", _detailContent, card.displayName, 24, new Vector2(12, 118), new Vector2(190, 32), ProtoUI.Gold);
+        ProtoUI.CreateText("DKind", _detailContent, $"{(CardDef.KindLabel(card.Category))}　{card.Size}マス", 15,
             new Vector2(0, 88), new Vector2(250, 22), new Color(0.8f, 0.88f, 1f));
 
         // 形状アート
@@ -367,12 +372,14 @@ public class ProtoBattle : MonoBehaviour
         int minX = shape.Min(v => v.x), minY = shape.Min(v => v.y), maxX = shape.Max(v => v.x), maxY = shape.Max(v => v.y);
         float ox = -(maxX - minX) * (cs + gap) / 2f, oy = (maxY - minY) * (cs + gap) / 2f;
         foreach (var v in shape)
-            ProtoUI.CreatePanel("M", art.transform, new Vector2(ox + (v.x - minX) * (cs + gap), oy - (v.y - minY) * (cs + gap)), new Vector2(cs, cs), card.color).raycastTarget = false;
+            ProtoUI.CreatePanel("M", art.transform, new Vector2(ox + (v.x - minX) * (cs + gap), oy - (v.y - minY) * (cs + gap)), new Vector2(cs, cs), card.CategoryColor).raycastTarget = false;
 
         string eff = card.kind == CardKind.Attack
             ? (card.HasEffect(CardEffectType.BlinkOnUse) ? $"威力{card.power}・点滅" : $"威力 {card.power}")
             : (string.IsNullOrEmpty(card.description) ? "" : card.description);
-        ProtoUI.CreateText("DEff", _detailContent, eff, 16, new Vector2(0, -95), new Vector2(240, 80), new Color(0.92f, 0.92f, 1f));
+        var deff = ProtoUI.CreateText("DEff", _detailContent, eff, 15, new Vector2(0, -88), new Vector2(202, 104), new Color(0.92f, 0.92f, 1f));
+        deff.textWrappingMode = TMPro.TextWrappingModes.Normal;
+        deff.enableAutoSizing = true; deff.fontSizeMin = 11; deff.fontSizeMax = 16;
     }
 
     void HideCardDetail()
@@ -395,6 +402,7 @@ public class ProtoBattle : MonoBehaviour
         if (cg == null) cg = rt.gameObject.AddComponent<CanvasGroup>();
         Vector2 start = rt.anchoredPosition;
         float startScale = rt.localScale.x;
+        Quaternion startRot = rt.localRotation; // 扇状の傾きを正面に戻しながら消す
         float t = 0f; const float dur = 0.24f;
         while (t < dur)
         {
@@ -402,9 +410,11 @@ public class ProtoBattle : MonoBehaviour
             t += Time.deltaTime; float p = Mathf.SmoothStep(0, 1, t / dur);
             rt.anchoredPosition = start + new Vector2(0, 150f * p);
             rt.localScale = Vector3.one * Mathf.Lerp(startScale, 0.25f, p);
+            rt.localRotation = Quaternion.Slerp(startRot, Quaternion.identity, p);
             cg.alpha = 1f - p;
             yield return null;
         }
+        rt.localRotation = Quaternion.identity;
     }
 
     void HideBoardOverlay()
@@ -460,7 +470,7 @@ public class ProtoBattle : MonoBehaviour
                 Color col;
                 if (match) col = hc;
                 else if (!panel.IsUnlocked(x, y)) col = new Color(0.04f, 0.04f, 0.06f, 0.85f);  // 未解放
-                else { var pl = panel.GetAt(x, y); col = pl != null ? pl.card.color : new Color(0.16f, 0.14f, 0.24f, 0.95f); } // ピース/空き
+                else { var pl = panel.GetAt(x, y); col = pl != null ? pl.card.CategoryColor : new Color(0.16f, 0.14f, 0.24f, 0.95f); } // ピース/空き
                 var p = ProtoUI.CreatePanel($"BC_{x}_{y}", _boardContent,
                     new Vector2(ox + x * cell, oy - y * cell), new Vector2(cell - 2, cell - 2), col);
                 p.raycastTarget = false;
@@ -477,9 +487,10 @@ public class ProtoBattle : MonoBehaviour
 
     Button CreateCardUI(CardDef card, Vector2 pos, System.Action onClick, bool affordable)
     {
-        Color accent = card.color;
+        Color accent = card.CategoryColor;
+        // マナ不足でも種別カラーは残し、明るさを落として「使えない」を表現
         var frame = ProtoUI.CreatePanel("Card", _handArea, pos, new Vector2(190, 262),
-            affordable ? Color.Lerp(accent, ProtoUI.Border, 0.45f) : new Color(0.24f, 0.24f, 0.27f, 0.92f));
+            affordable ? Color.Lerp(accent, ProtoUI.Border, 0.45f) : Color.Lerp(accent, Color.black, 0.55f));
         var btn = frame.gameObject.AddComponent<Button>();
         btn.targetGraphic = frame;
         if (onClick != null) btn.onClick.AddListener(() => onClick());
@@ -489,9 +500,9 @@ public class ProtoBattle : MonoBehaviour
         inner.raycastTarget = false;
         ProtoUI.AddPanelTrim(inner, new Vector2(180, 252), Color.Lerp(accent, Color.black, 0.35f), new Color(1f, 1f, 1f, 0.06f));
 
-        var accentLine = ProtoUI.CreatePanel("AccentLine", inner.transform, new Vector2(0, 123), new Vector2(168, 5), affordable ? accent : new Color(0.30f, 0.30f, 0.34f));
+        var accentLine = ProtoUI.CreatePanel("AccentLine", inner.transform, new Vector2(0, 123), new Vector2(168, 5), affordable ? accent : Color.Lerp(accent, Color.black, 0.4f));
         accentLine.raycastTarget = false;
-        var header = ProtoUI.CreatePanel("Header", inner.transform, new Vector2(0, 101), new Vector2(168, 38), Color.Lerp(accent, Color.black, affordable ? 0.72f : 0.86f));
+        var header = ProtoUI.CreatePanel("Header", inner.transform, new Vector2(0, 101), new Vector2(168, 38), Color.Lerp(accent, Color.black, affordable ? 0.72f : 0.8f));
         header.raycastTarget = false;
         // カード名：コストバッジの右側に左詰め、文字数に応じて枠内に収まるよう自動縮小
         var nameText = ProtoUI.CreateText("Name", header.transform, card.displayName, 18, new Vector2(18, 0), new Vector2(126, 32));
@@ -514,7 +525,7 @@ public class ProtoBattle : MonoBehaviour
         int minX = shape.Min(v => v.x), minY = shape.Min(v => v.y), maxX = shape.Max(v => v.x), maxY = shape.Max(v => v.y);
         float ox = -(maxX - minX) * (cs + gap) / 2f, oy = (maxY - minY) * (cs + gap) / 2f;
         foreach (var v in shape)
-            ProtoUI.CreatePanel("Mas", art.transform, new Vector2(ox + (v.x - minX) * (cs + gap), oy - (v.y - minY) * (cs + gap)), new Vector2(cs, cs), card.color).raycastTarget = false;
+            ProtoUI.CreatePanel("Mas", art.transform, new Vector2(ox + (v.x - minX) * (cs + gap), oy - (v.y - minY) * (cs + gap)), new Vector2(cs, cs), card.CategoryColor).raycastTarget = false;
 
         // 効果説明：マス背景（形状アート）のすぐ下に配置
         var footer = ProtoUI.CreatePanel("Footer", inner.transform, new Vector2(0, -76), new Vector2(168, 64), new Color(0.075f, 0.08f, 0.105f, 0.94f));
@@ -607,8 +618,8 @@ public class ProtoBattle : MonoBehaviour
     {
         _message.text = $"{card.displayName}！";
         yield return Pulse(_actorRt, 1.1f, 0.2f);
-        StartCoroutine(FlashSprite(_actorImg, Color.Lerp(card.color, Color.white, 0.4f)));
-        SpawnBurst(_actorRt.anchoredPosition, card.color, 10, 90f);
+        StartCoroutine(FlashSprite(_actorImg, Color.Lerp(card.CategoryColor, Color.white, 0.4f)));
+        SpawnBurst(_actorRt.anchoredPosition, card.CategoryColor, 10, 90f);
         ApplyCardEffects(card, attackContext: false);
         yield return new WaitForSeconds(0.5f);
     }
@@ -699,9 +710,9 @@ public class ProtoBattle : MonoBehaviour
         var t = ProtoUI.CreateText("GOText", go, "GAME OVER", 64, new Vector2(0, 180), new Vector2(900, 100), new Color(1f, 0.36f, 0.36f));
         ProtoUI.StyleTitle(t, new Color(1f, 0.4f, 0.4f), 8f);
         ProtoUI.CreateText("GOSub", go, "MAMAは倒れてしまった…", 24, new Vector2(0, 110), new Vector2(900, 40), new Color(0.92f, 0.92f, 1f));
-        ProtoUI.CreateButton("Retry", go, "もう一度やり直す", 24, new Vector2(0, 30), new Vector2(330, 68),
+        ProtoUI.CreateGoldButton("Retry", go, "もう一度やり直す", 24, new Vector2(0, 30), new Vector2(330, 68),
             new Color(0.30f, 0.45f, 0.32f), () => _main.RestartRun());
-        ProtoUI.CreateButton("Quit", go, "ゲームを終了する", 22, new Vector2(0, -60), new Vector2(330, 62),
+        ProtoUI.CreateGoldButton("Quit", go, "ゲームを終了する", 22, new Vector2(0, -60), new Vector2(330, 62),
             new Color(0.45f, 0.25f, 0.25f), () => { /* ここでは何もしない */ });
     }
 
@@ -785,7 +796,7 @@ public class ProtoBattle : MonoBehaviour
 
         if (choices.Count == 0)
         {
-            ProtoUI.CreateButton("Skip", _rewardArea, "マップへ戻る", 24, new Vector2(0, -120), new Vector2(280, 64),
+            ProtoUI.CreateGoldButton("Skip", _rewardArea, "マップへ戻る", 24, new Vector2(0, -120), new Vector2(280, 64),
                 new Color(0.35f, 0.3f, 0.55f), () => _main.OnBattleWon());
             yield break;
         }
@@ -826,7 +837,7 @@ public class ProtoBattle : MonoBehaviour
         int minX = shape.Min(v => v.x), minY = shape.Min(v => v.y), maxX = shape.Max(v => v.x), maxY = shape.Max(v => v.y);
         float ox = -(maxX - minX) * (cs + gap) / 2f, oy = (maxY - minY) * (cs + gap) / 2f;
         foreach (var v in shape)
-            ProtoUI.CreatePanel("M", art.transform, new Vector2(ox + (v.x - minX) * (cs + gap), oy - (v.y - minY) * (cs + gap)), new Vector2(cs, cs), card.color).raycastTarget = false;
+            ProtoUI.CreatePanel("M", art.transform, new Vector2(ox + (v.x - minX) * (cs + gap), oy - (v.y - minY) * (cs + gap)), new Vector2(cs, cs), card.CategoryColor).raycastTarget = false;
 
         string eff = card.kind == CardKind.Attack
             ? (card.HasEffect(CardEffectType.BlinkOnUse) ? $"威力{card.power}・使用時に点滅" : $"威力 {card.power}")
@@ -864,7 +875,7 @@ public class ProtoBattle : MonoBehaviour
         for (int i = 0; i < shape.Length; i++)
         {
             var v = shape[i];
-            Color bc = Color.Lerp(card.color, Color.black, 0.45f);
+            Color bc = Color.Lerp(card.CategoryColor, Color.black, 0.45f);
             var img = ProtoUI.CreatePanel("PCell", _pieceArea,
                 new Vector2(ox + (v.x - minX) * (cs + gap), oy - (v.y - minY) * (cs + gap)), new Vector2(cs, cs), bc);
             cells.Add(img); baseColors.Add(bc);
@@ -1119,15 +1130,15 @@ public class ProtoBattle : MonoBehaviour
         }
     }
 
-    IEnumerator MotionFlare(CardDef card) { StartCoroutine(FlashSprite(_actorImg, new Color(1f, 0.85f, 0.55f))); yield return Pulse(_actorRt, 1.1f, 0.22f); yield return Projectile(card.color, 38f, 0.32f, false); }
+    IEnumerator MotionFlare(CardDef card) { StartCoroutine(FlashSprite(_actorImg, new Color(1f, 0.85f, 0.55f))); yield return Pulse(_actorRt, 1.1f, 0.22f); yield return Projectile(card.CategoryColor, 38f, 0.32f, false); }
 
     IEnumerator MotionSlash(CardDef card)
     {
         Vector2 origin = _actorRt.anchoredPosition; Vector2 through = _slimeRt.anchoredPosition + new Vector2(170, 0);
         yield return Jab(_actorRt, new Vector2(-40, 0), 0.1f);
         float t = 0f;
-        while (t < 0.16f) { t += Time.deltaTime; float p = t / 0.16f; _actorRt.anchoredPosition = Vector2.Lerp(origin, through, p * p); if (Random.value < 0.5f) SpawnBurst(_actorRt.anchoredPosition, new Color(card.color.r, card.color.g, card.color.b, 0.6f), 1, 30f); yield return null; }
-        SpawnSlashLine(_slimeRt.anchoredPosition, card.color);
+        while (t < 0.16f) { t += Time.deltaTime; float p = t / 0.16f; _actorRt.anchoredPosition = Vector2.Lerp(origin, through, p * p); if (Random.value < 0.5f) SpawnBurst(_actorRt.anchoredPosition, new Color(card.CategoryColor.r, card.CategoryColor.g, card.CategoryColor.b, 0.6f), 1, 30f); yield return null; }
+        SpawnSlashLine(_slimeRt.anchoredPosition, card.CategoryColor);
         yield return new WaitForSeconds(0.25f);
         t = 0f; Vector2 back = _actorRt.anchoredPosition;
         while (t < 0.2f) { t += Time.deltaTime; _actorRt.anchoredPosition = Vector2.Lerp(back, origin, Mathf.SmoothStep(0, 1, t / 0.2f)); yield return null; }
@@ -1137,14 +1148,14 @@ public class ProtoBattle : MonoBehaviour
     IEnumerator MotionCyclone(CardDef card)
     {
         float t = 0f;
-        while (t < 0.45f) { t += Time.deltaTime; _actorRt.localRotation = Quaternion.Euler(0, 0, -720f * (t / 0.45f)); if (Random.value < 0.4f) SpawnBurst(_actorRt.anchoredPosition, card.color, 1, 80f); yield return null; }
-        _actorRt.localRotation = Quaternion.identity; yield return Projectile(card.color, 34f, 0.4f, true);
+        while (t < 0.45f) { t += Time.deltaTime; _actorRt.localRotation = Quaternion.Euler(0, 0, -720f * (t / 0.45f)); if (Random.value < 0.4f) SpawnBurst(_actorRt.anchoredPosition, card.CategoryColor, 1, 80f); yield return null; }
+        _actorRt.localRotation = Quaternion.identity; yield return Projectile(card.CategoryColor, 34f, 0.4f, true);
     }
 
     IEnumerator MotionVoice(CardDef card)
     {
         yield return Pulse(_actorRt, 1.15f, 0.18f);
-        for (int i = 0; i < 3; i++) { StartCoroutine(RingWave(_actorRt.anchoredPosition + new Vector2(80, 60), _slimeRt.anchoredPosition, card.color)); StartCoroutine(Pulse(_actorRt, 1.08f, 0.12f)); yield return new WaitForSeconds(0.16f); }
+        for (int i = 0; i < 3; i++) { StartCoroutine(RingWave(_actorRt.anchoredPosition + new Vector2(80, 60), _slimeRt.anchoredPosition, card.CategoryColor)); StartCoroutine(Pulse(_actorRt, 1.08f, 0.12f)); yield return new WaitForSeconds(0.16f); }
         yield return new WaitForSeconds(0.25f);
     }
 
@@ -1218,7 +1229,7 @@ public class ProtoBattle : MonoBehaviour
         int size = card?.Size ?? 1;
         int sfxTier = sfxTierOverride >= 0 ? sfxTierOverride : critical ? 3 : size >= 12 ? 2 : size >= 7 ? 1 : 0;
         _sfx.PlayOneShot(_hitClips[Mathf.Clamp(sfxTier, 0, 3)]);
-        Color burstColor = card?.color ?? Color.white;
+        Color burstColor = card?.CategoryColor ?? Color.white;
 
         int count = 10 + size; float radius = 140f + size * 12f; float shakeAmp = 12f + size * 1.2f; float shakeDur = 0.28f + size * 0.02f;
         if (critical) { count += 12; radius *= 1.3f; burstColor = Color.Lerp(burstColor, new Color(1f, 0.85f, 0.3f), 0.6f); shakeAmp *= 1.5f; shakeDur += 0.15f; }

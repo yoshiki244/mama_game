@@ -84,6 +84,15 @@ public static class ProtoPixelArt
     // メニュー背景画像（Assets/Resources/menu_bg.png）。無ければnull
     public static Sprite MenuBackground() { TryPhoto("menu_bg", out var sp); return sp; }
 
+    // 神聖樹イベントの背景画像（Assets/Resources/shinning_tree.png）。無ければnull
+    public static Sprite ShiningTree() { TryPhoto("shinning_tree", out var sp); return sp; }
+
+    // 店イベントの背景画像（Assets/Resources/shop_event.png）。無ければnull
+    public static Sprite ShopEvent() { TryPhoto("shop_event", out var sp); return sp; }
+
+    // 契約（悪魔）イベントの背景画像（Assets/Resources/evil_event.png）。無ければnull
+    public static Sprite EvilEvent() { TryPhoto("evil_event", out var sp); return sp; }
+
     // マップの契約マス用の画像（Assets/Resources/promise.png）。無ければnull
     public static Sprite ContractPhoto() { TryPhoto("promise", out var sp); return sp; }
 

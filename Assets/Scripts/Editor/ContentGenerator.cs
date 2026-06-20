@@ -73,7 +73,7 @@ public static class ContentGenerator
         cards.Add(MakeSkill("manaboost", "マナブースト",   3,  C(0.8f,0.7f,1f), "次の自分のターンに使えるマナを+1する。", 3,
             Eff(CardEffectType.ManaBoostNextTurn, 1, 0)));
         // StS系5種
-        cards.Add(MakeSkill("defend",    "防御",           5,  C(0.55f,0.75f,1f), "ブロックを8得る（被ダメージを肩代わり）。", 0,
+        cards.Add(MakeSkill("defend",    "ガード",         5,  C(0.55f,0.75f,1f), "ブロックを8得る（被ダメージを肩代わり）。", 0,
             Eff(CardEffectType.Block, 8, 0)));
         cards.Add(MakeSkill("weak",      "弱体化",         5,  C(0.7f,0.5f,0.85f), "敵の攻撃力を25%下げる（2ターン）。", 3,
             Eff(CardEffectType.Weak, 25, 2)));
@@ -81,7 +81,7 @@ public static class ContentGenerator
             Eff(CardEffectType.Poison, 5, 0)));
         cards.Add(MakeSkill("strength",  "筋力",           6,  C(1f,0.6f,0.4f), "攻撃力を3上げる（戦闘中持続）。", 6,
             Eff(CardEffectType.Strength, 3, 0)));
-        cards.Add(MakeSkill("heal",      "治癒",           5,  C(0.5f,1f,0.7f), "HPを12回復する。", 2,
+        cards.Add(MakeSkill("heal",      "ヒール",         5,  C(0.5f,1f,0.7f), "HPを12回復する。", 2,
             Eff(CardEffectType.Heal, 12, 0)));
 
         // ---- 敵定義 ----

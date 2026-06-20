@@ -2,7 +2,8 @@ using UnityEngine;
 using System.Collections.Generic;
 
 // カードの種別
-public enum CardKind { Attack, Defense, Heal, Skill }
+// 注意: シリアライズ値を保つため Attack=0, Skill=1 は固定。新種別は末尾に追加すること。
+public enum CardKind { Attack, Skill, Defense, Heal }
 
 // カード効果の種類
 public enum CardEffectType
@@ -105,13 +106,29 @@ public class CardDef : ScriptableObject
         return string.Join("\n", lines);
     }
 
+    // 種別ごとの固定色（攻撃=赤 / 防御=青 / 回復=緑 / スキル=黄）
+    public Color CategoryColor
+    {
+        get
+        {
+            if (id == "normal") return color; // 通常攻撃は色なし（元のニュートラル色）
+            switch (Category)
+            {
+                case CardKind.Attack: return new Color(0.88f, 0.27f, 0.27f);
+                case CardKind.Defense: return new Color(0.30f, 0.55f, 0.95f);
+                case CardKind.Heal: return new Color(0.32f, 0.80f, 0.42f);
+                default: return new Color(0.96f, 0.58f, 0.18f); // スキル＝オレンジ
+            }
+        }
+    }
+
     public static string KindLabel(CardKind k)
     {
         switch (k)
         {
             case CardKind.Attack: return "攻撃";
-            case CardKind.Defense: return "ガード";
-            case CardKind.Heal: return "ヒール";
+            case CardKind.Defense: return "防御";
+            case CardKind.Heal: return "回復";
             default: return "スキル";
         }
     }

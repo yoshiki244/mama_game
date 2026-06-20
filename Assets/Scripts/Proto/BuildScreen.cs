@@ -15,6 +15,8 @@ public class BuildScreen : MonoBehaviour
     RectTransform _root;
 
     Image[,] _cellImages;
+    Image[,,] _cellEdges;          // 各セル4辺のピース境界エッジ（薄い金色）
+    static readonly Color EdgeColor = new Color(1f, 1f, 1f, 0.92f);
     TextMeshProUGUI _title, _info, _selectedText, _boardCountText, _manaInfoText;
     readonly List<(CardDef card, Image img)> _trayButtons = new List<(CardDef, Image)>();
 
@@ -98,7 +100,7 @@ public class BuildScreen : MonoBehaviour
         ProtoUI.CreatePanel("TitleLine", _root, new Vector2(0, 384), new Vector2(620, 3), new Color(0.85f, 0.72f, 0.4f, 0.9f)).raycastTarget = false;
 
         // マス配置モード切替（マスストックをロック中のセルへ配置して盤面を広げる）
-        var addBtn = ProtoUI.CreateButton("AddCellBtn", _root, "マスを配置する", 22, new Vector2(-330, 318), new Vector2(340, 46),
+        var addBtn = ProtoUI.CreateGoldButton("AddCellBtn", _root, "マスを配置する", 22, new Vector2(-330, 318), new Vector2(340, 46),
             AddBtnOff, OnAddButton);
         _addBtnText = addBtn.GetComponentInChildren<TextMeshProUGUI>();
         _addBtnImg = (Image)addBtn.targetGraphic;
@@ -131,7 +133,7 @@ public class BuildScreen : MonoBehaviour
         _manaInfoText.fontStyle = FontStyles.Bold;
 
         // リセットするボタン（配置モード中のみ表示・盤面の下）
-        var resetBtn = ProtoUI.CreateButton("ResetCellsBtn", _root, "リセットする", 18, new Vector2(bx, -258), new Vector2(160, 46),
+        var resetBtn = ProtoUI.CreateGoldButton("ResetCellsBtn", _root, "リセットする", 18, new Vector2(bx, -258), new Vector2(160, 46),
             new Color(0.6f, 0.2f, 0.2f, 0.98f), OnResetCells);
         _resetBtnGO = resetBtn.gameObject;
         _resetBtnGO.SetActive(false);
@@ -232,6 +234,8 @@ public class BuildScreen : MonoBehaviour
         _gridRt.sizeDelta = new Vector2(w * unit, h * unit);
 
         _cellImages = new Image[w, h];
+        _cellEdges = new Image[w, h, 4];
+        float et = Mathf.Max(2f, _cellSize * 0.07f); // エッジの太さ
         for (int y = 0; y < h; y++)
             for (int x = 0; x < w; x++)
             {
@@ -239,6 +243,13 @@ public class BuildScreen : MonoBehaviour
                 var cell = ProtoUI.CreatePanel($"Cell_{x}_{y}", _gridRt, Vector2.zero,
                     new Vector2(_cellSize, _cellSize), EmptyColor);
                 _cellImages[x, y] = cell;
+
+                // ピース境界用エッジ（上/下/左/右）。既定は非表示
+                float hs = _cellSize / 2f, ho = et / 2f;
+                _cellEdges[x, y, 0] = MakeEdge(cell.transform, new Vector2(0, hs - ho), new Vector2(_cellSize, et));
+                _cellEdges[x, y, 1] = MakeEdge(cell.transform, new Vector2(0, -hs + ho), new Vector2(_cellSize, et));
+                _cellEdges[x, y, 2] = MakeEdge(cell.transform, new Vector2(-hs + ho, 0), new Vector2(et, _cellSize));
+                _cellEdges[x, y, 3] = MakeEdge(cell.transform, new Vector2(hs - ho, 0), new Vector2(et, _cellSize));
 
                 var handler = cell.gameObject.AddComponent<CellClickHandler>();
                 handler.onClick = e =>
@@ -250,6 +261,14 @@ public class BuildScreen : MonoBehaviour
                 handler.onDrag = OnCellDrag;
                 handler.onEndDrag = OnCellEndDrag;
             }
+    }
+
+    Image MakeEdge(Transform parent, Vector2 pos, Vector2 size)
+    {
+        var e = ProtoUI.CreatePanel("Edge", parent, pos, size, EdgeColor);
+        e.raycastTarget = false;
+        e.gameObject.SetActive(false);
+        return e;
     }
 
     // 絞り込み＋並び替えを適用
@@ -349,8 +368,8 @@ public class BuildScreen : MonoBehaviour
         for (int i = 1; i <= 10; i++) { int n = i; MakeToggle(p, new Vector2(-190 + (i - 1) * 56, 42), new Vector2(48, 42), n.ToString(), () => _fMana.Contains(n), v => { if (v) _fMana.Add(n); else _fMana.Remove(n); }); }
         ProtoUI.CreateText("FL3", p, "スキル種別", 18, new Vector2(-262, -38), new Vector2(130, 26), Color.white, TextAlignmentOptions.Left);
         MakeToggle(p, new Vector2(-159, -38), new Vector2(110, 44), "攻撃", () => _fAttack, v => _fAttack = v);
-        MakeToggle(p, new Vector2(-39, -38), new Vector2(110, 44), "ガード", () => _fDefense, v => _fDefense = v);
-        MakeToggle(p, new Vector2(81, -38), new Vector2(110, 44), "ヒール", () => _fHeal, v => _fHeal = v);
+        MakeToggle(p, new Vector2(-39, -38), new Vector2(110, 44), "防御", () => _fDefense, v => _fDefense = v);
+        MakeToggle(p, new Vector2(81, -38), new Vector2(110, 44), "回復", () => _fHeal, v => _fHeal = v);
         MakeToggle(p, new Vector2(201, -38), new Vector2(110, 44), "スキル", () => _fSkill, v => _fSkill = v);
         ProtoUI.CreateText("FHint", p, "未選択＝すべて表示", 15, new Vector2(0, -110), new Vector2(600, 24), new Color(0.7f, 0.7f, 0.8f));
     }
@@ -409,7 +428,7 @@ public class BuildScreen : MonoBehaviour
             foreach (var v in shape)
                 ProtoUI.CreatePanel("Mas", img.transform,
                     new Vector2(ox + (v.x - minX) * (cs + cgap), oy - (v.y - minY) * (cs + cgap)),
-                    new Vector2(cs, cs), c.color).raycastTarget = false;
+                    new Vector2(cs, cs), c.CategoryColor).raycastTarget = false;
 
             string kindTag = CardDef.KindLabel(c.Category);
             var title = ProtoUI.CreateText("T", img.transform,
@@ -500,9 +519,9 @@ public class BuildScreen : MonoBehaviour
         var box = ProtoUI.CreateFramedPanel("Box", ov, Vector2.zero, new Vector2(540, 240),
             new Color(0.10f, 0.08f, 0.16f, 0.98f), new Color(0.85f, 0.72f, 0.4f, 0.9f));
         ProtoUI.CreateText("M", box.transform, "これで配置します。よろしいですか？", 24, new Vector2(0, 50), new Vector2(500, 40), Color.white);
-        ProtoUI.CreateButton("Yes", box.transform, "はい", 22, new Vector2(-120, -50), new Vector2(190, 62),
+        ProtoUI.CreateGoldButton("Yes", box.transform, "はい", 22, new Vector2(-120, -50), new Vector2(190, 62),
             new Color(0.30f, 0.45f, 0.32f, 0.98f), () => { Destroy(_confirmGO); _confirmGO = null; SetAddMode(false); });
-        ProtoUI.CreateButton("No", box.transform, "いいえ", 22, new Vector2(120, -50), new Vector2(190, 62),
+        ProtoUI.CreateGoldButton("No", box.transform, "いいえ", 22, new Vector2(120, -50), new Vector2(190, 62),
             new Color(0.3f, 0.3f, 0.4f, 0.98f), () => { Destroy(_confirmGO); _confirmGO = null; });
     }
 
@@ -616,7 +635,7 @@ public class BuildScreen : MonoBehaviour
         Color baseCol = valid ? new Color(0.4f, 0.9f, 0.5f) : new Color(0.9f, 0.35f, 0.35f);
         foreach (var c in P.Cells(_selected, new Vector2Int(cell.x, cell.y), _rotation))
             if (P.IsValid(c.x, c.y) && P.GetAt(c.x, c.y) == null)
-                _cellImages[c.x, c.y].color = valid ? Color.Lerp(_selected.color, baseCol, 0.5f) : baseCol;
+                _cellImages[c.x, c.y].color = valid ? Color.Lerp(_selected.CategoryColor, baseCol, 0.5f) : baseCol;
     }
 
     bool TryGetPointerPos(out Vector2 pos)
@@ -713,7 +732,7 @@ public class BuildScreen : MonoBehaviour
                     continue;
                 }
                 var p = panel.GetAt(x, y);
-                _cellImages[x, y].color = p == null ? EmptyColor : p.card.color;
+                _cellImages[x, y].color = p == null ? EmptyColor : p.card.CategoryColor;
             }
 
         if (_boardSel.HasValue)
@@ -721,8 +740,29 @@ public class BuildScreen : MonoBehaviour
             var sel = panel.GetAt(_boardSel.Value.x, _boardSel.Value.y);
             if (sel == null) _boardSel = null;
             else foreach (var c in sel.cells)
-                _cellImages[c.x, c.y].color = Color.Lerp(sel.card.color, Color.white, 0.45f);
+                _cellImages[c.x, c.y].color = Color.Lerp(sel.card.CategoryColor, Color.white, 0.45f);
         }
+
+        // ピース境界を薄い金色のエッジで表示（同色ピースが隣接していても範囲が分かる）
+        int[] dx = { 0, 0, -1, 1 }, dy = { -1, 1, 0, 0 };
+        for (int x = 0; x < panel.W; x++)
+            for (int y = 0; y < panel.H; y++)
+            {
+                var p = panel.IsUnlocked(x, y) ? panel.GetAt(x, y) : null;
+                for (int d = 0; d < 4; d++)
+                {
+                    bool boundary = false;
+                    if (p != null)
+                    {
+                        int nx = x + dx[d], ny = y + dy[d];
+                        var np = (panel.IsValid(nx, ny) && panel.IsUnlocked(nx, ny)) ? panel.GetAt(nx, ny) : null;
+                        // 隣が別ピース/空き/盤外なら境界。ただし別ピース同士の共有辺は
+                        // 片側（下/右）だけが描いて二重線（太さ違い）を防ぐ
+                        boundary = np != p && (np == null || d == 1 || d == 3);
+                    }
+                    _cellEdges[x, y, d].gameObject.SetActive(boundary);
+                }
+            }
 
         int total = panel.ValidCount();
         int occupied = panel.OccupiedCount();
@@ -732,12 +772,15 @@ public class BuildScreen : MonoBehaviour
         if (_manaInfoText != null) _manaInfoText.text = $"{_main.MaxMana}";
         if (_stockText != null) _stockText.text = $"{_main.CellStock}";
 
-        var parts = new List<string> { $"通常攻撃: {Pct(total - occupied, total)}%" };
+        // 各カードは確率の高い順に並べ、通常攻撃（空きマス分）は常に一番下
+        var rows = new List<(int count, string text)>();
         foreach (var kv in counts)
         {
-            string hex = ColorUtility.ToHtmlStringRGB(kv.Key.color);
-            parts.Add($"<color=#{hex}>{kv.Key.displayName}: {Pct(kv.Value, total)}%（マナ{kv.Key.ManaCost}）</color>");
+            string hex = ColorUtility.ToHtmlStringRGB(kv.Key.CategoryColor);
+            rows.Add((kv.Value, $"<color=#{hex}>{kv.Key.displayName}: {Pct(kv.Value, total)}%（マナ{kv.Key.ManaCost}）</color>"));
         }
+        var parts = rows.OrderByDescending(r => r.count).Select(r => r.text).ToList();
+        parts.Add($"通常攻撃: {Pct(total - occupied, total)}%");
         _info.text = string.Join("\n", parts);
     }
 

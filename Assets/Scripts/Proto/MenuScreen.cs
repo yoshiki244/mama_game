@@ -89,9 +89,9 @@ public class MenuScreen : MonoBehaviour
             new Color(0.10f, 0.08f, 0.16f, 0.98f), new Color(0.85f, 0.72f, 0.4f, 0.9f));
         ProtoUI.CreateText("CMsg", box.transform, "最初からやり直しますか？", 26, new Vector2(0, 70), new Vector2(520, 40), Color.white);
         ProtoUI.CreateText("CSub", box.transform, "すべての進行がリセットされます", 18, new Vector2(0, 26), new Vector2(520, 30), new Color(1f, 0.7f, 0.7f));
-        ProtoUI.CreateButton("CYes", box.transform, "はい", 24, new Vector2(-130, -70), new Vector2(200, 64),
+        ProtoUI.CreateGoldButton("CYes", box.transform, "はい", 24, new Vector2(-130, -70), new Vector2(200, 64),
             new Color(0.62f, 0.16f, 0.16f, 0.98f), () => { Destroy(_confirmOverlay); _confirmOverlay = null; _main.RestartRun(); });
-        ProtoUI.CreateButton("CNo", box.transform, "いいえ", 24, new Vector2(130, -70), new Vector2(200, 64),
+        ProtoUI.CreateGoldButton("CNo", box.transform, "いいえ", 24, new Vector2(130, -70), new Vector2(200, 64),
             new Color(0.3f, 0.3f, 0.4f, 0.98f), () => { Destroy(_confirmOverlay); _confirmOverlay = null; });
     }
 
@@ -201,12 +201,12 @@ public class MenuScreen : MonoBehaviour
         _settingsContent.sizeDelta = new Vector2(700, 560);
 
         ProtoUI.CreateText("VolLabel", _settingsContent, "音量", 24, new Vector2(-180, 120), new Vector2(140, 36));
-        ProtoUI.CreateButton("VolDown", _settingsContent, "−", 28, new Vector2(-40, 120), new Vector2(64, 56), new Color(0.2f, 0.17f, 0.32f), () => ChangeVolume(-0.1f));
+        ProtoUI.CreateGoldButton("VolDown", _settingsContent, "−", 28, new Vector2(-40, 120), new Vector2(64, 56), new Color(0.2f, 0.17f, 0.32f), () => ChangeVolume(-0.1f));
         _volumeText = ProtoUI.CreateText("VolValue", _settingsContent, "", 24, new Vector2(60, 120), new Vector2(120, 36));
-        ProtoUI.CreateButton("VolUp", _settingsContent, "＋", 28, new Vector2(160, 120), new Vector2(64, 56), new Color(0.2f, 0.17f, 0.32f), () => ChangeVolume(+0.1f));
+        ProtoUI.CreateGoldButton("VolUp", _settingsContent, "＋", 28, new Vector2(160, 120), new Vector2(64, 56), new Color(0.2f, 0.17f, 0.32f), () => ChangeVolume(+0.1f));
 
         ProtoUI.CreateText("BgmLabel", _settingsContent, "BGM", 24, new Vector2(-180, 20), new Vector2(140, 36));
-        var bgmBtn = ProtoUI.CreateButton("BgmToggle", _settingsContent, "", 22, new Vector2(60, 20), new Vector2(160, 56), new Color(0.2f, 0.17f, 0.32f), ToggleBgm);
+        var bgmBtn = ProtoUI.CreateGoldButton("BgmToggle", _settingsContent, "", 22, new Vector2(60, 20), new Vector2(160, 56), new Color(0.2f, 0.17f, 0.32f), ToggleBgm);
         _bgmLabel = bgmBtn.GetComponentInChildren<TextMeshProUGUI>();
 
         _settingsContent.gameObject.SetActive(false);
