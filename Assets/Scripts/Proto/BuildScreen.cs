@@ -24,7 +24,7 @@ public class BuildScreen : MonoBehaviour
     ScrollRect _trayScroll;
     Image _boardBg;
     Vector2Int? _boardSel;
-    GameObject _cardTip; TextMeshProUGUI _cardTipText; // カード詳細ツールチップ（共有）
+    TextMeshProUGUI _probTitle; // 出現率枠のタイトル（ホバー時はカード名に差し替え）
 
     PanelModel P => _main.Panel;
 
@@ -167,16 +167,6 @@ public class BuildScreen : MonoBehaviour
         var hov = sortBtn.gameObject.AddComponent<HoverTip>();
         hov.target = tip.gameObject;
 
-        // カード詳細ツールチップ（盤面の上に表示・共有）
-        var ct = ProtoUI.CreateRect("CardTip", _root);
-        ct.anchoredPosition = new Vector2(585, 25); ct.sizeDelta = new Vector2(320, 460);
-        var ctInner = ProtoUI.CreateFramedPanel("CardTipBox", ct, Vector2.zero, new Vector2(320, 460),
-            new Color(0.07f, 0.06f, 0.12f, 0.98f), new Color(0.85f, 0.72f, 0.4f, 0.95f));
-        _cardTipText = ProtoUI.CreateText("CardTipTxt", ctInner.transform, "", 18,
-            new Vector2(0, -6), new Vector2(290, 420), Color.white, TextAlignmentOptions.Top);
-        _cardTipText.raycastTarget = false;
-        ct.gameObject.SetActive(false);
-        _cardTip = ct.gameObject;
 
         var viewport = ProtoUI.CreateRect("TrayViewport", _root);
         viewport.anchoredPosition = new Vector2(180, 25);
@@ -211,7 +201,7 @@ public class BuildScreen : MonoBehaviour
         // カードの出現率（カード一覧の右側に別枠・縦サイズは一覧と同じ）
         ProtoUI.CreateFramedPanel("ProbBox", _root, new Vector2(585, 25), new Vector2(320, 476),
             new Color(0.06f, 0.07f, 0.11f, 0.96f), new Color(0.65f, 0.55f, 0.36f, 0.85f));
-        ProtoUI.CreateText("ProbTitle", _root, "出現率", 22, new Vector2(585, 238), new Vector2(300, 30), ProtoUI.Gold);
+        _probTitle = ProtoUI.CreateText("ProbTitle", _root, "出現率", 22, new Vector2(585, 238), new Vector2(300, 30), ProtoUI.Gold);
         _info = ProtoUI.CreateText("Info", _root, "", 16,
             new Vector2(585, 5), new Vector2(292, 430), new Color(0.88f, 0.85f, 1f), TextAlignmentOptions.Top);
 
@@ -437,10 +427,11 @@ public class BuildScreen : MonoBehaviour
                 new Vector2(185, 0), new Vector2(60, 40), ProtoUI.Gold, TextAlignmentOptions.Right);
             cnt.fontStyle = FontStyles.Bold; cnt.raycastTarget = false;
 
-            // ホバーで効果詳細を表示
-            string detail = $"<b>{c.displayName}</b>\n<size=14>[{kindTag}]　{c.Size}マス　マナ{c.ManaCost}</size>\n\n{c.EffectSummary()}";
+            // ホバーで効果詳細を出現率枠に表示
+            string detail = $"<size=15>[{kindTag}]　{c.Size}マス　マナ{c.ManaCost}</size>\n\n{c.EffectSummary()}";
             var ch = img.gameObject.AddComponent<CardDetailHover>();
-            ch.panel = _cardTip; ch.label = _cardTipText; ch.content = detail;
+            ch.titleLabel = _probTitle; ch.infoLabel = _info;
+            ch.cardName = c.displayName; ch.content = detail;
             ch.suppress = () => _selected != null; // カード選択中は詳細を出さない
 
             _trayButtons.Add((c, img));
@@ -762,20 +753,36 @@ public class HoverTip : MonoBehaviour, IPointerEnterHandler, IPointerExitHandler
     void OnDisable() { if (target != null) target.SetActive(false); }
 }
 
-// カードにカーソルを合わせている間、共有パネルに効果詳細を表示するハンドラ
+// カードにカーソルを合わせている間、出現率枠を効果詳細表示に差し替えるハンドラ
 public class CardDetailHover : MonoBehaviour, IPointerEnterHandler, IPointerExitHandler
 {
-    public GameObject panel;
-    public TMPro.TextMeshProUGUI label;
+    public TMPro.TextMeshProUGUI titleLabel; // 出現率タイトル
+    public TMPro.TextMeshProUGUI infoLabel;  // 出現率本文
+    public string cardName;
     public string content;
     public System.Func<bool> suppress;
+
+    bool _shown; string _prevTitle, _prevInfo; TextAlignmentOptions _prevAlign;
+
     public void OnPointerEnter(PointerEventData e)
     {
-        if (panel == null) return;
+        if (infoLabel == null || _shown) return;
         if (suppress != null && suppress()) return;
-        if (label != null) label.text = content;
-        panel.SetActive(true);
+        _shown = true;
+        if (titleLabel != null) { _prevTitle = titleLabel.text; titleLabel.text = cardName; }
+        _prevInfo = infoLabel.text; _prevAlign = infoLabel.alignment;
+        infoLabel.alignment = TextAlignmentOptions.TopLeft;
+        infoLabel.text = content;
     }
-    public void OnPointerExit(PointerEventData e) { if (panel != null) panel.SetActive(false); }
-    void OnDisable() { if (panel != null) panel.SetActive(false); }
+
+    public void OnPointerExit(PointerEventData e) => Restore();
+    void OnDisable() => Restore();
+
+    void Restore()
+    {
+        if (!_shown) return;
+        _shown = false;
+        if (titleLabel != null) titleLabel.text = _prevTitle;
+        if (infoLabel != null) { infoLabel.text = _prevInfo; infoLabel.alignment = _prevAlign; }
+    }
 }
