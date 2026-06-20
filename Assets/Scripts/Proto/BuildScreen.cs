@@ -133,9 +133,11 @@ public class BuildScreen : MonoBehaviour
         _manaInfoText.fontStyle = FontStyles.Bold;
 
         // リセットするボタン（配置モード中のみ表示・盤面の下）
-        var resetBtn = ProtoUI.CreateGoldButton("ResetCellsBtn", _root, "リセットする", 18, new Vector2(bx, -258), new Vector2(160, 46),
+        var resetHolder = ProtoUI.CreateRect("ResetHolder", _root);
+        resetHolder.anchoredPosition = new Vector2(bx, -258);
+        ProtoUI.CreateGoldButton("ResetCellsBtn", resetHolder, "リセットする", 18, Vector2.zero, new Vector2(160, 46),
             new Color(0.6f, 0.2f, 0.2f, 0.98f), OnResetCells);
-        _resetBtnGO = resetBtn.gameObject;
+        _resetBtnGO = resetHolder.gameObject;
         _resetBtnGO.SetActive(false);
 
         // 盤面の土台

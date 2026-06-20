@@ -105,10 +105,12 @@ public class MapScreen : MonoBehaviour
         _notice = ProtoUI.CreateText("Notice", _root, "", 19, new Vector2(0, 328), new Vector2(1200, 30), new Color(1f, 0.92f, 0.6f));
 
         // ▼▼ デバッグ用（一時的）：左上からすぐショップへ。動作確認が終わったら削除する ▼▼
-        ProtoUI.CreateGoldButton("DebugShop", _root, "ショップへ(デバッグ用)", 16, new Vector2(-690, 330), new Vector2(180, 44),
+        ProtoUI.CreateGoldButton("DebugShop", _root, "ショップへ(デバッグ)", 16, new Vector2(-690, 330), new Vector2(180, 44),
             new Color(0.5f, 0.3f, 0.15f, 0.98f), () => OpenShop(new Node { col = Mathf.Max(4, _current != null ? _current.col : 4), type = TileType.Shop }));
-        ProtoUI.CreateGoldButton("DebugContract", _root, "契約へ(デバッグ用)", 16, new Vector2(-690, 278), new Vector2(180, 44),
+        ProtoUI.CreateGoldButton("DebugContract", _root, "契約へ(デバッグ)", 16, new Vector2(-690, 278), new Vector2(180, 44),
             new Color(0.4f, 0.15f, 0.2f, 0.98f), () => OpenContract(new Node { col = Mathf.Max(4, _current != null ? _current.col : 4), type = TileType.Contract }));
+        ProtoUI.CreateGoldButton("DebugTree", _root, "神聖樹へ(デバッグ)", 16, new Vector2(-690, 226), new Vector2(180, 44),
+            new Color(0.18f, 0.4f, 0.22f, 0.98f), () => OpenSpiritTree(new Node { col = Mathf.Max(4, _current != null ? _current.col : 4), type = TileType.SpiritTree }));
         // ▲▲ デバッグ用ここまで ▲▲
 
         ProtoUI.CreatePanel("BottomBar", _root, new Vector2(0, -424), new Vector2(1700, 56), new Color(0.015f, 0.014f, 0.02f, 0.90f)).raycastTarget = false;
