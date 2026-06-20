@@ -105,11 +105,82 @@ public class MapScreen : MonoBehaviour
 
         ProtoUI.CreatePanel("BottomBar", _root, new Vector2(0, -424), new Vector2(1700, 56), new Color(0.015f, 0.014f, 0.02f, 0.90f)).raycastTarget = false;
         ProtoUI.CreatePanel("BottomBarLine", _root, new Vector2(0, -395), new Vector2(1700, 2), new Color(0.95f, 0.72f, 0.26f, 0.70f)).raycastTarget = false;
-        ProtoUI.CreateButton("MenuBtn", _root, "メニュー", 18, new Vector2(-700, -424), new Vector2(178, 42),
+        var gold = new Color(0.9f, 0.78f, 0.42f, 0.95f);
+        ProtoUI.CreatePanel("MenuBtnBorder", _root, new Vector2(-705, -424), new Vector2(186, 50), gold).raycastTarget = false;
+        ProtoUI.CreateButton("MenuBtn", _root, "メニュー", 18, new Vector2(-705, -424), new Vector2(178, 42),
             new Color(0.18f, 0.14f, 0.35f, 0.98f), () => _main.ShowMenu());
+        // ？アイコン（チュートリアル）
+        ProtoUI.CreatePanel("HelpBtnBorder", _root, new Vector2(-560, -424), new Vector2(58, 50), gold).raycastTarget = false;
+        ProtoUI.CreateButton("HelpBtn", _root, "？", 22, new Vector2(-560, -424), new Vector2(50, 42),
+            new Color(0.3f, 0.28f, 0.5f, 0.98f), OpenTutorial);
+        // 拡大・縮小ボタン（メニュー↔？と同じ間隔31pxで等間隔配置）
+        ProtoUI.CreatePanel("ZoomInBorder", _root, new Vector2(-479, -424), new Vector2(58, 50), gold).raycastTarget = false;
+        ProtoUI.CreateButton("ZoomIn", _root, "＋", 24, new Vector2(-479, -424), new Vector2(50, 42),
+            new Color(0.22f, 0.34f, 0.28f, 0.98f), () => SetZoom(0.15f));
+        ProtoUI.CreatePanel("ZoomOutBorder", _root, new Vector2(-398, -424), new Vector2(58, 50), gold).raycastTarget = false;
+        ProtoUI.CreateButton("ZoomOut", _root, "－", 24, new Vector2(-398, -424), new Vector2(50, 42),
+            new Color(0.34f, 0.24f, 0.28f, 0.98f), () => SetZoom(-0.15f));
         ProtoUI.CreateText("Hint", _root,
-            "Bメニュー　移動:クリック　敵:戦闘　騎士:中ボス　？:イベント　樹:神聖樹　店:ショップ　契:契約(HP→マス)",
-            17, new Vector2(120, -424), new Vector2(1480, 30), ProtoUI.Gold);
+            "Ｂ：メニューを開く　　マスを左クリック：移動　　右クリック：チュートリアル　　＋／－：拡大縮小",
+            17, new Vector2(120, -424), new Vector2(940, 30), ProtoUI.Gold, TextAlignmentOptions.Center);
+    }
+
+    float _zoom = 1f;
+    void SetZoom(float delta)
+    {
+        _zoom = Mathf.Clamp(_zoom + delta, 0.45f, 1.2f);
+        if (_nodeLayer != null) _nodeLayer.localScale = new Vector3(_zoom, _zoom, 1f);
+        ScrollToCurrent();
+    }
+
+    // 各マスの説明ポップアップ
+    void OpenTutorial()
+    {
+        if (_shopOverlay != null) Destroy(_shopOverlay);
+        var rt = ProtoUI.CreateFullScreen("Tutorial", _root);
+        _shopOverlay = rt.gameObject;
+        rt.gameObject.AddComponent<Image>().color = new Color(0, 0, 0, 0.85f);
+
+        // 不透明パネル（マップが透けない完全なポップアップ）
+        ProtoUI.CreateFramedPanel("TBox", rt, new Vector2(0, 0), new Vector2(820, 760),
+            new Color(0.07f, 0.06f, 0.12f, 1f), new Color(0.85f, 0.72f, 0.4f, 0.95f));
+
+        var title = ProtoUI.CreateText("TT", rt, "マスの説明", 40, new Vector2(0, 330), new Vector2(700, 50));
+        ProtoUI.StyleTitle(title, ProtoUI.Gold, 8f);
+        ProtoUI.CreatePanel("TTLine", rt, new Vector2(0, 298), new Vector2(640, 3), new Color(0.85f, 0.72f, 0.4f, 0.9f)).raycastTarget = false;
+
+        (Sprite, string)[] items =
+        {
+            (ProtoPixelArt.Slime(),        "敵マス：戦闘。倒すと10%で盤面マス+1"),
+            (ProtoPixelArt.Knight(),       "中ボス：強敵。倒すと盤面マス+5"),
+            (ProtoPixelArt.DragonFront(),  "ボス：各Waveのボス。倒すと次のWaveへ"),
+            (ProtoPixelArt.EventPhoto(),   "？マス：イベント。お金を獲得"),
+            (ProtoPixelArt.TreePhoto(),    "樹マス：神聖樹。盤面マス+3＆HP全回復"),
+            (ProtoPixelArt.ShopPhoto(),    "店マス：ショップ。お金でカード購入"),
+            (ProtoPixelArt.ContractPhoto(),"契約マス：最大HPを10払うごとに盤面マス+1"),
+        };
+        float y = 230f;
+        var contractSp = ProtoPixelArt.ContractPhoto();
+        foreach (var it in items)
+        {
+            // アイコン
+            var iconRt = ProtoUI.CreateRect("TIco", rt);
+            iconRt.anchoredPosition = new Vector2(-300, y); iconRt.sizeDelta = new Vector2(60, 60);
+            var im = iconRt.gameObject.AddComponent<Image>();
+            if (it.Item1 != null)
+            {
+                im.sprite = it.Item1;
+                im.preserveAspect = it.Item1 != contractSp;   // 契約はマスに充填
+            }
+            else im.color = new Color(0, 0, 0, 0);
+            im.raycastTarget = false;
+            // 説明
+            ProtoUI.CreateText("TD", rt, it.Item2, 22, new Vector2(150, y), new Vector2(640, 40), Color.white, TextAlignmentOptions.Left);
+            y -= 70f;
+        }
+
+        ProtoUI.CreateButton("TClose", rt, "閉じる", 24, new Vector2(0, -330), new Vector2(280, 60),
+            new Color(0.45f, 0.3f, 0.55f), () => { Destroy(_shopOverlay); _shopOverlay = null; });
     }
 
     void CreateGoldBorder()
@@ -391,7 +462,7 @@ public class MapScreen : MonoBehaviour
             case TileType.Contract:
             {
                 var sp = ProtoPixelArt.ContractPhoto();
-                if (sp != null) { n.icon.sprite = sp; n.icon.color = Color.white; }
+                if (sp != null) { n.icon.sprite = sp; n.icon.color = Color.white; } // 正方形画像＝店マスと同じ表示
                 else { n.icon.sprite = null; n.icon.color = new Color(0.7f, 0.3f, 0.7f, 0.96f); AddLabel(iconRt, "契", 28, new Color(1f, 0.9f, 1f)); }
                 break;
             }
@@ -721,14 +792,18 @@ public class MapScreen : MonoBehaviour
     {
         if (_root == null || !_root.gameObject.activeSelf) return;
         if (_shopOverlay != null || _clearOverlay != null) return;
-        bool menu = false;
+        bool menu = false, help = false;
 #if ENABLE_INPUT_SYSTEM
         var kb = UnityEngine.InputSystem.Keyboard.current;
         if (kb != null && kb.bKey.wasPressedThisFrame) menu = true;
+        var ms = UnityEngine.InputSystem.Mouse.current;
+        if (ms != null && ms.rightButton.wasPressedThisFrame) help = true;
 #endif
 #if ENABLE_LEGACY_INPUT_MANAGER
         if (!menu && Input.GetKeyDown(KeyCode.B)) menu = true;
+        if (!help && Input.GetMouseButtonDown(1)) help = true;
 #endif
-        if (menu) _main.ShowMenu();
+        if (menu) { _main.ShowMenu(); return; }
+        if (help) OpenTutorial();   // 右クリックでチュートリアル
     }
 }

@@ -4,7 +4,7 @@ using System.Collections.Generic;
 // セーブ/ロード（PlayerPrefsにJSON）。本設：単一キャラ・お金・盤面拡張・所持カード・盤面配置。
 public static class ProtoSave
 {
-    const string Key = "mama_save_v3";
+    const string Key = "mama_save_v4";
 
     [System.Serializable]
     public class PieceSave { public string cardId; public int[] xs; public int[] ys; }
@@ -17,6 +17,7 @@ public static class ProtoSave
         public int[] ux;               // 解放マスX
         public int[] uy;               // 解放マスY
         public List<string> owned = new List<string>();
+        public List<int> ownedCounts = new List<int>();   // owned と同じ順の在庫数
         public List<PieceSave> pieces = new List<PieceSave>();
     }
 
@@ -31,6 +32,7 @@ public static class ProtoSave
             uy = new int[unlocked.Count],
             owned = new List<string>(main.OwnedCardIds),
         };
+        foreach (var id in d.owned) d.ownedCounts.Add(main.OwnedCount(id));
         for (int i = 0; i < unlocked.Count; i++) { d.ux[i] = unlocked[i].x; d.uy[i] = unlocked[i].y; }
         foreach (var p in main.Panel.Placements)
         {
@@ -62,7 +64,7 @@ public static class ProtoSave
         if (d.ux != null && d.uy != null)
             for (int i = 0; i < d.ux.Length && i < d.uy.Length; i++)
                 unlocked.Add(new Vector2Int(d.ux[i], d.uy[i]));
-        main.ApplyLoaded(d.money, d.cellStock, d.owned, unlocked);
+        main.ApplyLoaded(d.money, d.cellStock, d.owned, d.ownedCounts, unlocked);
 
         // 盤面の配置を復元
         if (d.pieces != null)

@@ -21,9 +21,11 @@ public class ProtoBattle : MonoBehaviour
     RectTransform _handArea;
     readonly List<CardDef> _pendingDrawn = new List<CardDef>();
     readonly List<RectTransform> _cardRects = new List<RectTransform>();
-    RectTransform _boardOverlay;   // カード選択時に中央へ出す盤面プレビュー（枠＋背景）
-    RectTransform _boardContent;   // 盤面プレビューの動的中身（マス・文字）
-    int _selectedIndex = -1;
+    RectTransform _boardOverlay;   // 盤面プレビュー（キャラ左横・常時表示）
+    RectTransform _boardContent;   // 盤面の動的中身（マス）
+    RectTransform _detailPanel;    // カード詳細（中央・ホバー時）
+    RectTransform _detailContent;  // カード詳細の動的中身
+    TextMeshProUGUI _boardLabel;   // 盤面の説明ラベル
     bool _dead;                    // HP0で倒れた状態（以降アニメ停止）
     Coroutine _glowCo;
     readonly List<Image> _glowImgs = new List<Image>();
@@ -92,7 +94,7 @@ public class ProtoBattle : MonoBehaviour
         _dead = false;
         if (_actorImg != null) { _actorImg.sprite = ProtoPixelArt.MamaPhoto(); _actorImg.color = Color.white; }
         if (_faceImg != null) _faceImg.sprite = ProtoPixelArt.FrontMama();
-        if (_actorRt != null) { _actorRt.anchoredPosition = new Vector2(-470, GroundY + 205f); _actorRt.sizeDelta = new Vector2(295, 375); _actorRt.localRotation = Quaternion.identity; _actorRt.localScale = Vector3.one; }
+        if (_actorRt != null) { _actorRt.anchoredPosition = new Vector2(-330, GroundY + 205f); _actorRt.sizeDelta = new Vector2(295, 375); _actorRt.localRotation = Quaternion.identity; _actorRt.localScale = Vector3.one; }
         if (_playerInner != null) _playerInner.sizeDelta = new Vector2(295, 375);
 
         // 残っているGAME OVERオーバーレイがあれば消す
@@ -112,7 +114,7 @@ public class ProtoBattle : MonoBehaviour
         _slimeImg.sprite = enemy.BattleSprite();
         _slimeRt.sizeDelta = enemy.battleSize;
         _enemyInner.sizeDelta = enemy.battleSize;
-        _slimeRt.anchoredPosition = enemy.flying ? new Vector2(460, 70) : new Vector2(460, GroundY + enemy.battleSize.y / 2f);
+        _slimeRt.anchoredPosition = enemy.flying ? new Vector2(400, 70) : new Vector2(400, GroundY + enemy.battleSize.y / 2f);
 
         if (_enemyShadow != null) Destroy(_enemyShadow.gameObject);
         _enemyShadow = null;
@@ -127,11 +129,11 @@ public class ProtoBattle : MonoBehaviour
         _mana = _main.MaxMana + _manaBoostNext;
         _manaBoostNext = 0;
 
-        // 手札を配り直す（盤面の出現確率でサンプリング）
-        DealHand();
+        // 手札は戦闘開始時に6枚だけ配る。以降は補充しない（使ったら無くなる）
+        if (firstTurn) DealHand();
 
         _inputLocked = false;
-        RefreshAll(dealAnimation: true);
+        RefreshAll(dealAnimation: firstTurn);
         _message.text = firstTurn ? "戦闘開始！カードを選ぼう！" : "あなたのターン！";
     }
 
@@ -139,7 +141,7 @@ public class ProtoBattle : MonoBehaviour
     {
         _hand.Clear();
         var deck = _main.Panel.BuildDeck();
-        int n = _main.Cfg != null ? _main.Cfg.handSize : 5;
+        const int n = 5;   // 初期手札5枚
         for (int i = 0; i < n; i++)
         {
             CardDef c = deck.Count > 0 ? deck[Random.Range(0, deck.Count)] : null;
@@ -167,6 +169,7 @@ public class ProtoBattle : MonoBehaviour
         // プレイヤーHUD（左上）
         var pName = ProtoUI.CreateText("PName", _root, "MAMA", 27, new Vector2(-470, 416), new Vector2(320, 38), new Color(0.9f, 0.92f, 1f));
         ProtoUI.StyleTitle(pName, new Color(0.9f, 0.92f, 1f), 3f);
+        ProtoUI.CreatePanel("PGaugeBorder", _root, new Vector2(-470, 382), new Vector2(GaugeWidth + 8, 26), new Color(0.85f, 0.72f, 0.4f, 0.95f)).raycastTarget = false;
         ProtoUI.CreateGauge("PGauge", _root, new Vector2(-470, 382), new Vector2(GaugeWidth, 18),
             new Color(0.08f, 0.07f, 0.11f, 0.92f), new Color(0.72f, 0.36f, 0.95f), out _pFill);
         _pHpText = ProtoUI.CreateText("PHP", _root, "", 16, new Vector2(-470, 382), new Vector2(300, 24));
@@ -195,17 +198,18 @@ public class ProtoBattle : MonoBehaviour
         // 敵HUD（右上）
         _enemyName = ProtoUI.CreateText("EName", _root, "", 27, new Vector2(560, 416), new Vector2(320, 38), new Color(1f, 0.55f, 0.48f));
         ProtoUI.StyleTitle(_enemyName, new Color(1f, 0.55f, 0.5f), 3f);
+        ProtoUI.CreatePanel("EGaugeBorder", _root, new Vector2(560, 382), new Vector2(GaugeWidth + 8, 26), new Color(0.85f, 0.72f, 0.4f, 0.95f)).raycastTarget = false;
         ProtoUI.CreateGauge("EGauge", _root, new Vector2(560, 382), new Vector2(GaugeWidth, 18),
             new Color(0.08f, 0.07f, 0.11f, 0.92f), new Color(0.95f, 0.27f, 0.27f), out _enemyFill);
         _enemyHPText = ProtoUI.CreateText("EHP", _root, "", 16, new Vector2(560, 382), new Vector2(300, 24));
         _enemyHPText.fontStyle = FontStyles.Bold;
 
         // キャラ
-        _slimeImg = CreateCharacterSprite("EnemySprite", ProtoPixelArt.Dragon(), new Vector2(460, 70), new Vector2(540, 355));
+        _slimeImg = CreateCharacterSprite("EnemySprite", ProtoPixelArt.Dragon(), new Vector2(400, 70), new Vector2(540, 355));
         _slimeRt = (RectTransform)_slimeImg.transform.parent;
         _enemyInner = (RectTransform)_slimeImg.transform;
 
-        _actorImg = CreateCharacterSprite("Player", ProtoPixelArt.MamaPhoto(), new Vector2(-470, GroundY + 205f), new Vector2(295, 375));
+        _actorImg = CreateCharacterSprite("Player", ProtoPixelArt.MamaPhoto(), new Vector2(-330, GroundY + 205f), new Vector2(280, 355));
         _actorRt = (RectTransform)_actorImg.transform.parent;
         _playerInner = (RectTransform)_actorImg.transform;
         AddGroundShadow(_actorRt, 150f);
@@ -216,22 +220,34 @@ public class ProtoBattle : MonoBehaviour
 
         // 手札
         _handArea = ProtoUI.CreateRect("Hand", _root);
-        _handArea.anchoredPosition = new Vector2(-30, -302);
+        _handArea.anchoredPosition = new Vector2(0, -300);
         _handArea.sizeDelta = new Vector2(1500, 240);
 
-        // カード選択時に中央へ出す盤面プレビュー：外周だけ金色、内側は不透明パネル（背景と同化しない）
+        // 盤面プレビュー（キャラの左横・常時表示）：外周金枠＋不透明内側
         _boardOverlay = ProtoUI.CreateRect("BoardOverlay", _root);
-        _boardOverlay.anchoredPosition = new Vector2(0, 95);
-        _boardOverlay.sizeDelta = new Vector2(330, 330);
+        _boardOverlay.anchoredPosition = new Vector2(-668, 55);
+        _boardOverlay.sizeDelta = new Vector2(244, 244);
         var ovBg = _boardOverlay.gameObject.AddComponent<Image>();
-        ovBg.color = new Color(0.9f, 0.78f, 0.42f, 0.97f); ovBg.raycastTarget = false; // 外周の金枠（細）
-        var ovInner = ProtoUI.CreatePanel("OverlayInner", _boardOverlay, Vector2.zero, new Vector2(322, 322), new Color(0.07f, 0.08f, 0.13f, 0.98f));
-        ovInner.raycastTarget = false; // 不透明の内側（背景が透けない・金は外周だけ）
-        _boardContent = ProtoUI.CreateRect("BoardContent", _boardOverlay); // 動的中身（毎回作り直す）
-        _boardContent.anchoredPosition = Vector2.zero; _boardContent.sizeDelta = new Vector2(330, 330);
-        _boardOverlay.gameObject.SetActive(false);
+        ovBg.color = new Color(0.9f, 0.78f, 0.42f, 0.97f); ovBg.raycastTarget = false;
+        var ovInner = ProtoUI.CreatePanel("OverlayInner", _boardOverlay, Vector2.zero, new Vector2(236, 236), new Color(0.07f, 0.08f, 0.13f, 0.98f));
+        ovInner.raycastTarget = false;
+        _boardContent = ProtoUI.CreateRect("BoardContent", _boardOverlay);
+        _boardContent.anchoredPosition = Vector2.zero; _boardContent.sizeDelta = new Vector2(244, 244);
+        _boardLabel = ProtoUI.CreateText("BoardLabel", _root, "ビルド構成", 18, new Vector2(-668, 198), new Vector2(250, 26), ProtoUI.Gold);
+        _boardLabel.fontStyle = FontStyles.Bold;
 
-        // 手札を最前面に（カードを上にドラッグしたとき盤面より前＝表で見える）
+        // カード詳細（中央・ホバー時のみ表示）
+        _detailPanel = ProtoUI.CreateRect("CardDetail", _root);
+        _detailPanel.anchoredPosition = new Vector2(0, 112);
+        _detailPanel.sizeDelta = new Vector2(234, 300);
+        var dpBg = _detailPanel.gameObject.AddComponent<Image>();
+        dpBg.color = new Color(0.85f, 0.72f, 0.4f, 0.97f); dpBg.raycastTarget = false;
+        ProtoUI.CreatePanel("DetailInner", _detailPanel, Vector2.zero, new Vector2(226, 292), new Color(0.06f, 0.07f, 0.11f, 0.98f)).raycastTarget = false;
+        _detailContent = ProtoUI.CreateRect("DetailContent", _detailPanel);
+        _detailContent.anchoredPosition = Vector2.zero; _detailContent.sizeDelta = new Vector2(234, 300);
+        _detailPanel.gameObject.SetActive(false);
+
+        // 手札を最前面に
         _handArea.SetAsLastSibling();
 
         // ターン終了ボタン（大きめ・太い外枠）＋ 逃げるをその下に配置
@@ -285,62 +301,83 @@ public class ProtoBattle : MonoBehaviour
 
     void RefreshHand(bool dealAnimation = false)
     {
-        HideBoardOverlay();
+        HideCardDetail();
+        RenderBoard(null, -1);   // 盤面は常時表示（ハイライト無し）
         foreach (Transform c in _handArea) Destroy(c.gameObject);
         _cardRects.Clear();
         int n = _hand.Count;
-        float cardW = 200f;
-        float startX = -(n - 1) * cardW / 2f;
+        const float R = 940f, step = 9f;
+        float mid = (n - 1) / 2f;
+        var made = new List<RectTransform>();
         for (int i = 0; i < n; i++)
         {
             int idx = i;
-            Vector2 pos = new Vector2(startX + i * cardW, 0);
+            float a = (i - mid) * step;                 // 角度（度）
+            float rad = a * Mathf.Deg2Rad;
+            Vector2 pos = new Vector2(R * Mathf.Sin(rad), -R + R * Mathf.Cos(rad)); // 一点に集まる扇状
+            var rot = Quaternion.Euler(0, 0, -a);
             bool affordable = !_inputLocked && _mana >= _hand[i].ManaCost;
             var btn = CreateCardUI(_hand[i], pos, null, affordable);
             var crt = (RectTransform)btn.transform;
+            crt.localRotation = rot;
             _cardRects.Add(crt);
-            if (affordable)
-            {
-                var slide = btn.gameObject.AddComponent<CardSlide>();
-                slide.Setup(crt, pos, () => SelectCard(idx), () => TryPlayCard(idx));
-            }
+
+            var card = _hand[i];
+            var frame = (Image)btn.targetGraphic;
+            var hover = btn.gameObject.AddComponent<CardHover>();
+            hover.Setup(crt, pos, rot, frame, frame.color,
+                onEnter: () => { if (_inputLocked) return; ShowCardDetail(card); RenderBoard(card, idx); }, // 攻撃中は詳細を出さない
+                onExit: () => { HideCardDetail(); RenderBoard(null, -1); },
+                onClick: () => { if (affordable) TryPlayCard(idx); });
+
+            made.Add(crt);
             if (dealAnimation) StartCoroutine(DealCard(crt, pos, i * 0.06f));
         }
+        // 左のカードを前面に（左から上に重なる）
+        for (int i = made.Count - 1; i >= 0; i--) made[i].SetAsLastSibling();
     }
 
-    // カードをクリック＝選択：中央に盤面を表示し、対応マスを光らせる
-    void SelectCard(int index)
-    {
-        if (_inputLocked || index < 0 || index >= _hand.Count) return;
-        _selectedIndex = index;
-        // 選択カードを少し上げて拡大、ほかは元に戻す
-        for (int i = 0; i < _cardRects.Count; i++)
-        {
-            var rt = _cardRects[i];
-            if (rt == null) continue;
-            bool sel = i == index;
-            rt.anchoredPosition = new Vector2(rt.anchoredPosition.x, sel ? 44f : 0f);
-            rt.localScale = sel ? Vector3.one * 1.08f : Vector3.one;
-            rt.SetAsLastSibling();
-        }
-        if (index < _cardRects.Count && _cardRects[index] != null) _cardRects[index].SetAsLastSibling();
-        // 種別＋マス数を画面上部のメッセージに表示
-        var sc = _hand[index];
-        _message.text = $"{sc.displayName}　{(sc.kind == CardKind.Attack ? "攻撃" : "スキル")} {sc.Size}マス";
-        ShowBoardForCard(sc, index);
-    }
-
-    // カードを上にスライド＝発動
+    // カードをクリック＝発動
     void TryPlayCard(int index)
     {
         if (_inputLocked || index < 0 || index >= _hand.Count) return;
         var card = _hand[index];
         if (_mana < card.ManaCost) { _message.text = "マナが足りない！"; return; }
-        HideBoardOverlay();
-        _selectedIndex = -1;
+        HideCardDetail();
         _inputLocked = true;
         var rt = index < _cardRects.Count ? _cardRects[index] : null;
         StartCoroutine(PlayWithDisappear(index, rt));
+    }
+
+    void ShowCardDetail(CardDef card)
+    {
+        if (_detailPanel == null) return;
+        foreach (Transform c in _detailContent) Destroy(c.gameObject);
+        _detailPanel.gameObject.SetActive(true);
+
+        ProtoUI.CreateText("DName", _detailContent, card.displayName, 24, new Vector2(0, 118), new Vector2(250, 32), ProtoUI.Gold);
+        ProtoUI.CreateText("DKind", _detailContent, $"{(card.kind == CardKind.Attack ? "攻撃" : "スキル")}　{card.Size}マス　マナ{card.ManaCost}", 15,
+            new Vector2(0, 88), new Vector2(250, 22), new Color(0.8f, 0.88f, 1f));
+
+        // 形状アート
+        var art = ProtoUI.CreatePanel("DArt", _detailContent, new Vector2(0, 22), new Vector2(150, 96), new Color(0.02f, 0.03f, 0.05f, 0.9f));
+        art.raycastTarget = false;
+        var shape = card.Shape;
+        float cs = 18f, gap = 3f;
+        int minX = shape.Min(v => v.x), minY = shape.Min(v => v.y), maxX = shape.Max(v => v.x), maxY = shape.Max(v => v.y);
+        float ox = -(maxX - minX) * (cs + gap) / 2f, oy = (maxY - minY) * (cs + gap) / 2f;
+        foreach (var v in shape)
+            ProtoUI.CreatePanel("M", art.transform, new Vector2(ox + (v.x - minX) * (cs + gap), oy - (v.y - minY) * (cs + gap)), new Vector2(cs, cs), card.color).raycastTarget = false;
+
+        string eff = card.kind == CardKind.Attack
+            ? (card.HasEffect(CardEffectType.BlinkOnUse) ? $"威力{card.power}・点滅" : $"威力 {card.power}")
+            : (string.IsNullOrEmpty(card.description) ? "" : card.description);
+        ProtoUI.CreateText("DEff", _detailContent, eff, 16, new Vector2(0, -95), new Vector2(240, 80), new Color(0.92f, 0.92f, 1f));
+    }
+
+    void HideCardDetail()
+    {
+        if (_detailPanel != null) _detailPanel.gameObject.SetActive(false);
     }
 
     IEnumerator PlayWithDisappear(int index, RectTransform rt)
@@ -372,11 +409,7 @@ public class ProtoBattle : MonoBehaviour
 
     void HideBoardOverlay()
     {
-        if (_glowCo != null) { StopCoroutine(_glowCo); _glowCo = null; }
-        _glowImgs.Clear(); _glowBase.Clear();
-        if (_boardOverlay == null) return;
-        if (_boardContent != null) foreach (Transform c in _boardContent) Destroy(c.gameObject);
-        _boardOverlay.gameObject.SetActive(false);
+        RenderBoard(null, -1);
     }
 
     // 配置マスを発光させるパルス
@@ -394,54 +427,47 @@ public class ProtoBattle : MonoBehaviour
         }
     }
 
-    // 選択中カードに対応するマスを盤面上で発光表示
-    void ShowBoardForCard(CardDef card, int handIndex)
+    // 盤面（キャラ左横・常時表示）を描画。card!=nullでそのカードの配置マスを発光
+    void RenderBoard(CardDef card, int handIndex)
     {
-        if (_boardOverlay == null) return;
+        if (_boardOverlay == null || _boardContent == null) return;
+        if (_boardLabel != null) _boardLabel.text = card != null ? $"{card.displayName}の配置マス" : "ビルド構成";
+        if (_glowCo != null) { StopCoroutine(_glowCo); _glowCo = null; }
+        _glowImgs.Clear(); _glowBase.Clear();
         foreach (Transform c in _boardContent) Destroy(c.gameObject);
-        _boardOverlay.gameObject.SetActive(true);
 
         var panel = _main.Panel;
         int W = panel.W, H = panel.H;
-        float area = 250f; // マス数が増えるほど1マスは自動的に小さくなる（最大10×10想定）
+        float area = 220f;   // 金枠が隠れないよう内側に収める
         float cell = Mathf.Min(area / W, area / H);
         float ox = -(W - 1) * cell / 2f, oy = (H - 1) * cell / 2f;
 
-        // 手札内で同じカードが複数ある場合、その「何番目か」に対応する1配置だけを光らせる
-        var matches = panel.Placements.Where(pp => pp.card == card).ToList();
-        int rank = 0;
-        for (int i = 0; i < handIndex && i < _hand.Count; i++)
-            if (_hand[i] == card) rank++;
-
         var cellColor = new Dictionary<Vector2Int, Color>();
         Color hi = new Color(1f, 0.86f, 0.28f, 0.97f);
-        if (matches.Count > 0)
-            foreach (var c in matches[rank % matches.Count].cells)
-                cellColor[c] = hi;
+        if (card != null)
+        {
+            var matches = panel.Placements.Where(pp => pp.card == card).ToList();
+            int rank = 0;
+            for (int i = 0; i < handIndex && i < _hand.Count; i++) if (_hand[i] == card) rank++;
+            if (matches.Count > 0)
+                foreach (var c in matches[rank % matches.Count].cells) cellColor[c] = hi;
+        }
 
-        ProtoUI.CreateText("OVTitle", _boardContent, "選択カードの配置マス", 18,
-            new Vector2(0, 150), new Vector2(330, 26), Color.white);
-
-        _glowImgs.Clear(); _glowBase.Clear();
         for (int x = 0; x < W; x++)
             for (int y = 0; y < H; y++)
             {
-                var pl = panel.GetAt(x, y);
                 bool match = cellColor.TryGetValue(new Vector2Int(x, y), out var hc);
-                Color col = match ? hc
-                          : pl != null ? new Color(0.30f, 0.32f, 0.42f, 0.7f)
-                                       : new Color(0.10f, 0.12f, 0.18f, 0.55f);
+                Color col;
+                if (match) col = hc;
+                else if (!panel.IsUnlocked(x, y)) col = new Color(0.04f, 0.04f, 0.06f, 0.85f);  // 未解放
+                else { var pl = panel.GetAt(x, y); col = pl != null ? pl.card.color : new Color(0.16f, 0.14f, 0.24f, 0.95f); } // ピース/空き
                 var p = ProtoUI.CreatePanel($"BC_{x}_{y}", _boardContent,
-                    new Vector2(ox + x * cell, oy - y * cell), new Vector2(cell - 3, cell - 3), col);
+                    new Vector2(ox + x * cell, oy - y * cell), new Vector2(cell - 2, cell - 2), col);
                 p.raycastTarget = false;
-                if (match) { _glowImgs.Add(p); _glowBase.Add(hc); }   // 発光対象
+                if (match) { _glowImgs.Add(p); _glowBase.Add(hc); }
             }
 
-        if (_glowCo != null) StopCoroutine(_glowCo);
         if (_glowImgs.Count > 0) _glowCo = StartCoroutine(GlowLoop());
-
-        ProtoUI.CreateText("OVHint", _boardContent, "↑ カードを上にスライドで発動", 15,
-            new Vector2(0, -150), new Vector2(330, 24), new Color(0.85f, 0.92f, 1f));
     }
 
     void RefreshMana()
@@ -659,7 +685,7 @@ public class ProtoBattle : MonoBehaviour
         // 倒れ絵を元キャラの足元あたりに配置（以降は動かさない）
         if (_actorImg != null) { _actorImg.sprite = ProtoPixelArt.DownMama(); _actorImg.color = Color.white; }
         if (_faceImg != null) _faceImg.sprite = ProtoPixelArt.DamageMama();
-        if (_actorRt != null) { _actorRt.anchoredPosition = new Vector2(-470, GroundY + 6f); _actorRt.sizeDelta = new Vector2(320, 130); _actorRt.localRotation = Quaternion.identity; _actorRt.localScale = Vector3.one; }
+        if (_actorRt != null) { _actorRt.anchoredPosition = new Vector2(-330, GroundY + 6f); _actorRt.sizeDelta = new Vector2(320, 130); _actorRt.localRotation = Quaternion.identity; _actorRt.localScale = Vector3.one; }
         if (_playerInner != null) _playerInner.sizeDelta = new Vector2(320, 130);
         _message.text = "";
         yield return new WaitForSeconds(0.8f);
@@ -971,8 +997,9 @@ public class ProtoBattle : MonoBehaviour
 
     IEnumerator DealCard(RectTransform rt, Vector2 finalPos, float delay)
     {
+        Quaternion targetRot = rt.localRotation;   // 扇の角度を保持
         Vector2 startPos = finalPos + new Vector2(550, -260);
-        rt.anchoredPosition = startPos; rt.localScale = Vector3.one * 0.25f; rt.localRotation = Quaternion.Euler(0, 0, -25f);
+        rt.anchoredPosition = startPos; rt.localScale = Vector3.one * 0.25f;
         yield return new WaitForSeconds(delay);
         float t = 0f; const float dur = 0.22f;
         while (t < dur)
@@ -980,10 +1007,10 @@ public class ProtoBattle : MonoBehaviour
             t += Time.deltaTime; float p = Mathf.SmoothStep(0, 1, t / dur);
             rt.anchoredPosition = Vector2.Lerp(startPos, finalPos, p);
             rt.localScale = Vector3.one * Mathf.Lerp(0.25f, 1f, p);
-            rt.localRotation = Quaternion.Euler(0, 0, Mathf.Lerp(-25f, 0f, p));
+            rt.localRotation = Quaternion.Slerp(Quaternion.Euler(0, 0, -25f), targetRot, p);
             yield return null;
         }
-        rt.anchoredPosition = finalPos; rt.localScale = Vector3.one; rt.localRotation = Quaternion.identity;
+        rt.anchoredPosition = finalPos; rt.localScale = Vector3.one; rt.localRotation = targetRot;
     }
 
     // カード効果でドローしたカードを目立たせる演出
@@ -1259,42 +1286,43 @@ public class ProtoBattle : MonoBehaviour
 }
 
 // 手札カードの操作: タップ＝選択 / 上にスライド＝発動
-public class CardSlide : MonoBehaviour, IBeginDragHandler, IDragHandler, IEndDragHandler, IPointerClickHandler
+// 手札カード：ホバーで上昇＋発光、クリックで発動
+public class CardHover : MonoBehaviour, IPointerEnterHandler, IPointerExitHandler, IPointerClickHandler
 {
     RectTransform _rt;
     Vector2 _home;
-    System.Action _onSelect, _onPlay;
-    bool _dragging;
+    Quaternion _homeRot;
+    Image _frame;
+    Color _base;
+    System.Action _onEnter, _onExit, _onClick;
 
-    public void Setup(RectTransform rt, Vector2 home, System.Action onSelect, System.Action onPlay)
+    public void Setup(RectTransform rt, Vector2 home, Quaternion homeRot, Image frame, Color baseCol,
+        System.Action onEnter, System.Action onExit, System.Action onClick)
     {
-        _rt = rt; _home = home; _onSelect = onSelect; _onPlay = onPlay;
+        _rt = rt; _home = home; _homeRot = homeRot; _frame = frame; _base = baseCol;
+        _onEnter = onEnter; _onExit = onExit; _onClick = onClick;
     }
 
-    public void OnPointerClick(PointerEventData e)
-    {
-        if (!_dragging) _onSelect?.Invoke();
-    }
-
-    public void OnBeginDrag(PointerEventData e)
-    {
-        _dragging = true;
-        _onSelect?.Invoke();
-    }
-
-    public void OnDrag(PointerEventData e)
+    public void OnPointerEnter(PointerEventData e)
     {
         if (_rt == null) return;
-        float up = Mathf.Clamp(e.position.y - e.pressPosition.y, 0f, 260f);
-        _rt.anchoredPosition = _home + new Vector2(0, up);
+        _rt.SetAsLastSibling();
+        _rt.anchoredPosition = _home + new Vector2(0, 80f);   // 上に上がる
+        _rt.localRotation = Quaternion.identity;              // まっすぐに
+        _rt.localScale = Vector3.one * 1.18f;
+        if (_frame != null) _frame.color = Color.Lerp(_base, Color.white, 0.55f); // 光る
+        _onEnter?.Invoke();
     }
 
-    public void OnEndDrag(PointerEventData e)
+    public void OnPointerExit(PointerEventData e)
     {
-        _dragging = false;
         if (_rt == null) return;
-        float up = e.position.y - e.pressPosition.y;
-        if (up > Screen.height * 0.12f) { _onPlay?.Invoke(); }
-        else { _rt.anchoredPosition = _home; }
+        _rt.anchoredPosition = _home;
+        _rt.localRotation = _homeRot;
+        _rt.localScale = Vector3.one;
+        if (_frame != null) _frame.color = _base;
+        _onExit?.Invoke();
     }
+
+    public void OnPointerClick(PointerEventData e) => _onClick?.Invoke();
 }

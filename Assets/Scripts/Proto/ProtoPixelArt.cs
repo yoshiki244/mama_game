@@ -87,6 +87,9 @@ public static class ProtoPixelArt
     // マップの契約マス用の画像（Assets/Resources/promise.png）。無ければnull
     public static Sprite ContractPhoto() { TryPhoto("promise", out var sp); return sp; }
 
+    // ビルド画面のソートボタン用画像（Assets/Resources/sort_icon.png）。無ければnull
+    public static Sprite SortIcon() { TryPhoto("sort_icon", out var sp); return sp; }
+
     // 戦闘UI左上の顔アイコン（Assets/Resources/front_mama.png）。無ければ立ち絵
     public static Sprite FrontMama() { return TryPhoto("front_mama", out var sp) ? sp : MamaPhoto(); }
 

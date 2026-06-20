@@ -65,6 +65,7 @@ public class MenuScreen : MonoBehaviour
 
         // 最初から（すべてリセット）＝赤ボタン・一番下（間隔を1つ空ける）
         by -= 30;
+        ProtoUI.CreatePanel("MB_Restart", panel.transform, new Vector2(-380, by), new Vector2(270, 70), new Color(0.85f, 0.72f, 0.4f, 0.95f)).raycastTarget = false;
         ProtoUI.CreateButton("Menu_Restart", panel.transform, "最初から", 22, new Vector2(-380, by), new Vector2(260, 62),
             new Color(0.62f, 0.16f, 0.16f, 0.98f), ShowRestartConfirm);
 
@@ -97,6 +98,7 @@ public class MenuScreen : MonoBehaviour
     void CreateMenuButton(Transform parent, string label, ref float y, System.Action onClick, System.Action onPreview = null)
     {
         int index = _items.Count;
+        ProtoUI.CreatePanel($"MB_{label}", parent, new Vector2(-380, y), new Vector2(270, 70), new Color(0.85f, 0.72f, 0.4f, 0.95f)).raycastTarget = false; // 金枠
         var btn = ProtoUI.CreateButton($"Menu_{label}", parent, label, 22, new Vector2(-380, y), new Vector2(260, 62), ItemNormal,
             () => { _selIndex = index; RefreshSelection(); onClick(); });
         _items.Add(((Image)btn.targetGraphic, onClick));

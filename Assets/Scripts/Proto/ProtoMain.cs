@@ -26,18 +26,21 @@ public class ProtoMain : MonoBehaviour
     public int Wave { get; private set; } = 1;
     public int CurrentDepth { get; set; } = 1; // 現在地の深度（マップの列番号）。報酬/ショップの抽選に使う
 
-    public List<string> OwnedCardIds { get; private set; } = new List<string>();
+    public List<string> OwnedCardIds { get; private set; } = new List<string>();      // 所持したことのあるカードid（種類）
+    public Dictionary<string, int> CardStock { get; private set; } = new Dictionary<string, int>(); // 未配置の在庫数
 
     public Canvas Canvas { get; private set; }
     public bool BgmEnabled { get; private set; }
 
     // ---- 所持カード操作 ----
+    // 在庫が1以上あるカード（ビルドのトレイ表示用）
     public List<CardDef> OwnedCards()
     {
         var list = new List<CardDef>();
         if (Db == null) return list;
         foreach (var id in OwnedCardIds)
         {
+            if (OwnedCount(id) <= 0) continue;
             var c = Db.FindCard(id);
             if (c != null) list.Add(c);
         }
@@ -45,13 +48,31 @@ public class ProtoMain : MonoBehaviour
     }
 
     public bool OwnsCard(string id) => OwnedCardIds.Contains(id);
+    public int OwnedCount(string id) => (id != null && CardStock.TryGetValue(id, out var n)) ? n : 0;
 
+    // カード入手（在庫+1）
     public bool AddCard(string id)
     {
-        if (string.IsNullOrEmpty(id) || OwnedCardIds.Contains(id)) return false;
-        if (Db.FindCard(id) == null) return false;
-        OwnedCardIds.Add(id);
+        if (string.IsNullOrEmpty(id) || Db.FindCard(id) == null) return false;
+        if (!OwnedCardIds.Contains(id)) OwnedCardIds.Add(id);
+        CardStock[id] = OwnedCount(id) + 1;
         return true;
+    }
+
+    // 盤面に配置＝在庫消費
+    public bool ConsumeCard(string id)
+    {
+        if (OwnedCount(id) <= 0) return false;
+        CardStock[id] = OwnedCount(id) - 1;
+        return true;
+    }
+
+    // 盤面から撤去＝在庫に戻す
+    public void ReturnCard(string id)
+    {
+        if (string.IsNullOrEmpty(id)) return;
+        if (!OwnedCardIds.Contains(id)) OwnedCardIds.Add(id);
+        CardStock[id] = OwnedCount(id) + 1;
     }
 
     // ---- 経済 ----
@@ -100,7 +121,7 @@ public class ProtoMain : MonoBehaviour
         int price = Cfg != null ? Cfg.shopBuyPrice : 40;
         if (OwnedCardIds.Contains(id) || Money < price || Db.FindCard(id) == null) return false;
         Money -= price;
-        OwnedCardIds.Add(id);
+        AddCard(id);   // 在庫+1
         return true;
     }
 
@@ -142,11 +163,7 @@ public class ProtoMain : MonoBehaviour
         Panel.UnlockInitial(InitialCols, InitialRows);
 
         // 初期所持カード
-        OwnedCardIds.Clear();
-        if (Cfg != null && Cfg.initialOwned != null)
-            foreach (var id in Cfg.initialOwned)
-                if (Db != null && Db.FindCard(id) != null && !OwnedCardIds.Contains(id))
-                    OwnedCardIds.Add(id);
+        InitInitialCards();
 
         // 画面生成
         _build = gameObject.AddComponent<BuildScreen>();
@@ -174,8 +191,17 @@ public class ProtoMain : MonoBehaviour
 
     void Start() => ShowMap();
 
+    // 初期所持カードを在庫1ずつで設定
+    void InitInitialCards()
+    {
+        OwnedCardIds.Clear(); CardStock.Clear();
+        if (Cfg != null && Cfg.initialOwned != null)
+            foreach (var id in Cfg.initialOwned)
+                if (Db != null && Db.FindCard(id) != null) AddCard(id);
+    }
+
     // セーブから状態を流し込む（ProtoSaveが呼ぶ）
-    public void ApplyLoaded(int money, int cellStock, List<string> owned, List<Vector2Int> unlocked)
+    public void ApplyLoaded(int money, int cellStock, List<string> owned, List<int> counts, List<Vector2Int> unlocked)
     {
         Money = Mathf.Max(0, money);
         CellStock = Mathf.Max(0, cellStock);
@@ -183,10 +209,14 @@ public class ProtoMain : MonoBehaviour
             foreach (var c in unlocked) Panel.Unlock(c.x, c.y);   // 解放マスを復元
         if (owned != null && owned.Count > 0)
         {
-            OwnedCardIds.Clear();
-            foreach (var id in owned)
-                if (Db != null && Db.FindCard(id) != null && !OwnedCardIds.Contains(id))
-                    OwnedCardIds.Add(id);
+            OwnedCardIds.Clear(); CardStock.Clear();
+            for (int i = 0; i < owned.Count; i++)
+            {
+                var id = owned[i];
+                if (Db == null || Db.FindCard(id) == null) continue;
+                if (!OwnedCardIds.Contains(id)) OwnedCardIds.Add(id);
+                CardStock[id] = (counts != null && i < counts.Count) ? Mathf.Max(0, counts[i]) : 1;
+            }
         }
     }
 
@@ -232,11 +262,7 @@ public class ProtoMain : MonoBehaviour
         CellStock = 0;
         Panel = new PanelModel(GridDim, GridDim);
         Panel.UnlockInitial(InitialCols, InitialRows);
-        OwnedCardIds.Clear();
-        if (Cfg != null && Cfg.initialOwned != null)
-            foreach (var id in Cfg.initialOwned)
-                if (Db != null && Db.FindCard(id) != null && !OwnedCardIds.Contains(id))
-                    OwnedCardIds.Add(id);
+        InitInitialCards();
         ProtoSave.Clear();   // セーブも消去（次回起動でも初期状態に）
         _map.ResetRun();
         ShowMap();
