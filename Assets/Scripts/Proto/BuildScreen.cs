@@ -156,11 +156,11 @@ public class BuildScreen : MonoBehaviour
 
         // ソートボタンの説明ツールチップ（カーソルを合わせると表示）
         var tip = ProtoUI.CreateRect("SortTip", _root);
-        tip.anchoredPosition = new Vector2(225, 250); tip.sizeDelta = new Vector2(360, 96);
-        var tipInner = ProtoUI.CreateFramedPanel("SortTipBox", tip, Vector2.zero, new Vector2(360, 96),
+        tip.anchoredPosition = new Vector2(560, 318); tip.sizeDelta = new Vector2(300, 56);
+        var tipInner = ProtoUI.CreateFramedPanel("SortTipBox", tip, Vector2.zero, new Vector2(300, 56),
             new Color(0.07f, 0.06f, 0.12f, 0.97f), new Color(0.85f, 0.72f, 0.4f, 0.95f));
-        var tipTxt = ProtoUI.CreateText("SortTipTxt", tipInner.transform, "所持カードの絞り込み・並び替え\n<size=13>マス数 / マナ数 / 種別で絞り込み、\nマナ数・ピース数で昇順/降順に並び替え</size>",
-            16, Vector2.zero, new Vector2(340, 86), Color.white);
+        var tipTxt = ProtoUI.CreateText("SortTipTxt", tipInner.transform, "所持カードの絞り込み・並び替え",
+            16, Vector2.zero, new Vector2(284, 46), Color.white);
         tipTxt.raycastTarget = false;
         tip.gameObject.SetActive(false);
         var hov = sortBtn.gameObject.AddComponent<HoverTip>();
@@ -347,8 +347,8 @@ public class BuildScreen : MonoBehaviour
         for (int i = 1; i <= 10; i++) { int n = i; MakeToggle(p, new Vector2(-190 + (i - 1) * 56, 42), new Vector2(48, 42), n.ToString(), () => _fMana.Contains(n), v => { if (v) _fMana.Add(n); else _fMana.Remove(n); }); }
         ProtoUI.CreateText("FL3", p, "スキル種別", 18, new Vector2(-262, -38), new Vector2(130, 26), Color.white, TextAlignmentOptions.Left);
         MakeToggle(p, new Vector2(-159, -38), new Vector2(110, 44), "攻撃", () => _fAttack, v => _fAttack = v);
-        MakeToggle(p, new Vector2(-39, -38), new Vector2(110, 44), "防御", () => _fDefense, v => _fDefense = v);
-        MakeToggle(p, new Vector2(81, -38), new Vector2(110, 44), "回復", () => _fHeal, v => _fHeal = v);
+        MakeToggle(p, new Vector2(-39, -38), new Vector2(110, 44), "ガード", () => _fDefense, v => _fDefense = v);
+        MakeToggle(p, new Vector2(81, -38), new Vector2(110, 44), "ヒール", () => _fHeal, v => _fHeal = v);
         MakeToggle(p, new Vector2(201, -38), new Vector2(110, 44), "スキル", () => _fSkill, v => _fSkill = v);
         ProtoUI.CreateText("FHint", p, "未選択＝すべて表示", 15, new Vector2(0, -110), new Vector2(600, 24), new Color(0.7f, 0.7f, 0.8f));
     }
@@ -449,7 +449,7 @@ public class BuildScreen : MonoBehaviour
             if (p != null) { _selectedText.text = $"選択中: {p.card.displayName}"; return; }
         }
         _selectedText.text = _selected == null ? "カード未選択"
-            : $"選択中: {_selected.displayName}（マナ{_selected.ManaCost}）";
+            : $"選択中: {_selected.displayName}（{_selected.Size}マス）";
     }
 
     void OnAddButton()

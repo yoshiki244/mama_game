@@ -83,8 +83,8 @@ public class CardDef : ScriptableObject
         switch (k)
         {
             case CardKind.Attack: return "攻撃";
-            case CardKind.Defense: return "防御";
-            case CardKind.Heal: return "回復";
+            case CardKind.Defense: return "ガード";
+            case CardKind.Heal: return "ヒール";
             default: return "スキル";
         }
     }
