@@ -1,5 +1,6 @@
 using UnityEngine;
 using UnityEngine.UI;
+using UnityEngine.EventSystems;
 using TMPro;
 using System.Collections;
 using System.Collections.Generic;
@@ -152,6 +153,18 @@ public class BuildScreen : MonoBehaviour
         var si = ProtoPixelArt.SortIcon();
         if (si != null) { var ic = ProtoUI.CreateRect("SortIco", sortBtn.transform); ic.anchoredPosition = Vector2.zero; ic.sizeDelta = new Vector2(34, 34); var im = ic.gameObject.AddComponent<Image>(); im.sprite = si; im.preserveAspect = true; im.raycastTarget = false; }
         else sortBtn.GetComponentInChildren<TextMeshProUGUI>().text = "並";
+
+        // ソートボタンの説明ツールチップ（カーソルを合わせると表示）
+        var tip = ProtoUI.CreateRect("SortTip", _root);
+        tip.anchoredPosition = new Vector2(225, 250); tip.sizeDelta = new Vector2(360, 96);
+        var tipInner = ProtoUI.CreateFramedPanel("SortTipBox", tip, Vector2.zero, new Vector2(360, 96),
+            new Color(0.07f, 0.06f, 0.12f, 0.97f), new Color(0.85f, 0.72f, 0.4f, 0.95f));
+        var tipTxt = ProtoUI.CreateText("SortTipTxt", tipInner.transform, "所持カードの絞り込み・並び替え\n<size=13>マス数 / マナ数 / 種別で絞り込み、\nマナ数・ピース数で昇順/降順に並び替え</size>",
+            16, Vector2.zero, new Vector2(340, 86), Color.white);
+        tipTxt.raycastTarget = false;
+        tip.gameObject.SetActive(false);
+        var hov = sortBtn.gameObject.AddComponent<HoverTip>();
+        hov.target = tip.gameObject;
 
         var viewport = ProtoUI.CreateRect("TrayViewport", _root);
         viewport.anchoredPosition = new Vector2(180, 25);
@@ -570,18 +583,24 @@ public class BuildScreen : MonoBehaviour
     }
 
     bool _hoverShown;
+    Vector2Int _hoverCell; int _hoverRot; CardDef _hoverCard; // ゴースト再描画の差分判定
     void UpdateHoverPreview()
     {
         if (_selected == null || _isDragging)
         {
-            if (_hoverShown) { RefreshBoard(); _hoverShown = false; }
+            if (_hoverShown) { RefreshBoard(); _hoverShown = false; _hoverCard = null; }
             return;
         }
         if (!TryGetPointerPos(out var screenPos) || !TryGetCellAtScreenPoint(screenPos, null, out var cell))
         {
-            if (_hoverShown) { RefreshBoard(); _hoverShown = false; }
+            if (_hoverShown) { RefreshBoard(); _hoverShown = false; _hoverCard = null; }
             return;
         }
+        // マス・回転・選択カードが前フレームと同じなら描画し直さない（毎フレームのRefreshBoardを回避）
+        var cv = new Vector2Int(cell.x, cell.y);
+        if (_hoverShown && _hoverCell == cv && _hoverRot == _rotation && _hoverCard == _selected) return;
+        _hoverCell = cv; _hoverRot = _rotation; _hoverCard = _selected;
+
         RefreshBoard(); _hoverShown = true;
 
         bool valid = P.CanPlace(_selected, new Vector2Int(cell.x, cell.y), _rotation);
@@ -714,4 +733,13 @@ public class BuildScreen : MonoBehaviour
     }
 
     static int Pct(int n, int total) => total > 0 ? Mathf.RoundToInt(100f * n / total) : 0;
+}
+
+// カーソルを合わせている間だけ target を表示するツールチップ用ハンドラ
+public class HoverTip : MonoBehaviour, IPointerEnterHandler, IPointerExitHandler
+{
+    public GameObject target;
+    public void OnPointerEnter(PointerEventData e) { if (target != null) target.SetActive(true); }
+    public void OnPointerExit(PointerEventData e) { if (target != null) target.SetActive(false); }
+    void OnDisable() { if (target != null) target.SetActive(false); }
 }
