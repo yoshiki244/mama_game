@@ -81,6 +81,12 @@ public static class ProtoPixelArt
     // マップの店マス用の画像（Assets/Resources/shop.png）。無ければnull
     public static Sprite ShopPhoto() { TryPhoto("shop", out var sp); return sp; }
 
+    // メニュー背景画像（Assets/Resources/menu_bg.png）。無ければnull
+    public static Sprite MenuBackground() { TryPhoto("menu_bg", out var sp); return sp; }
+
+    // マップの契約マス用の画像（Assets/Resources/promise.png）。無ければnull
+    public static Sprite ContractPhoto() { TryPhoto("promise", out var sp); return sp; }
+
     // 戦闘UI左上の顔アイコン（Assets/Resources/front_mama.png）。無ければ立ち絵
     public static Sprite FrontMama() { return TryPhoto("front_mama", out var sp) ? sp : MamaPhoto(); }
 

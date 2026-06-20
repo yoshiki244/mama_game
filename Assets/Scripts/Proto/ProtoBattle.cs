@@ -471,7 +471,7 @@ public class ProtoBattle : MonoBehaviour
         var nameText = ProtoUI.CreateText("Name", header.transform, card.displayName, 18, new Vector2(18, 0), new Vector2(126, 32));
         nameText.alignment = TextAlignmentOptions.Left;
         nameText.fontStyle = FontStyles.Bold;
-        nameText.enableWordWrapping = false;
+        nameText.textWrappingMode = TMPro.TextWrappingModes.NoWrap;
         nameText.overflowMode = TextOverflowModes.Overflow;
         nameText.enableAutoSizing = true; nameText.fontSizeMin = 8; nameText.fontSizeMax = 19;
 
@@ -731,30 +731,35 @@ public class ProtoBattle : MonoBehaviour
     {
         _inputLocked = true;
         _main.SetCurrentHP(_playerHP);   // 戦闘後HPを保存（次戦闘へ継続）
-        // レイアウトを通常（勝利）配置に戻す
-        ((RectTransform)_resultText.transform).anchoredPosition = new Vector2(0, 300);
-        _resultText.color = ProtoUI.Gold;
-        ((RectTransform)_resultSub.transform).anchoredPosition = new Vector2(0, 235);
-        _rewardArea.anchoredPosition = new Vector2(0, 20);
-        _main.AddMoney(_enemy.moneyReward);
-        _resultText.text = $"{_enemy.enemyName}を倒した！";
-        _resultSub.text = $"お金 +{_enemy.moneyReward}　（所持 {_main.Money}）　報酬ピースを1つ選ぼう";
-        _resultRoot.gameObject.SetActive(true);
-        yield return BuildRewardChoices();
-    }
 
-    IEnumerator BuildRewardChoices()
-    {
-        foreach (Transform c in _rewardArea) Destroy(c.gameObject);
+        // お金はランダム
+        int reward = Mathf.Max(1, Mathf.RoundToInt(_enemy.moneyReward * Random.Range(0.7f, 1.5f)));
+        _main.AddMoney(reward);
 
+        // 獲得ピース候補
         int count = _main.Cfg != null ? _main.Cfg.rewardChoiceCount : 3;
         var owned = new HashSet<string>(_main.OwnedCardIds);
         var choices = _main.Db.RandomCards(count, owned, _main.CurrentDepth);
 
+        // レイアウト（中央寄り）
+        ((RectTransform)_resultText.transform).anchoredPosition = new Vector2(0, 230);
+        _resultText.color = ProtoUI.Gold;
+        ((RectTransform)_resultSub.transform).anchoredPosition = new Vector2(0, 160);
+        _rewardArea.anchoredPosition = new Vector2(0, -40);
+
+        _resultText.text = $"{_enemy.enemyName}を倒した！";
+        _resultSub.text = $"お金：+{reward}￥　　獲得ピース：{(choices.Count == 0 ? "なし" : $"{choices.Count}ピース")}";
+        _resultRoot.gameObject.SetActive(true);
+        yield return BuildRewardChoices(choices);
+    }
+
+    IEnumerator BuildRewardChoices(List<CardDef> choices)
+    {
+        foreach (Transform c in _rewardArea) Destroy(c.gameObject);
+
         if (choices.Count == 0)
         {
-            _resultSub.text = $"お金 +{_enemy.moneyReward}　（所持 {_main.Money}）　獲得できるピースはもう無い";
-            ProtoUI.CreateButton("Skip", _rewardArea, "マップへ戻る", 24, new Vector2(0, -180), new Vector2(280, 64),
+            ProtoUI.CreateButton("Skip", _rewardArea, "マップへ戻る", 24, new Vector2(0, -120), new Vector2(280, 64),
                 new Color(0.35f, 0.3f, 0.55f), () => _main.OnBattleWon());
             yield break;
         }
@@ -764,7 +769,7 @@ public class ProtoBattle : MonoBehaviour
         for (int i = 0; i < choices.Count; i++)
             BuildRewardCard(choices[i], new Vector2(startX + i * spacing, 0));
 
-        ProtoUI.CreateText("Hint", _rewardArea, "ピースをクリックで選択して獲得", 18, new Vector2(0, -210), new Vector2(600, 26),
+        ProtoUI.CreateText("Hint", _rewardArea, "ピースをクリックで選択して獲得", 18, new Vector2(0, -185), new Vector2(600, 26),
             new Color(0.8f, 0.8f, 0.9f));
         yield break;
     }

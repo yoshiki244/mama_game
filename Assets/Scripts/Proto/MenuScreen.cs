@@ -38,9 +38,20 @@ public class MenuScreen : MonoBehaviour
     void BuildUI()
     {
         _root = ProtoUI.CreateFullScreen("MenuScreen", _main.Canvas.transform);
-        _root.gameObject.AddComponent<Image>().color = new Color(0, 0, 0, 0.65f);
+        var rootImg = _root.gameObject.AddComponent<Image>();
+        var menuBg = ProtoPixelArt.MenuBackground();
+        if (menuBg != null) { rootImg.sprite = menuBg; rootImg.color = Color.white; rootImg.preserveAspect = false; }
+        else rootImg.color = new Color(0, 0, 0, 0.65f);
 
-        var panel = ProtoUI.CreatePanel("Panel", _root, Vector2.zero, new Vector2(1100, 700), new Color(0.09f, 0.07f, 0.15f));
+        // 画面外周の細い金枠
+        var gold = new Color(0.92f, 0.78f, 0.34f, 0.95f);
+        float ew = 1592f, eh = 892f, et = 3f;
+        ProtoUI.CreatePanel("EdgeTop", _root, new Vector2(0, eh / 2f), new Vector2(ew, et), gold).raycastTarget = false;
+        ProtoUI.CreatePanel("EdgeBottom", _root, new Vector2(0, -eh / 2f), new Vector2(ew, et), gold).raycastTarget = false;
+        ProtoUI.CreatePanel("EdgeLeft", _root, new Vector2(-ew / 2f, 0), new Vector2(et, eh), gold).raycastTarget = false;
+        ProtoUI.CreatePanel("EdgeRight", _root, new Vector2(ew / 2f, 0), new Vector2(et, eh), gold).raycastTarget = false;
+
+        var panel = ProtoUI.CreatePanel("Panel", _root, Vector2.zero, new Vector2(1100, 700), new Color(0, 0, 0, 0));
         ProtoUI.CreatePanel("GoldLine", panel.transform, new Vector2(0, 282), new Vector2(1060, 3), new Color(0.85f, 0.72f, 0.4f, 0.9f)).raycastTarget = false;
         var title = ProtoUI.CreateText("Title", panel.transform, "メニュー", 30, new Vector2(0, 316), new Vector2(400, 44));
         ProtoUI.StyleTitle(title, ProtoUI.Gold, 10f);

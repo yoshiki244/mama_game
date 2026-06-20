@@ -17,7 +17,7 @@ public class MapScreen : MonoBehaviour
     const int MaxWave = 3;
     bool _moving;
 
-    enum TileType { Start, Enemy, Event, SpiritTree, Shop, MidBoss, Boss }
+    enum TileType { Start, Enemy, Event, SpiritTree, Shop, Contract, MidBoss, Boss }
 
     class Node
     {
@@ -108,7 +108,7 @@ public class MapScreen : MonoBehaviour
         ProtoUI.CreateButton("MenuBtn", _root, "メニュー", 18, new Vector2(-700, -424), new Vector2(178, 42),
             new Color(0.18f, 0.14f, 0.35f, 0.98f), () => _main.ShowMenu());
         ProtoUI.CreateText("Hint", _root,
-            "メニュー：Bボタン　移動：クリック　敵：戦闘　騎士：中ボス(+5マス)　？：イベント　樹：神聖樹(+3マス)　店：ショップ",
+            "Bメニュー　移動:クリック　敵:戦闘　騎士:中ボス　？:イベント　樹:神聖樹　店:ショップ　契:契約(HP→マス)",
             17, new Vector2(120, -424), new Vector2(1480, 30), ProtoUI.Gold);
     }
 
@@ -164,6 +164,13 @@ public class MapScreen : MonoBehaviour
 
     void BuildMap()
     {
+        // 既存ノードUI（線・マーカー・アイコン）を消す（プレイヤーアイコンは残す）
+        for (int i = _nodeLayer.childCount - 1; i >= 0; i--)
+        {
+            var ch = _nodeLayer.GetChild(i);
+            if (ch == _playerIcon) continue;
+            Destroy(ch.gameObject);
+        }
         _nodes.Clear();
         int bossCol = MidColumns + 1;
 
@@ -175,34 +182,28 @@ public class MapScreen : MonoBehaviour
         // 開始ノード（左端・中央レーン）
         var start = NewNode(0, 0, TileType.Start);
 
-        // 中間ノード（各列3レーン）＋種別を5:3:1パターンで割り当て
+        // 中間ノード（各列3レーン）＝毎回ランダム配置
         var byCol = new Dictionary<int, List<Node>>();
         byCol[0] = new List<Node> { start };
-        TileType[] cycle = {
-            TileType.Enemy, TileType.Enemy, TileType.Enemy, TileType.Enemy, TileType.Enemy,
-            TileType.Event, TileType.Event, TileType.Shop, TileType.SpiritTree
-        };
-        // 中ボス列（その列は全レーン中ボス＝どのルートでも必ず遭遇）。1Waveで2回
-        int mb1 = Mathf.Clamp(MidColumns / 3, 1, MidColumns);
-        int mb2 = Mathf.Clamp(MidColumns * 2 / 3, 1, MidColumns);
 
-        int k = 0;
+        // 中ボス列は「5の倍数の列」に固定（その列は全レーン中ボス＝必ず通る）
+        var mbCols = new HashSet<int>();
+        for (int col = 5; col <= MidColumns; col += 5) mbCols.Add(col);
+
+        var normalNodes = new List<Node>();
         for (int col = 1; col <= MidColumns; col++)
         {
-            bool midbossCol = (col == mb1 || col == mb2);
+            bool midbossCol = mbCols.Contains(col);
             var list = new List<Node>();
             foreach (int lane in Lanes)
             {
-                if (midbossCol)
-                {
-                    var mbn = NewNode(col, lane, TileType.MidBoss);
-                    mbn.enemy = MakeMidBoss(col);
-                    list.Add(mbn);
-                    continue;
-                }
-                var type = cycle[k % cycle.Length]; k++;
-                var n = NewNode(col, lane, type);
-                if (type == TileType.Enemy) n.enemy = EnemyForColumn(col);
+                if (midbossCol) { list.Add(NewNode(col, lane, TileType.MidBoss)); continue; }
+                TileType t;
+                if (col == 1) t = TileType.Enemy;             // 初手は必ず戦闘
+                else if (col >= 3) { float r = Random.value; t = r < 0.60f ? TileType.Enemy : r < 0.82f ? TileType.Event : TileType.SpiritTree; }
+                else t = Random.value < 0.70f ? TileType.Enemy : TileType.Event;
+                var n = NewNode(col, lane, t);
+                normalNodes.Add(n);
                 list.Add(n);
             }
             byCol[col] = list;
@@ -210,7 +211,6 @@ public class MapScreen : MonoBehaviour
 
         // ボス（右端・中央）
         var boss = NewNode(bossCol, 0, TileType.Boss);
-        boss.enemy = _main.Db != null ? _main.Db.FindEnemy("dragon") : null;
         byCol[bossCol] = new List<Node> { boss };
 
         // エッジ（次の列でレーン差≤1）
@@ -220,8 +220,60 @@ public class MapScreen : MonoBehaviour
                     if (Mathf.Abs(a.lane - b.lane) <= 1)
                         a.next.Add(b);
 
-        // 精神樹が5未満なら、後ろのイベントを精神樹に変換して補う
-        EnsureMinSpiritTrees(5);
+        // 同種隣接禁止：イベント→イベント / 神聖樹→神聖樹 はつなげない（右側を戦闘に変換）
+        bool changed = true; int safe = 0;
+        while (changed && safe++ < 12)
+        {
+            changed = false;
+            foreach (var a in _nodes)
+                foreach (var b in a.next)
+                    if (a.type == b.type && (a.type == TileType.Event || a.type == TileType.SpiritTree))
+                    { b.type = TileType.Enemy; changed = true; }
+        }
+
+        // 店マスを3つ配置（3バトル以降＝col>=4、店どうしは隣接させない）
+        var shopCand = normalNodes.FindAll(n => n.col >= 4 && n.type != TileType.MidBoss);
+        for (int i = shopCand.Count - 1; i > 0; i--) { int j = Random.Range(0, i + 1); var tmp = shopCand[i]; shopCand[i] = shopCand[j]; shopCand[j] = tmp; }
+        int shops = 0;
+        foreach (var n in shopCand)
+        {
+            if (shops >= 3) break;
+            if (n.type == TileType.Shop || ConnectedToType(n, TileType.Shop)) continue;
+            n.type = TileType.Shop; shops++;
+        }
+
+        // 契約マスを2つ配置（3バトル以降＝col>=4、契約どうしは隣接させない・店マスは避ける）
+        var conCand = normalNodes.FindAll(n => n.col >= 4 && n.type != TileType.Shop && n.type != TileType.MidBoss);
+        for (int i = conCand.Count - 1; i > 0; i--) { int j = Random.Range(0, i + 1); var tmp = conCand[i]; conCand[i] = conCand[j]; conCand[j] = tmp; }
+        int contracts = 0;
+        foreach (var n in conCand)
+        {
+            if (contracts >= 2) break;
+            if (n.type == TileType.Contract || ConnectedToType(n, TileType.Contract)) continue;
+            n.type = TileType.Contract; contracts++;
+        }
+
+        // 神聖樹を最低5（col>=3、樹どうしは隣接させない）
+        int trees = _nodes.FindAll(n => n.type == TileType.SpiritTree).Count;
+        if (trees < 5)
+        {
+            var evs = normalNodes.FindAll(n => n.type == TileType.Event && n.col >= 3);
+            for (int i = evs.Count - 1; i > 0; i--) { int j = Random.Range(0, i + 1); var tmp = evs[i]; evs[i] = evs[j]; evs[j] = tmp; }
+            foreach (var n in evs)
+            {
+                if (trees >= 5) break;
+                if (ConnectedToType(n, TileType.SpiritTree)) continue;
+                n.type = TileType.SpiritTree; trees++;
+            }
+        }
+
+        // 種別確定後に敵を割り当て
+        foreach (var n in _nodes)
+        {
+            if (n.type == TileType.Enemy) n.enemy = EnemyForColumn(n.col);
+            else if (n.type == TileType.MidBoss) n.enemy = MakeMidBoss(n.col);
+            else if (n.type == TileType.Boss) n.enemy = _main.Db != null ? _main.Db.FindEnemy("dragon") : null;
+        }
 
         foreach (var a in _nodes)
             foreach (var b in a.next)
@@ -245,19 +297,12 @@ public class MapScreen : MonoBehaviour
         return n;
     }
 
-    void EnsureMinSpiritTrees(int min)
+    // nがエッジで指定種別のノードと接続しているか（前後どちらも）
+    bool ConnectedToType(Node n, TileType t)
     {
-        int trees = _nodes.FindAll(n => n.type == TileType.SpiritTree).Count;
-        if (trees >= min) return;
-        // 後方のイベントから順に精神樹へ変換
-        var events = _nodes.FindAll(n => n.type == TileType.Event);
-        events.Sort((a, b) => b.col.CompareTo(a.col));
-        foreach (var e in events)
-        {
-            if (trees >= min) break;
-            e.type = TileType.SpiritTree;
-            trees++;
-        }
+        foreach (var b in n.next) if (b.type == t) return true;
+        foreach (var a in _nodes) if (a.next.Contains(n) && a.type == t) return true;
+        return false;
     }
 
     // 中ボス（騎士）を実行時生成。通常敵より頑丈・強力
@@ -343,6 +388,13 @@ public class MapScreen : MonoBehaviour
                 else { n.icon.sprite = null; n.icon.color = new Color(0.85f, 0.65f, 0.18f, 0.96f); AddLabel(iconRt, "店", 28, new Color(0.20f, 0.12f, 0.02f)); }
                 break;
             }
+            case TileType.Contract:
+            {
+                var sp = ProtoPixelArt.ContractPhoto();
+                if (sp != null) { n.icon.sprite = sp; n.icon.color = Color.white; }
+                else { n.icon.sprite = null; n.icon.color = new Color(0.7f, 0.3f, 0.7f, 0.96f); AddLabel(iconRt, "契", 28, new Color(1f, 0.9f, 1f)); }
+                break;
+            }
         }
 
         n.button = iconRt.gameObject.AddComponent<Button>();
@@ -399,7 +451,7 @@ public class MapScreen : MonoBehaviour
             n.marker.color = reachable ? new Color(1f, 0.82f, 0.28f, 0.42f) : Color.clear;
 
             // 種別の基本色を保ちつつ、クリア済みは暗く
-            if (n.type == TileType.Event || n.type == TileType.SpiritTree || n.type == TileType.Shop)
+            if (n.type == TileType.Event || n.type == TileType.SpiritTree || n.type == TileType.Shop || n.type == TileType.Contract)
             {
                 if (n.icon.sprite != null)
                 {
@@ -410,6 +462,7 @@ public class MapScreen : MonoBehaviour
                 {
                     Color baseC = n.type == TileType.Event ? new Color(0.82f, 0.58f, 0.18f, 0.96f)
                                 : n.type == TileType.Shop ? new Color(0.85f, 0.65f, 0.18f, 0.96f)
+                                : n.type == TileType.Contract ? new Color(0.7f, 0.3f, 0.7f, 0.96f)
                                 : new Color(0.24f, 0.58f, 0.34f, 0.96f);
                     n.icon.color = n.cleared ? baseC * 0.4f : baseC;
                 }
@@ -480,6 +533,10 @@ public class MapScreen : MonoBehaviour
                 _current = n; _moving = false;
                 OpenShop(n);   // 店マス：カード購入
                 break;
+            case TileType.Contract:
+                _current = n; _moving = false;
+                OpenContract(n);   // 契約マス：最大HP→マスストック
+                break;
         }
     }
 
@@ -511,17 +568,11 @@ public class MapScreen : MonoBehaviour
     // 次のWaveへ（マップを最初から・敵はWaveに応じて強くなる）
     void AdvanceWave()
     {
-        ResetNodesToStart();
+        BuildMap();   // 次Waveは新しいランダムマップ
         if (_notice != null) _notice.text = $"WAVE {_main.Wave} 突入！";
         RefreshNodes();
     }
 
-    void ResetNodesToStart()
-    {
-        foreach (var n in _nodes) n.cleared = n.type == TileType.Start;
-        _current = _nodes[0];
-        _playerIcon.anchoredPosition = _current.pos;
-    }
 
     // ==================== 精神樹ショップ ====================
 
@@ -612,6 +663,38 @@ public class MapScreen : MonoBehaviour
         RefreshNodes();
     }
 
+    // ==================== 契約マス ====================
+    void OpenContract(Node node)
+    {
+        if (_shopOverlay != null) Destroy(_shopOverlay);
+        var rt = ProtoUI.CreateFullScreen("Contract", _root);
+        _shopOverlay = rt.gameObject;
+        rt.gameObject.AddComponent<Image>().color = new Color(0, 0, 0, 0.82f);
+
+        var title = ProtoUI.CreateText("CT", rt, "契約", 40, new Vector2(0, 300), new Vector2(600, 50));
+        ProtoUI.StyleTitle(title, new Color(0.85f, 0.6f, 1f), 8f);
+        ProtoUI.CreateText("CD", rt, "最大HPを10支払うごとに マスストックを1得る", 22, new Vector2(0, 230), new Vector2(900, 30), new Color(0.92f, 0.9f, 1f));
+
+        TextMeshProUGUI info = ProtoUI.CreateText("CInfo", rt, "", 26, new Vector2(0, 120), new Vector2(900, 40), ProtoUI.Gold);
+
+        System.Action refresh = () =>
+        {
+            info.text = $"最大HP {_main.Stats.MaxHP}　／　マスストック {_main.CellStock}";
+        };
+
+        var payBtn = ProtoUI.CreateButton("Pay", rt, "最大HP -10 → マスストック +1", 22, new Vector2(0, 20), new Vector2(460, 70),
+            new Color(0.55f, 0.25f, 0.6f, 0.98f), null);
+        payBtn.onClick.AddListener(() =>
+        {
+            if (!_main.ContractTradeHpForCell() && _notice != null) _notice.text = "これ以上は最大HPを払えません";
+            refresh();
+        });
+
+        ProtoUI.CreateButton("CClose", rt, "出発する", 22, new Vector2(0, -120), new Vector2(280, 60),
+            new Color(0.45f, 0.3f, 0.55f), () => CloseShop(node));
+        refresh();
+    }
+
     // ==================== クリア ====================
 
     void ShowClear()
@@ -630,7 +713,7 @@ public class MapScreen : MonoBehaviour
     public void ResetRun()
     {
         if (_clearOverlay != null) { Destroy(_clearOverlay); _clearOverlay = null; }
-        ResetNodesToStart();
+        BuildMap();      // 最初から＝マップを再生成（ランダム配置）
         RefreshNodes();
     }
 

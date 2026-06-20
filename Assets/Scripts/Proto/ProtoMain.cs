@@ -64,6 +64,16 @@ public class ProtoMain : MonoBehaviour
     // ---- 盤面マス入手・解放 ----
     public void AwardCells(int n) { if (n > 0) CellStock += n; }
 
+    // 契約：最大HPを10払って マスストック+1（最大HPは最低10まで）
+    public bool ContractTradeHpForCell()
+    {
+        if (Stats == null || Stats.MaxHP - 10 < 10) return false;
+        Stats.MaxHP -= 10;
+        if (CurrentHP > Stats.MaxHP) CurrentHP = Stats.MaxHP;
+        CellStock += 1;
+        return true;
+    }
+
     // ビルド画面でロック中のマスを解放（マスストックを1消費・最大100まで）
     public bool UnlockCell(int x, int y)
     {

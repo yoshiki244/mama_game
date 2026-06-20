@@ -142,14 +142,14 @@ public class BuildScreen : MonoBehaviour
 
         _selectedText = ProtoUI.CreateText("Selected", _root, "カード未選択", 16,
             new Vector2(125, -160), new Vector2(320, 64), null, TextAlignmentOptions.Left);
-        _selectedText.enableWordWrapping = true;   // 回転ボタンと重ならないよう折り返す
+        _selectedText.textWrappingMode = TMPro.TextWrappingModes.Normal;   // 回転ボタンと重ならないよう折り返す
         ProtoUI.CreateButton("RotateBtn", _root, "回転", 20,
             new Vector2(360, -160), new Vector2(120, 44), new Color(0.3f, 0.25f, 0.45f), RotateAny);
 
         var hint = ProtoUI.CreateText("Hint", _root,
             "カード選択→マウスでプレビュー→左クリックで確定　右クリック=撤去　ドラッグ=移動　カードをクリック→Rキーで回転　出現率=マス数÷盤面マス数　空白=通常攻撃", 15,
             new Vector2(0, -408), new Vector2(1560, 30), new Color(0.72f, 0.72f, 0.82f));
-        hint.enableWordWrapping = false;
+        hint.textWrappingMode = TMPro.TextWrappingModes.NoWrap;
         hint.enableAutoSizing = true; hint.fontSizeMin = 10; hint.fontSizeMax = 15;
 
         // カードの出現率（カード一覧の右側に別枠・縦サイズは一覧と同じ）
