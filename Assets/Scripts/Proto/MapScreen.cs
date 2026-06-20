@@ -161,13 +161,13 @@ public class MapScreen : MonoBehaviour
 
         (Sprite, string)[] items =
         {
-            (ProtoPixelArt.Slime(),        "敵マス：戦闘。倒すと10%でストックマス+1"),
-            (ProtoPixelArt.Knight(),       "中ボス：強敵。倒すとストックマス+5"),
-            (ProtoPixelArt.DragonFront(),  "ボス：各Waveのボス。倒すと次のWaveへ"),
+            (ProtoPixelArt.Slime(),        "雑魚敵マス：戦闘。倒すと確率でストックマス+1"),
+            (ProtoPixelArt.Knight(),       "中ボスマス：戦闘。倒すとストックマス+5"),
+            (ProtoPixelArt.DragonFront(),  "ボスマス：各Waveのボス。倒すと次のWaveへ"),
             (ProtoPixelArt.EventPhoto(),   "？マス：イベント。お金を獲得"),
-            (ProtoPixelArt.TreePhoto(),    "樹マス：神聖樹。HP全回復＋ストックマス+3か最大HP+10を選択"),
-            (ProtoPixelArt.ShopPhoto(),    "店マス：ショップ。お金でカード購入"),
-            (ProtoPixelArt.ContractPhoto(),"契約マス：最大HPを10払うごとにストックマス+1"),
+            (ProtoPixelArt.TreePhoto(),    "神聖樹マス：イベント発生。"),
+            (ProtoPixelArt.ShopPhoto(),    "ショップマス：お金でカードまたは装備を購入"),
+            (ProtoPixelArt.ContractPhoto(),"悪魔の契約マス：イベント発生。"),
         };
         float y = 230f;
         var contractSp = ProtoPixelArt.ContractPhoto();
