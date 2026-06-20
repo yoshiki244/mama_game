@@ -106,7 +106,7 @@ public class MapScreen : MonoBehaviour
 
         // ▼▼ デバッグ用（一時的）：左上からすぐショップへ。動作確認が終わったら削除する ▼▼
         ProtoUI.CreateGoldButton("DebugShop", _root, "ショップへ(デバッグ)", 16, new Vector2(-690, 330), new Vector2(180, 44),
-            new Color(0.5f, 0.3f, 0.15f, 0.98f), () => OpenShop(new Node { col = Mathf.Max(4, _current != null ? _current.col : 4), type = TileType.Shop }));
+            new Color(0.5f, 0.3f, 0.15f, 0.98f), () => OpenShop(new Node { col = Mathf.Max(4, _current != null ? _current.col : 4), type = TileType.Shop }, debugFree: true));
         ProtoUI.CreateGoldButton("DebugContract", _root, "契約へ(デバッグ)", 16, new Vector2(-690, 278), new Vector2(180, 44),
             new Color(0.4f, 0.15f, 0.2f, 0.98f), () => OpenContract(new Node { col = Mathf.Max(4, _current != null ? _current.col : 4), type = TileType.Contract }));
         ProtoUI.CreateGoldButton("DebugTree", _root, "神聖樹へ(デバッグ)", 16, new Vector2(-690, 226), new Vector2(180, 44),
@@ -161,13 +161,13 @@ public class MapScreen : MonoBehaviour
 
         (Sprite, string)[] items =
         {
-            (ProtoPixelArt.Slime(),        "敵マス：戦闘。倒すと10%で盤面マス+1"),
-            (ProtoPixelArt.Knight(),       "中ボス：強敵。倒すと盤面マス+5"),
+            (ProtoPixelArt.Slime(),        "敵マス：戦闘。倒すと10%でストックマス+1"),
+            (ProtoPixelArt.Knight(),       "中ボス：強敵。倒すとストックマス+5"),
             (ProtoPixelArt.DragonFront(),  "ボス：各Waveのボス。倒すと次のWaveへ"),
             (ProtoPixelArt.EventPhoto(),   "？マス：イベント。お金を獲得"),
-            (ProtoPixelArt.TreePhoto(),    "樹マス：神聖樹。HP全回復＋盤面マス+3か最大HP+10を選択"),
+            (ProtoPixelArt.TreePhoto(),    "樹マス：神聖樹。HP全回復＋ストックマス+3か最大HP+10を選択"),
             (ProtoPixelArt.ShopPhoto(),    "店マス：ショップ。お金でカード購入"),
-            (ProtoPixelArt.ContractPhoto(),"契約マス：最大HPを10払うごとに盤面マス+1"),
+            (ProtoPixelArt.ContractPhoto(),"契約マス：最大HPを10払うごとにストックマス+1"),
         };
         float y = 230f;
         var contractSp = ProtoPixelArt.ContractPhoto();
@@ -615,7 +615,7 @@ public class MapScreen : MonoBehaviour
                 break;
             case TileType.Contract:
                 _current = n; _moving = false;
-                OpenContract(n);   // 契約マス：最大HP→マスストック
+                OpenContract(n);   // 契約マス：最大HP→ストックマス
                 break;
         }
     }
@@ -631,18 +631,26 @@ public class MapScreen : MonoBehaviour
         if (node.type == TileType.MidBoss)
         {
             _main.AwardCells(5);
-            if (_notice != null) _notice.text = "中ボス撃破！　盤面マス +5";
-            // 20%で装備をドロップ（未装備のときのみ＝1つだけ所持）
-            if (_main.Equipped == EquipKind.None && Random.value < 0.20f)
+            if (_notice != null) _notice.text = "中ボス撃破！　ストックマス +5";
+            // 20%で装備をドロップ
+            if (Random.value < 0.20f)
             {
                 var drop = EquipInfo.All[Random.Range(0, EquipInfo.All.Length)];
-                _main.SetEquip(drop);
-                if (_notice != null) _notice.text = $"中ボス撃破！　盤面マス +5　／　{EquipInfo.Name(drop)} を入手！";
+                if (_main.Equipped == EquipKind.None)
+                {
+                    _main.SetEquip(drop);
+                    if (_notice != null) _notice.text = $"中ボス撃破！　ストックマス +5　／　{EquipInfo.Name(drop)} を入手！";
+                }
+                else
+                {
+                    // すでに装備中＝持ち替え確認
+                    ShowEquipSwapConfirm(drop, () => { _main.SetEquip(drop); if (_notice != null) _notice.text = $"{EquipInfo.Name(drop)} に持ち替えた！"; });
+                }
             }
         }
         else if (node.type == TileType.Enemy)
         {
-            if (Random.value < 0.1f) { _main.AwardCells(1); if (_notice != null) _notice.text = "盤面マスを 1 入手！"; }
+            if (Random.value < 0.1f) { _main.AwardCells(1); if (_notice != null) _notice.text = "ストックマスを 1 入手！"; }
         }
 
         if (node.type == TileType.Boss)
@@ -663,7 +671,7 @@ public class MapScreen : MonoBehaviour
 
     // ==================== 精神樹ショップ ====================
 
-    void OpenShop(Node treeNode)
+    void OpenShop(Node treeNode, bool debugFree = false)
     {
         if (_shopOverlay != null) Destroy(_shopOverlay);
         var rt = ProtoUI.CreateFullScreen("Shop", _root);
@@ -733,35 +741,48 @@ public class MapScreen : MonoBehaviour
             var c = card;
             btn.onClick.AddListener(() =>
             {
-                int pr = _main.Cfg != null ? _main.Cfg.shopBuyPrice : 40;
-                if (!_main.OwnsCard(c.id) && _main.Money < pr) { say("おっと、お金が足りないようだね……"); return; }
-                if (_main.BuyCard(c.id)) { say("毎度あり！　いい買い物だ。"); refresh(); }
+                if (_main.OwnsCard(c.id)) return;
+                int pr = debugFree ? 0 : (_main.Cfg != null ? _main.Cfg.shopBuyPrice : 40);
+                if (_main.Money < pr) { say("おっと、お金が足りないようだね……"); return; }
+                if (debugFree) { _main.AddCard(c.id); say("毎度あり！　いい買い物だ。"); refresh(); }
+                else if (_main.BuyCard(c.id)) { say("毎度あり！　いい買い物だ。"); refresh(); }
             });
             offerButtons.Add((card, btn, price, frame));
         }
 
-        // 装備売り場（1つだけ所持可能）
+        // 装備売り場（ランダム3種・1つだけ所持可能）
         ProtoUI.CreateText("EqTitle", rt, "― 装備 ―", 22, new Vector2(0, -210), new Vector2(400, 28), new Color(0.85f, 0.78f, 0.5f));
+        var equipOffers = new List<EquipKind>(EquipInfo.All);
+        for (int i = equipOffers.Count - 1; i > 0; i--) { int j = Random.Range(0, i + 1); (equipOffers[i], equipOffers[j]) = (equipOffers[j], equipOffers[i]); }
+        if (equipOffers.Count > 3) equipOffers.RemoveRange(3, equipOffers.Count - 3);
+        int eqPrice = debugFree ? 0 : EquipInfo.ShopPrice;
         var equipButtons = new List<(EquipKind kind, Button btn, TextMeshProUGUI label, Image frame)>();
-        float eqSpacing = 360f, eqStartX = -(EquipInfo.All.Length - 1) * eqSpacing / 2f;
-        for (int i = 0; i < EquipInfo.All.Length; i++)
+        float eqSpacing = 300f, eqStartX = -(equipOffers.Count - 1) * eqSpacing / 2f;
+        for (int i = 0; i < equipOffers.Count; i++)
         {
-            var kind = EquipInfo.All[i];
-            var frame = ProtoUI.CreatePanel($"Eq_{kind}", rt, new Vector2(eqStartX + i * eqSpacing, -278), new Vector2(330, 96),
+            var kind = equipOffers[i];
+            var frame = ProtoUI.CreatePanel($"Eq_{kind}", rt, new Vector2(eqStartX + i * eqSpacing, -278), new Vector2(286, 96),
                 new Color(0.66f, 0.55f, 0.34f));
-            var inner = ProtoUI.CreatePanel("In", frame.transform, Vector2.zero, new Vector2(318, 84), new Color(0.10f, 0.08f, 0.16f));
+            var inner = ProtoUI.CreatePanel("In", frame.transform, Vector2.zero, new Vector2(274, 84), new Color(0.10f, 0.08f, 0.16f));
             inner.raycastTarget = false;
-            var nm = ProtoUI.CreateText("N", inner.transform, EquipInfo.Name(kind), 19, new Vector2(0, 22), new Vector2(310, 26), Color.white);
+            var nm = ProtoUI.CreateText("N", inner.transform, EquipInfo.Name(kind), 18, new Vector2(0, 22), new Vector2(268, 26), Color.white);
             nm.fontStyle = FontStyles.Bold;
-            ProtoUI.CreateText("D", inner.transform, EquipInfo.Desc(kind), 14, new Vector2(0, -2), new Vector2(310, 22), new Color(0.85f, 0.9f, 1f)).raycastTarget = false;
-            var lab = ProtoUI.CreateText("P", inner.transform, "", 16, new Vector2(0, -26), new Vector2(310, 22), ProtoUI.Gold);
+            ProtoUI.CreateText("D", inner.transform, EquipInfo.Desc(kind), 13, new Vector2(0, -2), new Vector2(268, 22), new Color(0.85f, 0.9f, 1f)).raycastTarget = false;
+            var lab = ProtoUI.CreateText("P", inner.transform, "", 16, new Vector2(0, -26), new Vector2(268, 22), ProtoUI.Gold);
             var btn = frame.gameObject.AddComponent<Button>(); btn.targetGraphic = frame;
             var k = kind;
             btn.onClick.AddListener(() =>
             {
-                if (_main.Equipped != EquipKind.None) { say("装備は1つしか持てないよ。"); return; }
-                if (_main.Money < EquipInfo.ShopPrice) { say("おっと、お金が足りないようだね……"); return; }
-                if (_main.BuyEquip(k)) { say($"{EquipInfo.Name(k)}、毎度あり！"); refresh(); }
+                if (_main.Equipped == k) { say("それは装備中だよ。"); return; }
+                if (_main.Money < eqPrice) { say("おっと、お金が足りないようだね……"); return; }
+                if (_main.Equipped == EquipKind.None)
+                {
+                    _main.SpendAndEquip(k, eqPrice); say($"{EquipInfo.Name(k)}、毎度あり！"); refresh();
+                }
+                else
+                {
+                    ShowEquipSwapConfirm(k, () => { _main.SpendAndEquip(k, eqPrice); say($"{EquipInfo.Name(k)}、毎度あり！"); refresh(); });
+                }
             });
             equipButtons.Add((kind, btn, lab, frame));
         }
@@ -778,30 +799,88 @@ public class MapScreen : MonoBehaviour
         {
             money.text = $"￥{_main.Money}";
 
-            int price = _main.Cfg != null ? _main.Cfg.shopBuyPrice : 40;
+            int price = debugFree ? 0 : (_main.Cfg != null ? _main.Cfg.shopBuyPrice : 40);
             foreach (var o in offerButtons)
             {
                 bool owned = _main.OwnsCard(o.card.id);
                 bool afford = _main.Money >= price;
-                o.label.text = owned ? "購入済み" : $"購入 {price}";
+                o.label.text = owned ? "購入済み" : price == 0 ? "無料" : $"購入 {price}";
                 o.btn.interactable = !owned; // 所持金不足でも押せる（押すとセリフで知らせる）
                 o.frame.color = owned ? new Color(0.3f, 0.3f, 0.32f)
                     : afford ? new Color(0.66f, 0.55f, 0.34f) : new Color(0.45f, 0.38f, 0.26f);
             }
-            bool hasEquip = _main.Equipped != EquipKind.None;
             foreach (var e in equipButtons)
             {
                 bool isThis = _main.Equipped == e.kind;
-                bool afford = _main.Money >= EquipInfo.ShopPrice;
-                e.label.text = isThis ? "装備中" : hasEquip ? "装備枠がいっぱい" : $"購入 {EquipInfo.ShopPrice}";
-                e.btn.interactable = !hasEquip;
+                bool afford = _main.Money >= eqPrice;
+                e.label.text = isThis ? "装備中" : eqPrice == 0 ? "無料" : $"購入 {eqPrice}";
+                e.btn.interactable = !isThis; // 装備中以外は押せる（所持中は持ち替え確認）
                 e.frame.color = isThis ? new Color(0.4f, 0.5f, 0.34f)
-                    : hasEquip ? new Color(0.3f, 0.3f, 0.32f)
                     : afford ? new Color(0.66f, 0.55f, 0.34f) : new Color(0.45f, 0.38f, 0.26f);
             }
         };
 
         refresh();
+    }
+
+    // 成長させるカードを選ぶピッカー
+    GameObject _growPicker;
+    void ShowGrowPicker(System.Action<CardDef> onPick)
+    {
+        if (_growPicker != null) Destroy(_growPicker);
+        var ov = ProtoUI.CreateFullScreen("GrowPicker", _root);
+        _growPicker = ov.gameObject;
+        ov.gameObject.AddComponent<Image>().color = new Color(0, 0, 0, 0.8f);
+
+        ProtoUI.CreateFramedPanel("GPBox", ov, Vector2.zero, new Vector2(1000, 620),
+            new Color(0.07f, 0.09f, 0.07f, 0.98f), new Color(0.5f, 0.85f, 0.55f, 0.9f));
+        var t = ProtoUI.CreateText("GPT", ov, "成長させるカードを選ぶ", 30, new Vector2(0, 250), new Vector2(900, 44), new Color(0.8f, 1f, 0.85f));
+        ProtoUI.StyleTitle(t, new Color(0.8f, 1f, 0.85f), 5f);
+
+        // 配置済みも含め、所持しているカード種別すべてを対象にする
+        var owned = new List<CardDef>();
+        foreach (var id in _main.OwnedCardIds) { var c = _main.Db != null ? _main.Db.FindCard(id) : null; if (c != null) owned.Add(c); }
+        int perRow = 4; float cw = 224f, ch = 150f, gx = 8f, gy = 12f;
+        float startX = -(perRow - 1) * (cw + gx) / 2f, startY = 150f;
+        for (int i = 0; i < owned.Count; i++)
+        {
+            var card = owned[i];
+            int r = i / perRow, c = i % perRow;
+            var pos = new Vector2(startX + c * (cw + gx), startY - r * (ch + gy));
+            var frame = ProtoUI.CreatePanel($"GP_{card.id}", ov, pos, new Vector2(cw, ch), new Color(0.66f, 0.55f, 0.34f));
+            var inner = ProtoUI.CreatePanel("In", frame.transform, Vector2.zero, new Vector2(cw - 10, ch - 10), new Color(0.10f, 0.08f, 0.16f));
+            inner.raycastTarget = false;
+            var nm = ProtoUI.CreateText("N", inner.transform, card.displayName, 17, new Vector2(0, 58), new Vector2(cw - 16, 24), Color.white);
+            nm.fontStyle = FontStyles.Bold; nm.enableAutoSizing = true; nm.fontSizeMin = 11; nm.fontSizeMax = 17; nm.textWrappingMode = TMPro.TextWrappingModes.NoWrap;
+            var art = ProtoUI.CreatePanel("Art", inner.transform, new Vector2(0, 8), new Vector2(cw - 30, 56), new Color(0.05f, 0.04f, 0.10f));
+            art.raycastTarget = false; DrawMini(art.transform, card, 11f);
+            ProtoUI.CreateText("K", inner.transform, $"{CardDef.KindLabel(card.Category)} / {card.Size}マス", 12, new Vector2(0, -62), new Vector2(cw - 16, 18), new Color(0.8f, 0.85f, 1f)).raycastTarget = false;
+            var btn = frame.gameObject.AddComponent<Button>(); btn.targetGraphic = frame;
+            var cd = card;
+            btn.onClick.AddListener(() => { Destroy(_growPicker); _growPicker = null; onPick?.Invoke(cd); });
+        }
+
+        ProtoUI.CreateGoldButton("GPCancel", ov, "やめる", 22, new Vector2(0, -250), new Vector2(240, 60),
+            new Color(0.45f, 0.3f, 0.4f, 0.98f), () => { Destroy(_growPicker); _growPicker = null; });
+    }
+
+    // 装備の持ち替え確認ポップアップ
+    GameObject _equipConfirm;
+    void ShowEquipSwapConfirm(EquipKind newEquip, System.Action onYes)
+    {
+        if (_equipConfirm != null) Destroy(_equipConfirm);
+        var ov = ProtoUI.CreateFullScreen("EquipSwap", _root);
+        _equipConfirm = ov.gameObject;
+        ov.gameObject.AddComponent<Image>().color = new Color(0, 0, 0, 0.7f);
+
+        ProtoUI.CreateFramedPanel("ESBox", ov, Vector2.zero, new Vector2(720, 320),
+            new Color(0.10f, 0.08f, 0.16f, 0.98f), new Color(0.85f, 0.72f, 0.4f, 0.9f));
+        ProtoUI.CreateText("ESMsg", ov, "すでに装備を持っています。\n新しい装備に持ち替えますか？", 26, new Vector2(0, 80), new Vector2(660, 90), Color.white);
+        ProtoUI.CreateText("ESInfo", ov, $"現在：{EquipInfo.Name(_main.Equipped)}　→　{EquipInfo.Name(newEquip)}", 20, new Vector2(0, 0), new Vector2(660, 30), new Color(0.85f, 0.9f, 1f));
+        ProtoUI.CreateGoldButton("ESYes", ov, "持ち替える", 22, new Vector2(-150, -100), new Vector2(240, 64),
+            new Color(0.30f, 0.45f, 0.32f, 0.98f), () => { Destroy(_equipConfirm); _equipConfirm = null; onYes?.Invoke(); });
+        ProtoUI.CreateGoldButton("ESNo", ov, "やめる", 22, new Vector2(150, -100), new Vector2(240, 64),
+            new Color(0.45f, 0.25f, 0.25f, 0.98f), () => { Destroy(_equipConfirm); _equipConfirm = null; });
     }
 
     // 店を出るときのセリフ → マップへ
@@ -855,7 +934,7 @@ public class MapScreen : MonoBehaviour
         var msg = ProtoUI.CreateText("STMsg", rt, "",
             22, new Vector2(0, 210), new Vector2(1040, 100), new Color(0.92f, 1f, 0.92f));
 
-        var healTxt = ProtoUI.CreateText("STHeal", rt, "HPと状態異常を回復した！", 24, new Vector2(0, 120), new Vector2(900, 34), ProtoUI.Gold);
+        var healTxt = ProtoUI.CreateText("STHeal", rt, "HPと状態異常を回復した！", 24, new Vector2(0, 120), new Vector2(900, 34), Color.white);
         healTxt.gameObject.SetActive(false);
 
         var gold = new Color(0.85f, 0.72f, 0.4f, 0.95f);
@@ -863,29 +942,68 @@ public class MapScreen : MonoBehaviour
         // 選択ボタン（金枠付き）。セリフ表示が終わるまで隠す
         var cellBorder = ProtoUI.CreatePanel("STCellBorder", rt, new Vector2(-250, 10), new Vector2(432, 96), gold);
         cellBorder.raycastTarget = false;
-        var cellBtn = ProtoUI.CreateButton("STCell", rt, "盤面マス ＋3", 24, new Vector2(-250, 10), new Vector2(420, 84),
+        var cellBtn = ProtoUI.CreateButton("STCell", rt, "ストックマス ＋3", 24, new Vector2(-250, 10), new Vector2(420, 84),
             new Color(0.24f, 0.5f, 0.32f, 0.98f), null);
         var hpBorder = ProtoUI.CreatePanel("STHpBorder", rt, new Vector2(250, 10), new Vector2(432, 96), gold);
         hpBorder.raycastTarget = false;
         var hpBtn = ProtoUI.CreateButton("STHp", rt, "最大HP ＋10", 24, new Vector2(250, 10), new Vector2(420, 84),
             new Color(0.5f, 0.28f, 0.30f, 0.98f), null);
 
+        // カードを1枚ランダムでもらう（左下）
+        var getBorder = ProtoUI.CreatePanel("STGetBorder", rt, new Vector2(-250, -130), new Vector2(432, 96), gold);
+        getBorder.raycastTarget = false;
+        var getBtn = ProtoUI.CreateButton("STGet", rt, "カードを1枚ランダムで入手", 18, new Vector2(-250, -130), new Vector2(420, 84),
+            new Color(0.32f, 0.5f, 0.4f, 0.98f), null);
+
+        // 所持カードを1枚成長（右下）
+        var growBorder = ProtoUI.CreatePanel("STGrowBorder", rt, new Vector2(250, -130), new Vector2(432, 96), gold);
+        growBorder.raycastTarget = false;
+        var growBtn = ProtoUI.CreateButton("STGrow", rt, "カードを1枚 成長（効果+20%）", 18, new Vector2(250, -130), new Vector2(420, 84),
+            new Color(0.3f, 0.42f, 0.55f, 0.98f), null);
+
+        // 何も受け取らずに立ち去る（金枠なし）
+        var leaveBtn = ProtoUI.CreateButton("STLeave", rt, "何も受け取らず立ち去る", 20, new Vector2(0, -245), new Vector2(280, 60),
+            new Color(0.4f, 0.34f, 0.5f, 0.98f), null);
+
         cellBorder.gameObject.SetActive(false); cellBtn.gameObject.SetActive(false);
         hpBorder.gameObject.SetActive(false); hpBtn.gameObject.SetActive(false);
+        getBorder.gameObject.SetActive(false); getBtn.gameObject.SetActive(false);
+        growBorder.gameObject.SetActive(false); growBtn.gameObject.SetActive(false);
+        leaveBtn.gameObject.SetActive(false);
 
         System.Action<string> choose = (notice) =>
         {
-            cellBtn.interactable = false; hpBtn.interactable = false;
+            cellBtn.interactable = false; hpBtn.interactable = false; getBtn.interactable = false; growBtn.interactable = false; leaveBtn.interactable = false;
             if (_notice != null) _notice.text = notice;
             StartCoroutine(SpiritTreeFarewell(msg, node));
         };
-        cellBtn.onClick.AddListener(() => { _main.AwardCells(3); choose("神聖樹の恵み：盤面マス +3"); });
+        getBtn.onClick.AddListener(() =>
+        {
+            var pool = _main.Db != null ? _main.Db.RandomCards(1, new HashSet<string>(_main.OwnedCardIds), node.col) : null;
+            if (pool == null || pool.Count == 0) { if (_notice != null) _notice.text = "もらえる新しいカードがない…"; return; }
+            var got = pool[0];
+            _main.AddCard(got.id);
+            healTxt.text = $"「{got.displayName}」を手に入れた！"; // 入手したカードを画面に表示
+            choose($"神聖樹の恵み：{got.displayName} を入手！");
+        });
+        cellBtn.onClick.AddListener(() => { _main.AwardCells(3); choose("神聖樹の恵み：ストックマス +3"); });
         hpBtn.onClick.AddListener(() =>
         {
             if (_main.Stats != null) _main.Stats.MaxHP += 10;
             _main.HealFull();
             choose("神聖樹の恵み：最大HP +10");
         });
+        growBtn.onClick.AddListener(() =>
+        {
+            if (_main.OwnedCardIds.Count == 0) { if (_notice != null) _notice.text = "成長できるカードがない…"; return; }
+            ShowGrowPicker(card =>
+            {
+                string nm = card.displayName;
+                _main.GrowCard(card.id);
+                choose($"神聖樹の恵み：{nm}＋ に成長！");
+            });
+        });
+        leaveBtn.onClick.AddListener(() => choose("神聖樹をあとにした。"));
 
         // 導入のセリフを順番に表示 → 終わったらHP回復表示とボタンを出す
         StartCoroutine(Typewriter(msg,
@@ -895,6 +1013,9 @@ public class MapScreen : MonoBehaviour
                 healTxt.gameObject.SetActive(true);
                 cellBorder.gameObject.SetActive(true); cellBtn.gameObject.SetActive(true);
                 hpBorder.gameObject.SetActive(true); hpBtn.gameObject.SetActive(true);
+                getBorder.gameObject.SetActive(true); getBtn.gameObject.SetActive(true);
+                growBorder.gameObject.SetActive(true); growBtn.gameObject.SetActive(true);
+                leaveBtn.gameObject.SetActive(true);
             }));
     }
 
@@ -958,10 +1079,10 @@ public class MapScreen : MonoBehaviour
 
         System.Action refresh = () =>
         {
-            info.text = $"最大HP {_main.Stats.MaxHP}　／　マスストック {_main.CellStock}";
+            info.text = $"最大HP {_main.Stats.MaxHP}　／　ストックマス {_main.CellStock}";
         };
 
-        var payBtn = ProtoUI.CreateGoldButton("Pay", rt, "最大HP -10 → マスストック +1", 22, new Vector2(0, 20), new Vector2(460, 70),
+        var payBtn = ProtoUI.CreateGoldButton("Pay", rt, "最大HP -10 → ストックマス +1", 22, new Vector2(0, 20), new Vector2(460, 70),
             new Color(0.55f, 0.18f, 0.22f, 0.98f), null);
         payBtn.onClick.AddListener(() =>
         {
@@ -970,7 +1091,7 @@ public class MapScreen : MonoBehaviour
             refresh();
         });
 
-        var closeBtn = ProtoUI.CreateGoldButton("CClose", rt, "立ち去る", 22, new Vector2(0, -380), new Vector2(280, 60),
+        var closeBtn = ProtoUI.CreateButton("CClose", rt, "立ち去る", 22, new Vector2(0, -245), new Vector2(280, 60),
             new Color(0.45f, 0.2f, 0.25f, 0.98f), null);
         closeBtn.onClick.AddListener(() =>
         {

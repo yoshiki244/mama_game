@@ -13,13 +13,15 @@ public static class ProtoSave
     public class SaveData
     {
         public int money;
-        public int cellStock;          // マスストック
+        public int cellStock;          // ストックマス
         public int equip;              // 装備（EquipKind）
         public int[] ux;               // 解放マスX
         public int[] uy;               // 解放マスY
         public List<string> owned = new List<string>();
         public List<int> ownedCounts = new List<int>();   // owned と同じ順の在庫数
         public List<PieceSave> pieces = new List<PieceSave>();
+        public List<string> growIds = new List<string>();    // 成長カードid
+        public List<int> growLevels = new List<int>();       // growIdsと同じ順の成長段階
     }
 
     public static void Save(ProtoMain main)
@@ -35,6 +37,7 @@ public static class ProtoSave
             owned = new List<string>(main.OwnedCardIds),
         };
         foreach (var id in d.owned) d.ownedCounts.Add(main.OwnedCount(id));
+        foreach (var kv in main.GrowthLevels) { d.growIds.Add(kv.Key); d.growLevels.Add(kv.Value); }
         for (int i = 0; i < unlocked.Count; i++) { d.ux[i] = unlocked[i].x; d.uy[i] = unlocked[i].y; }
         foreach (var p in main.Panel.Placements)
         {
@@ -61,12 +64,12 @@ public static class ProtoSave
         var d = JsonUtility.FromJson<SaveData>(PlayerPrefs.GetString(Key));
         if (d == null) return false;
 
-        // お金・マスストック・解放マス・所持カードを反映
+        // お金・ストックマス・解放マス・所持カードを反映
         var unlocked = new List<Vector2Int>();
         if (d.ux != null && d.uy != null)
             for (int i = 0; i < d.ux.Length && i < d.uy.Length; i++)
                 unlocked.Add(new Vector2Int(d.ux[i], d.uy[i]));
-        main.ApplyLoaded(d.money, d.cellStock, d.owned, d.ownedCounts, unlocked, d.equip);
+        main.ApplyLoaded(d.money, d.cellStock, d.owned, d.ownedCounts, unlocked, d.equip, d.growIds, d.growLevels);
 
         // 盤面の配置を復元
         if (d.pieces != null)

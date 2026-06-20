@@ -26,14 +26,20 @@ public class ProtoMain : MonoBehaviour
     public EquipKind Equipped { get; private set; } = EquipKind.None; // 装備（1つだけ）
     // 生命のペンダントで最大HP+10%
     public int MaxHP => Stats == null ? 0 : Stats.MaxHP + (Equipped == EquipKind.LifePendant ? Mathf.RoundToInt(Stats.MaxHP * 0.10f) : 0);
-    public void SetEquip(EquipKind e) { Equipped = e; if (CurrentHP > MaxHP) CurrentHP = MaxHP; }
-    // ショップで装備購入（1つだけ所持・所持金が足りれば）
-    public bool BuyEquip(EquipKind e)
+    public void SetEquip(EquipKind e)
     {
-        if (e == EquipKind.None || Equipped != EquipKind.None || Money < EquipInfo.ShopPrice) return false;
-        Money -= EquipInfo.ShopPrice;
+        int before = MaxHP;
+        Equipped = e;
+        int after = MaxHP;
+        if (after > before) CurrentHP += after - before; // 最大HP増加分はそのまま回復
+        CurrentHP = Mathf.Clamp(CurrentHP, 0, MaxHP);
+    }
+    // 代金を払って装備（持ち替え＝既存があれば上書き）。price=0で無料。
+    public void SpendAndEquip(EquipKind e, int price)
+    {
+        if (e == EquipKind.None) return;
+        Money = Mathf.Max(0, Money - Mathf.Max(0, price));
         SetEquip(e);
-        return true;
     }
     public int Wave { get; private set; } = 1;
     public int CurrentDepth { get; set; } = 1; // 現在地の深度（マップの列番号）。報酬/ショップの抽選に使う
@@ -88,16 +94,24 @@ public class ProtoMain : MonoBehaviour
     }
 
     // ---- 経済 ----
-    public void AddMoney(int amount) => Money = Mathf.Max(0, Money + amount);
+    public void AddMoney(int amount)
+    {
+        if (amount > 0 && Equipped == EquipKind.GaneshaPendant) amount *= 2; // ガネーシャ：入手コイン2倍
+        Money = Mathf.Max(0, Money + amount);
+    }
 
     // ---- HP（戦闘間で継続） ----
     public void SetCurrentHP(int hp) => CurrentHP = Mathf.Clamp(hp, 0, Stats != null ? MaxHP : hp);
     public void HealFull() { if (Stats != null) CurrentHP = MaxHP; }
 
     // ---- 盤面マス入手・解放 ----
-    public void AwardCells(int n) { if (n > 0) CellStock += n; }
+    public void AwardCells(int n)
+    {
+        if (n > 0 && Equipped == EquipKind.CellPendant) n *= 2; // マス増強：入手ストックマス2倍
+        if (n > 0) CellStock += n;
+    }
 
-    // 契約：最大HPを10払って マスストック+1（最大HPは最低10まで）
+    // 契約：最大HPを10払って ストックマス+1（最大HPは最低10まで）
     public bool ContractTradeHpForCell()
     {
         if (Stats == null || Stats.MaxHP - 10 < 10) return false;
@@ -107,7 +121,7 @@ public class ProtoMain : MonoBehaviour
         return true;
     }
 
-    // ビルド画面でロック中のマスを解放（マスストックを1消費・最大100まで）
+    // ビルド画面でロック中のマスを解放（ストックマスを1消費・最大100まで）
     public bool UnlockCell(int x, int y)
     {
         if (CellStock <= 0) return false;
@@ -117,7 +131,7 @@ public class ProtoMain : MonoBehaviour
         return true;
     }
 
-    // 配置セッション開始時の状態(keep)まで戻し、その間に解放したマスをマスストックへ払い戻す
+    // 配置セッション開始時の状態(keep)まで戻し、その間に解放したマスをストックマスへ払い戻す
     public void ResetToBaseline(List<Vector2Int> keep)
     {
         int before = Panel.UnlockedCount();
@@ -138,6 +152,50 @@ public class ProtoMain : MonoBehaviour
     }
 
     public void SetWave(int wave) => Wave = wave;
+
+    // ---- カード成長（効果+20%・名前に＋） ----
+    public Dictionary<string, int> GrowthLevels { get; private set; } = new Dictionary<string, int>();
+
+    // 1段階成長させる（GrowthLevelsは触らない内部処理）
+    void DoGrow(string id)
+    {
+        var card = Db != null ? Db.FindCard(id) : null;
+        if (card == null) return;
+        var clone = ScriptableObject.Instantiate(card);
+        clone.id = id;
+        clone.displayName = card.displayName + "＋";
+        clone.power = Mathf.RoundToInt(card.power * 1.2f);          // 攻撃ダメージ×1.2
+        if (card.effects != null)
+        {
+            clone.effects = new CardEffect[card.effects.Length];
+            for (int i = 0; i < card.effects.Length; i++)
+            {
+                var e = card.effects[i];
+                clone.effects[i] = new CardEffect { type = e.type, amount = Mathf.RoundToInt(e.amount * 1.2f), duration = e.duration }; // 回復・軽減％なども×1.2
+            }
+        }
+        Db.OverrideCard(id, clone);
+        // 既存の盤面配置の参照も差し替え
+        if (Panel != null)
+            foreach (var p in Panel.Placements)
+                if (p.card != null && p.card.id == id) p.card = clone;
+    }
+
+    // 所持カードを1枚成長（プレイヤー操作）。成功でtrue
+    public bool GrowCard(string id)
+    {
+        if (Db == null || Db.FindCard(id) == null) return false;
+        DoGrow(id);
+        GrowthLevels[id] = (GrowthLevels.TryGetValue(id, out var l) ? l : 0) + 1;
+        return true;
+    }
+
+    // ロード時に成長段階を再適用
+    public void ReapplyGrowth()
+    {
+        foreach (var kv in GrowthLevels)
+            for (int i = 0; i < kv.Value; i++) DoGrow(kv.Key);
+    }
 
     // ---- 画面 ----
     BuildScreen _build;
@@ -167,6 +225,7 @@ public class ProtoMain : MonoBehaviour
         _bgImg.raycastTarget = false;
 
         // プレイヤー初期化
+        Db?.ClearOverrides(); GrowthLevels.Clear();
         Stats = new PlayerStats(Cfg);
         Equipped = EquipKind.None;
         CurrentHP = MaxHP;
@@ -214,11 +273,18 @@ public class ProtoMain : MonoBehaviour
     }
 
     // セーブから状態を流し込む（ProtoSaveが呼ぶ）
-    public void ApplyLoaded(int money, int cellStock, List<string> owned, List<int> counts, List<Vector2Int> unlocked, int equip = 0)
+    public void ApplyLoaded(int money, int cellStock, List<string> owned, List<int> counts, List<Vector2Int> unlocked, int equip = 0,
+        List<string> growIds = null, List<int> growLevels = null)
     {
         Money = Mathf.Max(0, money);
         CellStock = Mathf.Max(0, cellStock);
         Equipped = System.Enum.IsDefined(typeof(EquipKind), equip) ? (EquipKind)equip : EquipKind.None;
+        // カード成長を復元（盤面配置の復元より前に適用）
+        Db?.ClearOverrides(); GrowthLevels.Clear();
+        if (growIds != null && growLevels != null)
+            for (int i = 0; i < growIds.Count && i < growLevels.Count; i++)
+                if (!string.IsNullOrEmpty(growIds[i]) && growLevels[i] > 0) GrowthLevels[growIds[i]] = growLevels[i];
+        ReapplyGrowth();
         if (unlocked != null && unlocked.Count > 0)
             foreach (var c in unlocked) Panel.Unlock(c.x, c.y);   // 解放マスを復元
         if (owned != null && owned.Count > 0)
@@ -269,6 +335,7 @@ public class ProtoMain : MonoBehaviour
     // 最初から（すべてリセット：ステータス・Wave・お金・盤面・拡張・所持カード）
     public void RestartRun()
     {
+        Db?.ClearOverrides(); GrowthLevels.Clear();   // 成長もリセット
         Stats = new PlayerStats(Cfg);
         Equipped = EquipKind.None;   // 装備もリセット
         CurrentHP = MaxHP;

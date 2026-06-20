@@ -54,7 +54,7 @@ public class BuildScreen : MonoBehaviour
     int _sortTab;                                         // 0=絞り込み 1=並び替え
     System.Action _sortRebuild;
 
-    bool _addMode;                 // マス配置モード（マスストックを解放）
+    bool _addMode;                 // マス配置モード（ストックマスを解放）
     TextMeshProUGUI _addBtnText;
     TextMeshProUGUI _stockText;
     Image _addBtnImg;
@@ -99,7 +99,7 @@ public class BuildScreen : MonoBehaviour
         ProtoUI.StyleTitle(_title, ProtoUI.Gold, 6f);
         ProtoUI.CreatePanel("TitleLine", _root, new Vector2(0, 384), new Vector2(620, 3), new Color(0.85f, 0.72f, 0.4f, 0.9f)).raycastTarget = false;
 
-        // マス配置モード切替（マスストックをロック中のセルへ配置して盤面を広げる）
+        // マス配置モード切替（ストックマスをロック中のセルへ配置して盤面を広げる）
         var addBtn = ProtoUI.CreateGoldButton("AddCellBtn", _root, "マスを配置する", 22, new Vector2(-330, 318), new Vector2(340, 46),
             AddBtnOff, OnAddButton);
         _addBtnText = addBtn.GetComponentInChildren<TextMeshProUGUI>();
@@ -113,10 +113,10 @@ public class BuildScreen : MonoBehaviour
 
         // 盤面の左横に情報枠を縦3つ（間隔をあけて配置）
         const float bx = -665f;
-        // マスストック（上枠＝盤面上端 y263）
+        // ストックマス（上枠＝盤面上端 y263）
         ProtoUI.CreateFramedPanel("StockBox", _root, new Vector2(bx, 198), new Vector2(160, 130),
             new Color(0.06f, 0.09f, 0.07f, 0.96f), new Color(0.5f, 0.8f, 0.45f, 0.85f));
-        ProtoUI.CreateText("StockLabel", _root, "マスストック", 16, new Vector2(bx, 236), new Vector2(160, 24), new Color(0.7f, 1f, 0.7f));
+        ProtoUI.CreateText("StockLabel", _root, "ストックマス", 16, new Vector2(bx, 236), new Vector2(160, 24), new Color(0.7f, 1f, 0.7f));
         _stockText = ProtoUI.CreateText("StockVal", _root, "0", 40, new Vector2(bx, 182), new Vector2(160, 52), Color.white);
         _stockText.fontStyle = FontStyles.Bold;
         // 盤面マス数（中央）
@@ -486,7 +486,7 @@ public class BuildScreen : MonoBehaviour
     {
         if (!_addMode)
         {
-            if (_main.CellStock <= 0) { ShowNotice("マスストックが0のため、配置できません！"); return; } // ストック無しは入れない
+            if (_main.CellStock <= 0) { ShowNotice("ストックマスが0のため、配置できません！"); return; } // ストック無しは入れない
             SetAddMode(true);   // 配置開始
         }
         else ShowPlaceConfirm();           // 配置をやめる→確認
@@ -529,13 +529,13 @@ public class BuildScreen : MonoBehaviour
 
     void OnCellLeftClick(int x, int y)
     {
-        // マス追加モード：未解放マスをクリックで解放（マスストックを1消費）
+        // マス追加モード：未解放マスをクリックで解放（ストックマスを1消費）
         if (_addMode)
         {
             if (!P.IsUnlocked(x, y))
             {
                 if (_main.UnlockCell(x, y)) RefreshBoard();
-                else ShowNotice(_main.CellStock <= 0 ? "マスストックが0のため、配置できません！" : "これ以上拡張できません(最大100)");
+                else ShowNotice(_main.CellStock <= 0 ? "ストックマスが0のため、配置できません！" : "これ以上拡張できません(最大100)");
             }
             return;
         }

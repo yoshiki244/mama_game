@@ -173,7 +173,7 @@ public class MenuScreen : MonoBehaviour
         {
             ("HP",        $"{_main.MaxHP}"),
             ("盤面マス",   $"{_main.BoardCells} / {ProtoMain.MaxCells}"),
-            ("マスストック", $"{_main.CellStock}"),
+            ("ストックマス", $"{_main.CellStock}"),
             ("最大マナ",   $"{_main.MaxMana}"),
             ("お金",       $"{_main.Money}"),
             ("所持カード", $"{_main.OwnedCardIds.Count}種"),
@@ -189,8 +189,10 @@ public class MenuScreen : MonoBehaviour
             box.raycastTarget = false;
             var lab = ProtoUI.CreateText("L", box.transform, rows[i].Item1, 22, new Vector2(-110, 0), new Vector2(170, rowH - 8), new Color(0.78f, 0.85f, 1f));
             lab.alignment = TextAlignmentOptions.Left;
-            var val = ProtoUI.CreateText("V", box.transform, rows[i].Item2, 24, new Vector2(95, 0), new Vector2(180, rowH - 8), Color.white);
+            var val = ProtoUI.CreateText("V", box.transform, rows[i].Item2, 24, new Vector2(80, 0), new Vector2(210, rowH - 8), Color.white);
             val.alignment = TextAlignmentOptions.Right; val.fontStyle = FontStyles.Bold;
+            val.textWrappingMode = TMPro.TextWrappingModes.NoWrap;
+            val.enableAutoSizing = true; val.fontSizeMin = 13; val.fontSizeMax = 24;
         }
     }
 

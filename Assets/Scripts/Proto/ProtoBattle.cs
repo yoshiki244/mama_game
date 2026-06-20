@@ -120,6 +120,8 @@ public class ProtoBattle : MonoBehaviour
         _effWave = _main.Wave + enemy.levelOffset;
         _enemyMaxHP = enemy.baseHP + 40 * (_effWave - 1);
         _enemyHP = _enemyMaxHP;
+        // グラヴィティペンダント：戦闘開始時に敵HP-5%
+        if (_main.Equipped == EquipKind.GravityPendant) _enemyHP = Mathf.Max(1, Mathf.RoundToInt(_enemyMaxHP * 0.95f));
         _enemyName.text = $"{enemy.enemyName} Lv{_effWave}";
 
         _slimeImg.sprite = enemy.BattleSprite();
@@ -153,7 +155,7 @@ public class ProtoBattle : MonoBehaviour
     void DealHand()
     {
         _hand.Clear();
-        const int n = 5;   // 初期手札5枚
+        int n = _main.Equipped == EquipKind.HandPendant ? 6 : 5;   // 手札枚数（手札増強で6枚）
         for (int i = 0; i < n; i++)
         {
             CardDef c = _main.Panel.PickWeighted(HpRatio());   // HPが低いほど大型（強）カードが出やすい
@@ -681,12 +683,15 @@ public class ProtoBattle : MonoBehaviour
 
     IEnumerator EnemyTurn()
     {
+        int ailMul = _main.Equipped == EquipKind.AilmentPendant ? 2 : 1; // 状態異常のペンダント：状態異常ダメージ2倍
+
         // 毒の処理
         if (_poison > 0)
         {
-            _message.text = $"毒！敵に {_poison} ダメージ";
-            yield return Impact(_slimeRt, _slimeImg, null, _poison, 1f, 0);
-            _enemyHP = Mathf.Max(0, _enemyHP - _poison);
+            int pdmg = _poison * ailMul;
+            _message.text = $"毒！敵に {pdmg} ダメージ";
+            yield return Impact(_slimeRt, _slimeImg, null, pdmg, 1f, 0);
+            _enemyHP = Mathf.Max(0, _enemyHP - pdmg);
             RefreshAll();
             yield return new WaitForSeconds(0.5f);
             if (_enemyHP <= 0) { yield return Victory(); yield break; }
@@ -695,9 +700,10 @@ public class ProtoBattle : MonoBehaviour
         // やけどの処理
         if (_burn > 0)
         {
-            _message.text = $"やけど！敵に {_burn} ダメージ";
-            yield return Impact(_slimeRt, _slimeImg, null, _burn, 1f, 0);
-            _enemyHP = Mathf.Max(0, _enemyHP - _burn);
+            int bdmg = _burn * ailMul;
+            _message.text = $"やけど！敵に {bdmg} ダメージ";
+            yield return Impact(_slimeRt, _slimeImg, null, bdmg, 1f, 0);
+            _enemyHP = Mathf.Max(0, _enemyHP - bdmg);
             RefreshAll();
             yield return new WaitForSeconds(0.5f);
             if (_enemyHP <= 0) { yield return Victory(); yield break; }
