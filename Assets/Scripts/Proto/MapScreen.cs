@@ -1030,10 +1030,12 @@ public class MapScreen : MonoBehaviour
         float shown = 0f;
         while (shown < total)
         {
+            if (t == null) yield break; // 破棄済みなら中断
             shown += cps * Time.deltaTime;
             t.maxVisibleCharacters = Mathf.Min(total, Mathf.FloorToInt(shown));
             yield return null;
         }
+        if (t == null) yield break;
         t.maxVisibleCharacters = total;
         onDone?.Invoke();
     }

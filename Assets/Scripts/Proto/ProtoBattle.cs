@@ -345,8 +345,8 @@ public class ProtoBattle : MonoBehaviour
             var frame = (Image)btn.targetGraphic;
             var hover = btn.gameObject.AddComponent<CardHover>();
             hover.Setup(crt, pos, rot, frame, frame.color,
-                onEnter: () => { if (_inputLocked) return; ShowCardDetail(card); RenderBoard(card, idx); }, // 攻撃中は詳細を出さない
-                onExit: () => { HideCardDetail(); RenderBoard(null, -1); },
+                onEnter: () => { if (_inputLocked) return; RenderBoard(card, idx); }, // カード詳細は表示しない
+                onExit: () => { RenderBoard(null, -1); },
                 onClick: () => { if (affordable) TryPlayCard(idx); });
 
             made.Add(crt);
