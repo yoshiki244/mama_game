@@ -5,6 +5,10 @@ using System.Collections.Generic;
 // 1マス＝出現率の分子。空白マスは通常攻撃に変換される。出現率 = ピースのマス数 / 盤面マス数。
 public class PanelModel
 {
+    // カード出現の底上げ係数。1ピースの重み = CardWeightScale / マス数（空きマス＝通常攻撃は1票）。
+    // 大きくするほどカードが出やすく、通常攻撃が減る。（マス数が大きいほど出にくい関係は維持）
+    public const float CardWeightScale = 10f;
+
     public int W { get; private set; }
     public int H { get; private set; }
 
@@ -239,5 +243,31 @@ public class PanelModel
             for (int y = 0; y < H; y++)
                 if (_unlocked[x, y]) deck.Add(_grid[x, y]?.card);
         return deck;
+    }
+
+    // 出現重み付きエントリ。空きマス=1票（通常攻撃）。
+    // 配置カードの1ピース重み = CardWeightScale × マス数^k（k = 1 - 2×HP割合）。
+    //   HP満タン(1.0)→k=-1：1/マス数（小型有利）／ HP半分→k=0：フラット ／ 瀕死(0)→k=+1：マス数比例（大型＝強カード有利）
+    public List<(CardDef card, float weight)> WeightedEntries(float hpRatio = 1f)
+    {
+        float k = 1f - 2f * Mathf.Clamp01(hpRatio);
+        var list = new List<(CardDef, float)>();
+        foreach (var p in Placements)
+            if (p.cells.Count > 0) list.Add((p.card, CardWeightScale * Mathf.Pow(p.cells.Count, k)));
+        int empty = UnlockedCount() - OccupiedCount();
+        for (int i = 0; i < empty; i++) list.Add((null, 1f)); // 空きマス＝通常攻撃
+        return list;
+    }
+
+    // 重みに従ってカードを1枚抽選（null＝通常攻撃）。母集団が空ならnull。
+    public CardDef PickWeighted(float hpRatio = 1f)
+    {
+        var entries = WeightedEntries(hpRatio);
+        float total = 0f;
+        foreach (var e in entries) total += e.weight;
+        if (total <= 0f) return null;
+        float r = Random.value * total;
+        foreach (var e in entries) { r -= e.weight; if (r <= 0f) return e.card; }
+        return entries[entries.Count - 1].card;
     }
 }

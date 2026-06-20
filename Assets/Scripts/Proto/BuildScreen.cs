@@ -774,19 +774,29 @@ public class BuildScreen : MonoBehaviour
         if (_manaInfoText != null) _manaInfoText.text = $"{_main.MaxMana}";
         if (_stockText != null) _stockText.text = $"{_main.CellStock}";
 
-        // 各カードは確率の高い順に並べ、通常攻撃（空きマス分）は常に一番下
-        var rows = new List<(int count, string text)>();
+        // 出現重み：配置カードは1ピースにつき CardWeightScale×マス数^k（k=1-2×HP割合）、空きマス＝通常攻撃は1票
+        // ※HPが低いほど大型（強）カードが出やすくなる。表示は現在HPでの確率。
+        float hpRatio = _main.MaxHP > 0 ? Mathf.Clamp01(_main.CurrentHP / (float)_main.MaxHP) : 1f;
+        float kExp = 1f - 2f * hpRatio;
+        float emptyW = total - occupied;                 // 通常攻撃ぶん
+        float CardWeight(CardDef c, int cells) => c.Size > 0 ? (cells / c.Size) * (PanelModel.CardWeightScale * Mathf.Pow(c.Size, kExp)) : 0f;
+        float sumW = emptyW;
+        foreach (var kv in counts) sumW += CardWeight(kv.Key, kv.Value);
+
+        var parts = new List<(float w, string text)>();
         foreach (var kv in counts)
         {
+            float w = CardWeight(kv.Key, kv.Value);
             string hex = ColorUtility.ToHtmlStringRGB(kv.Key.CategoryColor);
-            rows.Add((kv.Value, $"<color=#{hex}>{kv.Key.displayName}: {Pct(kv.Value, total)}%（マナ{kv.Key.ManaCost}）</color>"));
+            parts.Add((w, $"<color=#{hex}>{kv.Key.displayName}: {WPct(w, sumW)}%（マナ{kv.Key.ManaCost}）</color>"));
         }
-        var parts = rows.OrderByDescending(r => r.count).Select(r => r.text).ToList();
-        parts.Add($"通常攻撃: {Pct(total - occupied, total)}%");
-        _info.text = string.Join("\n", parts);
+        var ordered = parts.OrderByDescending(r => r.w).Select(r => r.text).ToList();
+        ordered.Add($"通常攻撃: {WPct(emptyW, sumW)}%");
+        _info.text = string.Join("\n", ordered);
     }
 
     static int Pct(int n, int total) => total > 0 ? Mathf.RoundToInt(100f * n / total) : 0;
+    static int WPct(float w, float total) => total > 0f ? Mathf.RoundToInt(100f * w / total) : 0;
 }
 
 // カーソルを合わせている間だけ target を表示するツールチップ用ハンドラ

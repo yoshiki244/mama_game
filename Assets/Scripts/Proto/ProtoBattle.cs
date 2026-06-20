@@ -54,6 +54,8 @@ public class ProtoBattle : MonoBehaviour
     int _protectPct;     // 次の被弾を%軽減（1回）
     int _weakPct, _weakTurns; // 敵の攻撃力低下
     int _poison;         // 敵への毒
+    int _burn;           // 敵のやけど（毎ターン amount ダメージ）
+    TextMeshProUGUI _enemyStatusText; // 敵HPゲージ横の状態異常表示
     bool _primeBlink;    // 次のアタックで点滅
 
     AudioSource _sfx;
@@ -101,9 +103,18 @@ public class ProtoBattle : MonoBehaviour
         var oldGo = _root.Find("GameOver");
         if (oldGo != null) Destroy(oldGo.gameObject);
 
-        _playerMaxHP = _main.Stats.MaxHP;
+        // 前回の戦闘でHide()のStopAllCoroutinesにより破棄されず残った演出FXを掃除
+        for (int i = _root.childCount - 1; i >= 0; i--)
+        {
+            string nm = _root.GetChild(i).name;
+            if (nm == "DamagePopup" || nm == "Shock" || nm == "ScreenFlash"
+                || nm == "Spark" || nm == "Ring" || nm == "Projectile" || nm == "Slash")
+                Destroy(_root.GetChild(i).gameObject);
+        }
+
+        _playerMaxHP = _main.MaxHP;
         _playerHP = Mathf.Clamp(_main.CurrentHP, 1, _playerMaxHP); // 前回の戦闘後HPを継続
-        _block = 0; _strength = 0; _protectPct = 0; _weakPct = 0; _weakTurns = 0; _poison = 0;
+        _block = 0; _strength = 0; _protectPct = 0; _weakPct = 0; _weakTurns = 0; _poison = 0; _burn = 0;
         _manaBoostNext = 0; _primeBlink = false;
 
         _effWave = _main.Wave + enemy.levelOffset;
@@ -137,14 +148,15 @@ public class ProtoBattle : MonoBehaviour
         _message.text = firstTurn ? "戦闘開始！カードを選ぼう！" : "あなたのターン！";
     }
 
+    float HpRatio() => _playerMaxHP > 0 ? Mathf.Clamp01(_playerHP / (float)_playerMaxHP) : 1f;
+
     void DealHand()
     {
         _hand.Clear();
-        var deck = _main.Panel.BuildDeck();
         const int n = 5;   // 初期手札5枚
         for (int i = 0; i < n; i++)
         {
-            CardDef c = deck.Count > 0 ? deck[Random.Range(0, deck.Count)] : null;
+            CardDef c = _main.Panel.PickWeighted(HpRatio());   // HPが低いほど大型（強）カードが出やすい
             _hand.Add(c ?? _main.Db.normalAttack);
         }
     }
@@ -203,6 +215,10 @@ public class ProtoBattle : MonoBehaviour
             new Color(0.08f, 0.07f, 0.11f, 0.92f), new Color(0.95f, 0.27f, 0.27f), out _enemyFill);
         _enemyHPText = ProtoUI.CreateText("EHP", _root, "", 16, new Vector2(560, 382), new Vector2(300, 24));
         _enemyHPText.fontStyle = FontStyles.Bold;
+        // 敵HPゲージの左横に状態異常（やけど等）を表示（ゲージに重ならない）
+        _enemyStatusText = ProtoUI.CreateText("EStatus", _root, "", 18, new Vector2(300, 382), new Vector2(180, 26),
+            new Color(1f, 0.55f, 0.3f), TextAlignmentOptions.Right);
+        _enemyStatusText.fontStyle = FontStyles.Bold;
 
         // キャラ
         _slimeImg = CreateCharacterSprite("EnemySprite", ProtoPixelArt.Dragon(), new Vector2(400, 70), new Vector2(540, 355));
@@ -285,6 +301,7 @@ public class ProtoBattle : MonoBehaviour
         _pHpText.text = $"HP {_playerHP}/{_playerMaxHP}";
         ProtoUI.SetGauge(_enemyFill, _enemyHP / (float)_enemyMaxHP, GaugeWidth);
         _enemyHPText.text = $"{_enemyHP}/{_enemyMaxHP}";
+        if (_enemyStatusText != null) _enemyStatusText.text = _burn > 0 ? "やけど" : "";
         RefreshMana();
 
         var st = new List<string>();
@@ -632,10 +649,9 @@ public class ProtoBattle : MonoBehaviour
             switch (e.type)
             {
                 case CardEffectType.Draw:
-                    var deck = _main.Panel.BuildDeck();
                     for (int i = 0; i < e.amount; i++)
                     {
-                        var drawn = (deck.Count > 0 ? deck[Random.Range(0, deck.Count)] : null) ?? _main.Db.normalAttack;
+                        var drawn = _main.Panel.PickWeighted(HpRatio()) ?? _main.Db.normalAttack; // HP連動の重み抽選
                         _hand.Add(drawn);
                         _pendingDrawn.Add(drawn);
                     }
@@ -648,6 +664,7 @@ public class ProtoBattle : MonoBehaviour
                 case CardEffectType.HealPercent: _playerHP = Mathf.Min(_playerMaxHP, _playerHP + Mathf.RoundToInt(_playerMaxHP * e.amount / 100f)); break;
                 case CardEffectType.Weak: _weakPct = e.amount; _weakTurns = Mathf.Max(_weakTurns, e.duration); break;
                 case CardEffectType.Poison: _poison += e.amount; break;
+                case CardEffectType.Burn: _burn += e.amount; break;
                 case CardEffectType.PrimeNextAttackBlink: _primeBlink = true; break;
                 case CardEffectType.BlinkOnUse: break; // ResolveAttackで処理済み
             }
@@ -670,6 +687,17 @@ public class ProtoBattle : MonoBehaviour
             _message.text = $"毒！敵に {_poison} ダメージ";
             yield return Impact(_slimeRt, _slimeImg, null, _poison, 1f, 0);
             _enemyHP = Mathf.Max(0, _enemyHP - _poison);
+            RefreshAll();
+            yield return new WaitForSeconds(0.5f);
+            if (_enemyHP <= 0) { yield return Victory(); yield break; }
+        }
+
+        // やけどの処理
+        if (_burn > 0)
+        {
+            _message.text = $"やけど！敵に {_burn} ダメージ";
+            yield return Impact(_slimeRt, _slimeImg, null, _burn, 1f, 0);
+            _enemyHP = Mathf.Max(0, _enemyHP - _burn);
             RefreshAll();
             yield return new WaitForSeconds(0.5f);
             if (_enemyHP <= 0) { yield return Victory(); yield break; }
@@ -739,6 +767,7 @@ public class ProtoBattle : MonoBehaviour
             int raw = Mathf.RoundToInt(Random.Range(_enemy.minAtk, _enemy.maxAtk + 1) * atk.mult) + 3 * (_effWave - 1);
             if (_weakTurns > 0) raw = Mathf.RoundToInt(raw * (1f - _weakPct / 100f));
             int dmg = Mathf.Max(1, raw);
+            if (_main.Equipped == EquipKind.GuardPendant) dmg = Mathf.Max(1, Mathf.RoundToInt(dmg * 0.95f)); // 加護のペンダント
             if (_protectPct > 0) { dmg = Mathf.Max(0, Mathf.RoundToInt(dmg * (1f - _protectPct / 100f))); _protectPct = 0; }
             if (_block > 0) { int absorb = Mathf.Min(_block, dmg); _block -= absorb; dmg -= absorb; }
 
@@ -849,6 +878,24 @@ public class ProtoBattle : MonoBehaviour
 
     // ==================== 点滅順番当て（効果発動時のみ） ====================
 
+    static Sprite _circleSprite;
+    static Sprite CircleSprite()
+    {
+        if (_circleSprite != null) return _circleSprite;
+        const int N = 64; float r = N / 2f - 1f, c = (N - 1) / 2f;
+        var tex = new Texture2D(N, N, TextureFormat.RGBA32, false);
+        for (int y = 0; y < N; y++)
+            for (int x = 0; x < N; x++)
+            {
+                float d = Mathf.Sqrt((x - c) * (x - c) + (y - c) * (y - c));
+                float a = Mathf.Clamp01(r - d + 0.5f); // 円の縁を少しなめらかに
+                tex.SetPixel(x, y, new Color(1f, 1f, 1f, a));
+            }
+        tex.Apply();
+        _circleSprite = Sprite.Create(tex, new Rect(0, 0, N, N), new Vector2(0.5f, 0.5f), 100f);
+        return _circleSprite;
+    }
+
     float _challengeMultiplier;
 
     IEnumerator RunChallenge(CardDef card)
@@ -870,6 +917,7 @@ public class ProtoBattle : MonoBehaviour
         float ox = -(maxX - minX) * (cs + gap) / 2f, oy = (maxY - minY) * (cs + gap) / 2f;
 
         var taps = new List<int>();
+        var tapLabels = new List<TextMeshProUGUI>();
         bool inputOpen = false;
 
         for (int i = 0; i < shape.Length; i++)
@@ -879,10 +927,27 @@ public class ProtoBattle : MonoBehaviour
             var img = ProtoUI.CreatePanel("PCell", _pieceArea,
                 new Vector2(ox + (v.x - minX) * (cs + gap), oy - (v.y - minY) * (cs + gap)), new Vector2(cs, cs), bc);
             cells.Add(img); baseColors.Add(bc);
+            // タップ順を表示する丸数字（既定は非表示）
+            float dia = cs * 0.66f;
+            var circ = ProtoUI.CreateRect("PNumCirc", img.transform);
+            circ.anchoredPosition = Vector2.zero; circ.sizeDelta = new Vector2(dia, dia);
+            var circImg = circ.gameObject.AddComponent<Image>();
+            circImg.sprite = CircleSprite(); circImg.color = new Color(0.10f, 0.10f, 0.16f, 0.96f); circImg.raycastTarget = false;
+            var num = ProtoUI.CreateText("PNum", circ, "", 24, Vector2.zero, new Vector2(dia, dia), Color.white);
+            num.fontStyle = FontStyles.Bold; num.raycastTarget = false;
+            circ.gameObject.SetActive(false);
+            tapLabels.Add(num);
             int idx = i;
             var btn = img.gameObject.AddComponent<Button>();
             btn.targetGraphic = img;
-            btn.onClick.AddListener(() => { if (inputOpen) { taps.Add(idx); StartCoroutine(TapFeedback(img, baseColors[idx])); } });
+            btn.onClick.AddListener(() =>
+            {
+                if (!inputOpen) return;
+                taps.Add(idx);
+                tapLabels[idx].text = taps.Count.ToString(); // 押した順番
+                tapLabels[idx].transform.parent.gameObject.SetActive(true); // 丸を表示
+                StartCoroutine(TapFeedback(img, baseColors[idx]));
+            });
         }
 
         yield return new WaitForSeconds(0.6f);
@@ -954,8 +1019,10 @@ public class ProtoBattle : MonoBehaviour
 
     IEnumerator TapFeedback(Image img, Color baseCol)
     {
+        if (img == null) yield break;
         img.color = Color.Lerp(baseCol, Color.white, 0.7f);
         yield return new WaitForSeconds(0.15f);
+        if (img == null) yield break; // 破棄済みなら何もしない
         img.color = baseCol;
     }
 

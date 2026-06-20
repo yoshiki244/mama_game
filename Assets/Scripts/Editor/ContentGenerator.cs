@@ -40,8 +40,13 @@ public static class ContentGenerator
         // ---- カード定義 ----
         var cards = new List<CardDef>();
         // アタック（効果なし、size5〜19）
-        cards.Add(MakeAttack("slash",     "スラッシュ",     5,  C(0.9f,0.95f,1f)));
-        cards.Add(MakeAttack("fireball",  "ファイアボール", 6,  C(1f,0.55f,0.35f)));
+        var slash = MakeAttack("slash", "スラッシュ", 5, C(0.9f,0.95f,1f));
+        slash.shapeRows = new[]{ "XXX", "..X", "..X" }; slash.manaCostOverride = 3; EditorUtility.SetDirty(slash);
+        cards.Add(slash);
+        var fireball = MakeAttack("fireball", "ファイアボール", 6, C(1f,0.55f,0.35f));
+        fireball.manaCostOverride = 3; fireball.description = "敵をやけど状態にする（毎ターン5ダメージ）。";
+        fireball.effects = new[]{ Eff(CardEffectType.Burn, 5, 0) }; EditorUtility.SetDirty(fireball);
+        cards.Add(fireball);
         cards.Add(MakeAttack("aquaedge",  "アクアエッジ",   7,  C(0.4f,0.8f,1f)));
         cards.Add(MakeAttack("thunder",   "サンダーボルト", 8,  C(1f,0.9f,0.4f)));
         cards.Add(MakeAttack("sunshine",  "サンシャイン",   9,  C(1f,0.85f,0.55f)));
@@ -66,23 +71,29 @@ public static class ContentGenerator
             Eff(CardEffectType.Draw, 1, 0)));
         cards.Add(MakeSkill("twodraw",   "ツードロー",     11, C(0.6f,0.9f,0.6f), "カードを2枚ドローする。", 5,
             Eff(CardEffectType.Draw, 2, 0)));
-        cards.Add(MakeSkill("blink",     "点滅",           3,  C(1f,0.85f,0.4f), "次に使うアタックで点滅ゲームを実施する。", 0,
-            Eff(CardEffectType.PrimeNextAttackBlink, 0, 0)));
+        var blink = MakeSkill("blink", "点滅", 3, C(1f,0.85f,0.4f), "次に使うアタックで点滅ゲームを実施する。", 0,
+            Eff(CardEffectType.PrimeNextAttackBlink, 0, 0));
+        blink.shapeRows = new[]{ "X", "X", "X" }; EditorUtility.SetDirty(blink);
+        cards.Add(blink);
         cards.Add(MakeSkill("protect",   "プロテクト",     7,  C(0.6f,0.8f,1f), "次の相手の攻撃ダメージを50%軽減する。", 2,
             Eff(CardEffectType.Protect, 50, 1)));
         cards.Add(MakeSkill("manaboost", "マナブースト",   3,  C(0.8f,0.7f,1f), "次の自分のターンに使えるマナを+1する。", 3,
             Eff(CardEffectType.ManaBoostNextTurn, 1, 0)));
         // StS系5種
-        cards.Add(MakeSkill("defend",    "ガード",         5,  C(0.55f,0.75f,1f), "ブロックを8得る（被ダメージを肩代わり）。", 0,
-            Eff(CardEffectType.Block, 8, 0)));
+        var defend = MakeSkill("defend", "ガード", 5, C(0.55f,0.75f,1f), "ダメージを軽減する（25%）。", 0,
+            Eff(CardEffectType.Protect, 25, 1));
+        defend.shapeRows = new[]{ "X..", "XXX", "X.." }; defend.manaCostOverride = 3; EditorUtility.SetDirty(defend);
+        cards.Add(defend);
         cards.Add(MakeSkill("weak",      "弱体化",         5,  C(0.7f,0.5f,0.85f), "敵の攻撃力を25%下げる（2ターン）。", 3,
             Eff(CardEffectType.Weak, 25, 2)));
         cards.Add(MakeSkill("poison",    "毒",             6,  C(0.5f,0.85f,0.4f), "敵に毒5を与える（毎ターンダメージ）。", 4,
             Eff(CardEffectType.Poison, 5, 0)));
         cards.Add(MakeSkill("strength",  "筋力",           6,  C(1f,0.6f,0.4f), "攻撃力を3上げる（戦闘中持続）。", 6,
             Eff(CardEffectType.Strength, 3, 0)));
-        cards.Add(MakeSkill("heal",      "ヒール",         5,  C(0.5f,1f,0.7f), "HPを12回復する。", 2,
-            Eff(CardEffectType.Heal, 12, 0)));
+        var heal = MakeSkill("heal", "ヒール", 6, C(0.5f,1f,0.7f), "最大HPの50%を回復する。", 2,
+            Eff(CardEffectType.HealPercent, 50, 0));
+        heal.shapeRows = new[]{ "X.X", "XXX", ".X." }; heal.manaCostOverride = 3; EditorUtility.SetDirty(heal);
+        cards.Add(heal);
 
         // ---- 敵定義 ----
         var enemies = new List<EnemyDef>();

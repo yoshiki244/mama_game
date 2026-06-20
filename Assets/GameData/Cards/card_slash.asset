@@ -18,11 +18,12 @@ MonoBehaviour:
   kind: 0
   shapeRows:
   - XXX
-  - XX.
+  - ..X
+  - ..X
   power: 60
   minDepth: 0
   maxDepth: 5
   color: {r: 0.9, g: 0.95, b: 1, a: 1}
   icon: {fileID: 0}
   effects: []
-  manaCostOverride: -1
+  manaCostOverride: 3

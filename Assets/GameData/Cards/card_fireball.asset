@@ -14,7 +14,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::CardDef
   id: fireball
   displayName: "\u30D5\u30A1\u30A4\u30A2\u30DC\u30FC\u30EB"
-  description: 
+  description: "\u6575\u3092\u3084\u3051\u3069\u72B6\u614B\u306B\u3059\u308B\uFF08\u6BCE\u30BF\u30FC\u30F35\u30C0\u30E1\u30FC\u30B8\uFF09\u3002"
   kind: 0
   shapeRows:
   - XXX
@@ -24,5 +24,8 @@ MonoBehaviour:
   maxDepth: 6
   color: {r: 1, g: 0.55, b: 0.35, a: 1}
   icon: {fileID: 0}
-  effects: []
-  manaCostOverride: -1
+  effects:
+  - type: 11
+    amount: 5
+    duration: 0
+  manaCostOverride: 3

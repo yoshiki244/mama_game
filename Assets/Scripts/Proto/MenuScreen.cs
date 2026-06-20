@@ -171,12 +171,13 @@ public class MenuScreen : MonoBehaviour
         foreach (Transform c in _statsArea) Destroy(c.gameObject);
         var rows = new (string, string)[]
         {
-            ("HP",        $"{_main.Stats.MaxHP}"),
+            ("HP",        $"{_main.MaxHP}"),
             ("盤面マス",   $"{_main.BoardCells} / {ProtoMain.MaxCells}"),
             ("マスストック", $"{_main.CellStock}"),
             ("最大マナ",   $"{_main.MaxMana}"),
             ("お金",       $"{_main.Money}"),
             ("所持カード", $"{_main.OwnedCardIds.Count}種"),
+            ("装備",       EquipInfo.Name(_main.Equipped)),
             ("現在地",     $"Wave {_main.Wave}"),
         };
         float rowH = 50f, gap = 14f, top = 200f;

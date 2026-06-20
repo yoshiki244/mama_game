@@ -22,7 +22,19 @@ public class ProtoMain : MonoBehaviour
     public int CellStock { get; private set; }     // 入手済み・未配置のマス数
     public int CurrentHP { get; private set; }     // 戦闘をまたいで継続するHP
     public int BoardCells => Panel != null ? Panel.UnlockedCount() : 0; // 現在の解放マス数
-    public int MaxMana => BoardCells / 10;   // マナ＝盤面マス数÷10（切り捨て）。初期30マス→3
+    public int MaxMana => BoardCells / 10 + (Equipped == EquipKind.ManaPendant ? 1 : 0); // マナ＝盤面÷10＋装備
+    public EquipKind Equipped { get; private set; } = EquipKind.None; // 装備（1つだけ）
+    // 生命のペンダントで最大HP+10%
+    public int MaxHP => Stats == null ? 0 : Stats.MaxHP + (Equipped == EquipKind.LifePendant ? Mathf.RoundToInt(Stats.MaxHP * 0.10f) : 0);
+    public void SetEquip(EquipKind e) { Equipped = e; if (CurrentHP > MaxHP) CurrentHP = MaxHP; }
+    // ショップで装備購入（1つだけ所持・所持金が足りれば）
+    public bool BuyEquip(EquipKind e)
+    {
+        if (e == EquipKind.None || Equipped != EquipKind.None || Money < EquipInfo.ShopPrice) return false;
+        Money -= EquipInfo.ShopPrice;
+        SetEquip(e);
+        return true;
+    }
     public int Wave { get; private set; } = 1;
     public int CurrentDepth { get; set; } = 1; // 現在地の深度（マップの列番号）。報酬/ショップの抽選に使う
 
@@ -79,8 +91,8 @@ public class ProtoMain : MonoBehaviour
     public void AddMoney(int amount) => Money = Mathf.Max(0, Money + amount);
 
     // ---- HP（戦闘間で継続） ----
-    public void SetCurrentHP(int hp) => CurrentHP = Mathf.Clamp(hp, 0, Stats != null ? Stats.MaxHP : hp);
-    public void HealFull() { if (Stats != null) CurrentHP = Stats.MaxHP; }
+    public void SetCurrentHP(int hp) => CurrentHP = Mathf.Clamp(hp, 0, Stats != null ? MaxHP : hp);
+    public void HealFull() { if (Stats != null) CurrentHP = MaxHP; }
 
     // ---- 盤面マス入手・解放 ----
     public void AwardCells(int n) { if (n > 0) CellStock += n; }
@@ -90,7 +102,7 @@ public class ProtoMain : MonoBehaviour
     {
         if (Stats == null || Stats.MaxHP - 10 < 10) return false;
         Stats.MaxHP -= 10;
-        if (CurrentHP > Stats.MaxHP) CurrentHP = Stats.MaxHP;
+        if (CurrentHP > MaxHP) CurrentHP = MaxHP;
         CellStock += 1;
         return true;
     }
@@ -156,7 +168,8 @@ public class ProtoMain : MonoBehaviour
 
         // プレイヤー初期化
         Stats = new PlayerStats(Cfg);
-        CurrentHP = Stats.MaxHP;
+        Equipped = EquipKind.None;
+        CurrentHP = MaxHP;
         Money = 0;
         CellStock = 0;
         Panel = new PanelModel(GridDim, GridDim);
@@ -201,10 +214,11 @@ public class ProtoMain : MonoBehaviour
     }
 
     // セーブから状態を流し込む（ProtoSaveが呼ぶ）
-    public void ApplyLoaded(int money, int cellStock, List<string> owned, List<int> counts, List<Vector2Int> unlocked)
+    public void ApplyLoaded(int money, int cellStock, List<string> owned, List<int> counts, List<Vector2Int> unlocked, int equip = 0)
     {
         Money = Mathf.Max(0, money);
         CellStock = Mathf.Max(0, cellStock);
+        Equipped = System.Enum.IsDefined(typeof(EquipKind), equip) ? (EquipKind)equip : EquipKind.None;
         if (unlocked != null && unlocked.Count > 0)
             foreach (var c in unlocked) Panel.Unlock(c.x, c.y);   // 解放マスを復元
         if (owned != null && owned.Count > 0)
@@ -256,7 +270,8 @@ public class ProtoMain : MonoBehaviour
     public void RestartRun()
     {
         Stats = new PlayerStats(Cfg);
-        CurrentHP = Stats.MaxHP;
+        Equipped = EquipKind.None;   // 装備もリセット
+        CurrentHP = MaxHP;
         Wave = 1;
         Money = 0;
         CellStock = 0;

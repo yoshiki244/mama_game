@@ -14,18 +14,19 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::CardDef
   id: defend
   displayName: "\u30AC\u30FC\u30C9"
-  description: "\u30D6\u30ED\u30C3\u30AF\u30928\u5F97\u308B\uFF08\u88AB\u30C0\u30E1\u30FC\u30B8\u3092\u80A9\u4EE3\u308F\u308A\uFF09\u3002"
+  description: "\u30C0\u30E1\u30FC\u30B8\u3092\u8EFD\u6E1B\u3059\u308B\uFF0825%\uFF09\u3002"
   kind: 1
   shapeRows:
+  - X..
   - XXX
-  - XX.
+  - X..
   power: 0
   minDepth: 0
   maxDepth: 0
   color: {r: 0.55, g: 0.75, b: 1, a: 1}
   icon: {fileID: 0}
   effects:
-  - type: 5
-    amount: 8
-    duration: 0
-  manaCostOverride: -1
+  - type: 3
+    amount: 25
+    duration: 1
+  manaCostOverride: 3

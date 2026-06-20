@@ -14,6 +14,7 @@ public static class ProtoSave
     {
         public int money;
         public int cellStock;          // マスストック
+        public int equip;              // 装備（EquipKind）
         public int[] ux;               // 解放マスX
         public int[] uy;               // 解放マスY
         public List<string> owned = new List<string>();
@@ -28,6 +29,7 @@ public static class ProtoSave
         {
             money = main.Money,
             cellStock = main.CellStock,
+            equip = (int)main.Equipped,
             ux = new int[unlocked.Count],
             uy = new int[unlocked.Count],
             owned = new List<string>(main.OwnedCardIds),
@@ -64,7 +66,7 @@ public static class ProtoSave
         if (d.ux != null && d.uy != null)
             for (int i = 0; i < d.ux.Length && i < d.uy.Length; i++)
                 unlocked.Add(new Vector2Int(d.ux[i], d.uy[i]));
-        main.ApplyLoaded(d.money, d.cellStock, d.owned, d.ownedCounts, unlocked);
+        main.ApplyLoaded(d.money, d.cellStock, d.owned, d.ownedCounts, unlocked, d.equip);
 
         // 盤面の配置を復元
         if (d.pieces != null)

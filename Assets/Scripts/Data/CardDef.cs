@@ -19,6 +19,7 @@ public enum CardEffectType
     Strength,             // 自分の攻撃力を amount 上昇（戦闘中持続）
     Heal,                 // amount 回復
     HealPercent,          // 最大HPの amount% を回復
+    Burn,                 // 敵をやけど状態にする（毎ターン amount ダメージ）
 }
 
 [System.Serializable]
@@ -97,6 +98,7 @@ public class CardDef : ScriptableObject
                     case CardEffectType.Block: lines.Add($"{e.amount} のブロックを獲得"); break;
                     case CardEffectType.Weak: lines.Add($"敵の攻撃力を {e.amount}% 低下（{e.duration}ターン）"); break;
                     case CardEffectType.Poison: lines.Add($"敵に {e.amount} の毒を付与"); break;
+                    case CardEffectType.Burn: lines.Add($"敵をやけど状態にする（毎ターン {e.amount} ダメージ）"); break;
                     case CardEffectType.Strength: lines.Add($"自分の攻撃力を {e.amount} 上昇（戦闘中）"); break;
                     case CardEffectType.Heal: lines.Add($"HPを {e.amount} 回復"); break;
                     case CardEffectType.HealPercent: lines.Add($"最大HPの {e.amount}% を回復"); break;

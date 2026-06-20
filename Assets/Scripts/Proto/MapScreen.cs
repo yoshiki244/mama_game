@@ -632,6 +632,13 @@ public class MapScreen : MonoBehaviour
         {
             _main.AwardCells(5);
             if (_notice != null) _notice.text = "中ボス撃破！　盤面マス +5";
+            // 20%で装備をドロップ（未装備のときのみ＝1つだけ所持）
+            if (_main.Equipped == EquipKind.None && Random.value < 0.20f)
+            {
+                var drop = EquipInfo.All[Random.Range(0, EquipInfo.All.Length)];
+                _main.SetEquip(drop);
+                if (_notice != null) _notice.text = $"中ボス撃破！　盤面マス +5　／　{EquipInfo.Name(drop)} を入手！";
+            }
         }
         else if (node.type == TileType.Enemy)
         {
@@ -694,6 +701,7 @@ public class MapScreen : MonoBehaviour
         // 購入候補
         var offers = _main.Db != null ? _main.Db.RandomCards(_main.Cfg != null ? _main.Cfg.shopOfferCount : 5,
             new HashSet<string>(_main.OwnedCardIds), treeNode.col) : new List<CardDef>();
+        ProtoUI.CreateText("SkillTitle", rt, "― スキル ―", 22, new Vector2(0, 235), new Vector2(400, 28), new Color(0.85f, 0.78f, 0.5f));
         var offerButtons = new List<(CardDef card, Button btn, TextMeshProUGUI label, Image frame)>();
         float spacing = 260f; float startX = -(offers.Count - 1) * spacing / 2f;
         for (int i = 0; i < offers.Count; i++)
@@ -732,6 +740,32 @@ public class MapScreen : MonoBehaviour
             offerButtons.Add((card, btn, price, frame));
         }
 
+        // 装備売り場（1つだけ所持可能）
+        ProtoUI.CreateText("EqTitle", rt, "― 装備 ―", 22, new Vector2(0, -210), new Vector2(400, 28), new Color(0.85f, 0.78f, 0.5f));
+        var equipButtons = new List<(EquipKind kind, Button btn, TextMeshProUGUI label, Image frame)>();
+        float eqSpacing = 360f, eqStartX = -(EquipInfo.All.Length - 1) * eqSpacing / 2f;
+        for (int i = 0; i < EquipInfo.All.Length; i++)
+        {
+            var kind = EquipInfo.All[i];
+            var frame = ProtoUI.CreatePanel($"Eq_{kind}", rt, new Vector2(eqStartX + i * eqSpacing, -278), new Vector2(330, 96),
+                new Color(0.66f, 0.55f, 0.34f));
+            var inner = ProtoUI.CreatePanel("In", frame.transform, Vector2.zero, new Vector2(318, 84), new Color(0.10f, 0.08f, 0.16f));
+            inner.raycastTarget = false;
+            var nm = ProtoUI.CreateText("N", inner.transform, EquipInfo.Name(kind), 19, new Vector2(0, 22), new Vector2(310, 26), Color.white);
+            nm.fontStyle = FontStyles.Bold;
+            ProtoUI.CreateText("D", inner.transform, EquipInfo.Desc(kind), 14, new Vector2(0, -2), new Vector2(310, 22), new Color(0.85f, 0.9f, 1f)).raycastTarget = false;
+            var lab = ProtoUI.CreateText("P", inner.transform, "", 16, new Vector2(0, -26), new Vector2(310, 22), ProtoUI.Gold);
+            var btn = frame.gameObject.AddComponent<Button>(); btn.targetGraphic = frame;
+            var k = kind;
+            btn.onClick.AddListener(() =>
+            {
+                if (_main.Equipped != EquipKind.None) { say("装備は1つしか持てないよ。"); return; }
+                if (_main.Money < EquipInfo.ShopPrice) { say("おっと、お金が足りないようだね……"); return; }
+                if (_main.BuyEquip(k)) { say($"{EquipInfo.Name(k)}、毎度あり！"); refresh(); }
+            });
+            equipButtons.Add((kind, btn, lab, frame));
+        }
+
         var closeBtn = ProtoUI.CreateGoldButton("Close", rt, "店を出る", 22, new Vector2(0, -380), new Vector2(260, 60),
             new Color(0.45f, 0.3f, 0.55f), null);
         closeBtn.onClick.AddListener(() =>
@@ -752,6 +786,17 @@ public class MapScreen : MonoBehaviour
                 o.label.text = owned ? "購入済み" : $"購入 {price}";
                 o.btn.interactable = !owned; // 所持金不足でも押せる（押すとセリフで知らせる）
                 o.frame.color = owned ? new Color(0.3f, 0.3f, 0.32f)
+                    : afford ? new Color(0.66f, 0.55f, 0.34f) : new Color(0.45f, 0.38f, 0.26f);
+            }
+            bool hasEquip = _main.Equipped != EquipKind.None;
+            foreach (var e in equipButtons)
+            {
+                bool isThis = _main.Equipped == e.kind;
+                bool afford = _main.Money >= EquipInfo.ShopPrice;
+                e.label.text = isThis ? "装備中" : hasEquip ? "装備枠がいっぱい" : $"購入 {EquipInfo.ShopPrice}";
+                e.btn.interactable = !hasEquip;
+                e.frame.color = isThis ? new Color(0.4f, 0.5f, 0.34f)
+                    : hasEquip ? new Color(0.3f, 0.3f, 0.32f)
                     : afford ? new Color(0.66f, 0.55f, 0.34f) : new Color(0.45f, 0.38f, 0.26f);
             }
         };
@@ -810,7 +855,7 @@ public class MapScreen : MonoBehaviour
         var msg = ProtoUI.CreateText("STMsg", rt, "",
             22, new Vector2(0, 210), new Vector2(1040, 100), new Color(0.92f, 1f, 0.92f));
 
-        var healTxt = ProtoUI.CreateText("STHeal", rt, "HPは全回復した！", 24, new Vector2(0, 120), new Vector2(900, 34), ProtoUI.Gold);
+        var healTxt = ProtoUI.CreateText("STHeal", rt, "HPと状態異常を回復した！", 24, new Vector2(0, 120), new Vector2(900, 34), ProtoUI.Gold);
         healTxt.gameObject.SetActive(false);
 
         var gold = new Color(0.85f, 0.72f, 0.4f, 0.95f);
