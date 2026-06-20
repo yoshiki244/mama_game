@@ -78,6 +78,33 @@ public class CardDef : ScriptableObject
         }
     }
 
+    // 効果を日本語で要約（ホバー詳細などで使用）
+    public string EffectSummary()
+    {
+        var lines = new List<string>();
+        if (power > 0) lines.Add($"威力 {power} のダメージ");
+        if (effects != null)
+            foreach (var e in effects)
+            {
+                switch (e.type)
+                {
+                    case CardEffectType.Draw: lines.Add($"カードを {e.amount} 枚ドロー"); break;
+                    case CardEffectType.BlinkOnUse: lines.Add("使用時に点滅ゲームが発動"); break;
+                    case CardEffectType.PrimeNextAttackBlink: lines.Add("次のアタックで点滅ゲームが発動"); break;
+                    case CardEffectType.Protect: lines.Add($"次の被ダメージを {e.amount}% 軽減"); break;
+                    case CardEffectType.ManaBoostNextTurn: lines.Add($"次ターンのマナを {e.amount} 増加"); break;
+                    case CardEffectType.Block: lines.Add($"{e.amount} のブロックを獲得"); break;
+                    case CardEffectType.Weak: lines.Add($"敵の攻撃力を {e.amount}% 低下（{e.duration}ターン）"); break;
+                    case CardEffectType.Poison: lines.Add($"敵に {e.amount} の毒を付与"); break;
+                    case CardEffectType.Strength: lines.Add($"自分の攻撃力を {e.amount} 上昇（戦闘中）"); break;
+                    case CardEffectType.Heal: lines.Add($"HPを {e.amount} 回復"); break;
+                    case CardEffectType.HealPercent: lines.Add($"最大HPの {e.amount}% を回復"); break;
+                }
+            }
+        if (lines.Count == 0 && !string.IsNullOrEmpty(description)) lines.Add(description);
+        return string.Join("\n", lines);
+    }
+
     public static string KindLabel(CardKind k)
     {
         switch (k)

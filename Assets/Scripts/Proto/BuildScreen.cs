@@ -24,6 +24,7 @@ public class BuildScreen : MonoBehaviour
     ScrollRect _trayScroll;
     Image _boardBg;
     Vector2Int? _boardSel;
+    GameObject _cardTip; TextMeshProUGUI _cardTipText; // カード詳細ツールチップ（共有）
 
     PanelModel P => _main.Panel;
 
@@ -165,6 +166,17 @@ public class BuildScreen : MonoBehaviour
         tip.gameObject.SetActive(false);
         var hov = sortBtn.gameObject.AddComponent<HoverTip>();
         hov.target = tip.gameObject;
+
+        // カード詳細ツールチップ（盤面の上に表示・共有）
+        var ct = ProtoUI.CreateRect("CardTip", _root);
+        ct.anchoredPosition = new Vector2(585, 25); ct.sizeDelta = new Vector2(320, 460);
+        var ctInner = ProtoUI.CreateFramedPanel("CardTipBox", ct, Vector2.zero, new Vector2(320, 460),
+            new Color(0.07f, 0.06f, 0.12f, 0.98f), new Color(0.85f, 0.72f, 0.4f, 0.95f));
+        _cardTipText = ProtoUI.CreateText("CardTipTxt", ctInner.transform, "", 18,
+            new Vector2(0, -6), new Vector2(290, 420), Color.white, TextAlignmentOptions.Top);
+        _cardTipText.raycastTarget = false;
+        ct.gameObject.SetActive(false);
+        _cardTip = ct.gameObject;
 
         var viewport = ProtoUI.CreateRect("TrayViewport", _root);
         viewport.anchoredPosition = new Vector2(180, 25);
@@ -424,6 +436,12 @@ public class BuildScreen : MonoBehaviour
             var cnt = ProtoUI.CreateText("Cnt", img.transform, $"×{_main.OwnedCount(c.id)}", 22,
                 new Vector2(185, 0), new Vector2(60, 40), ProtoUI.Gold, TextAlignmentOptions.Right);
             cnt.fontStyle = FontStyles.Bold; cnt.raycastTarget = false;
+
+            // ホバーで効果詳細を表示
+            string detail = $"<b>{c.displayName}</b>\n<size=14>[{kindTag}]　{c.Size}マス　マナ{c.ManaCost}</size>\n\n{c.EffectSummary()}";
+            var ch = img.gameObject.AddComponent<CardDetailHover>();
+            ch.panel = _cardTip; ch.label = _cardTipText; ch.content = detail;
+            ch.suppress = () => _selected != null; // カード選択中は詳細を出さない
 
             _trayButtons.Add((c, img));
         }
@@ -742,4 +760,22 @@ public class HoverTip : MonoBehaviour, IPointerEnterHandler, IPointerExitHandler
     public void OnPointerEnter(PointerEventData e) { if (target != null) target.SetActive(true); }
     public void OnPointerExit(PointerEventData e) { if (target != null) target.SetActive(false); }
     void OnDisable() { if (target != null) target.SetActive(false); }
+}
+
+// カードにカーソルを合わせている間、共有パネルに効果詳細を表示するハンドラ
+public class CardDetailHover : MonoBehaviour, IPointerEnterHandler, IPointerExitHandler
+{
+    public GameObject panel;
+    public TMPro.TextMeshProUGUI label;
+    public string content;
+    public System.Func<bool> suppress;
+    public void OnPointerEnter(PointerEventData e)
+    {
+        if (panel == null) return;
+        if (suppress != null && suppress()) return;
+        if (label != null) label.text = content;
+        panel.SetActive(true);
+    }
+    public void OnPointerExit(PointerEventData e) { if (panel != null) panel.SetActive(false); }
+    void OnDisable() { if (panel != null) panel.SetActive(false); }
 }
