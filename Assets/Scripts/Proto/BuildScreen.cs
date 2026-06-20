@@ -465,7 +465,7 @@ public class BuildScreen : MonoBehaviour
     {
         if (!_addMode)
         {
-            if (_main.CellStock <= 0) { ShowNotice("エラー：マスストックが0です！配置できません"); return; } // ストック無しは入れない
+            if (_main.CellStock <= 0) { ShowNotice("マスストックが0のため、配置できません！"); return; } // ストック無しは入れない
             SetAddMode(true);   // 配置開始
         }
         else ShowPlaceConfirm();           // 配置をやめる→確認
@@ -514,7 +514,7 @@ public class BuildScreen : MonoBehaviour
             if (!P.IsUnlocked(x, y))
             {
                 if (_main.UnlockCell(x, y)) RefreshBoard();
-                else ShowNotice(_main.CellStock <= 0 ? "エラー：マスストックが0です！配置できません" : "これ以上拡張できません(最大100)");
+                else ShowNotice(_main.CellStock <= 0 ? "マスストックが0のため、配置できません！" : "これ以上拡張できません(最大100)");
             }
             return;
         }
