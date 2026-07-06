@@ -17,7 +17,7 @@ public class BuildScreen : MonoBehaviour
     Image[,] _cellImages;
     Image[,,] _cellEdges;          // 各セル4辺のピース境界エッジ（薄い金色）
     static readonly Color EdgeColor = new Color(1f, 1f, 1f, 0.92f);
-    TextMeshProUGUI _title, _info, _selectedText, _boardCountText, _manaInfoText;
+    TextMeshProUGUI _title, _info, _selectedText, _boardCountText, _manaInfoText, _trayTitle;
     readonly List<(CardDef card, Image img)> _trayButtons = new List<(CardDef, Image)>();
 
     CardDef _selected;
@@ -161,7 +161,7 @@ public class BuildScreen : MonoBehaviour
         layout.constraint = GridLayoutGroup.Constraint.FixedColumnCount;
 
         // ピース一覧（右・スクロール）
-        ProtoUI.CreateText("TrayTitle", _root, "所持カード（クリックで選択）", 22,
+        _trayTitle = ProtoUI.CreateText("TrayTitle", _root, "所持カード（クリックで選択）", 22,
             new Vector2(150, 318), new Vector2(420, 30));
         // ソート/絞り込みボタン（タイトル右）
         ProtoUI.CreatePanel("SortBtnBorder", _root, new Vector2(379, 318), new Vector2(54, 46), new Color(0.85f, 0.72f, 0.4f, 0.95f)).raycastTarget = false;
@@ -309,6 +309,7 @@ public class BuildScreen : MonoBehaviour
             System.Func<CardDef, int> key = s.key == "mana" ? (System.Func<CardDef, int>)(c => c.ManaCost) : (c => c.Size);
             list = s.asc ? list.OrderBy(key).ToList() : list.OrderByDescending(key).ToList();
         }
+        if (_sorts.Count == 0) list.Reverse();   // 並び替え未指定なら「新しく入手した順」（買った直後に一番上へ）
         return list;
     }
 
@@ -406,7 +407,25 @@ public class BuildScreen : MonoBehaviour
         foreach (Transform c in _trayContent) Destroy(c.gameObject);
         _trayButtons.Clear();
 
-        var owned = ApplyFilterSort(_main.OwnedCards());
+        var allOwned = _main.OwnedCards();
+        var owned = ApplyFilterSort(allOwned);
+
+        // 絞り込みで隠れている枚数を可視化（「カードが消えた」と誤解しないように）
+        if (_trayTitle != null)
+        {
+            int hidden = allOwned.Count - owned.Count;
+            if (hidden > 0)
+            {
+                _trayTitle.text = $"所持カード {allOwned.Count}種（絞り込み中・{hidden}枚 非表示）";
+                _trayTitle.color = new Color(1f, 0.75f, 0.4f);
+            }
+            else
+            {
+                _trayTitle.text = $"所持カード {allOwned.Count}種（クリックで選択）";
+                _trayTitle.color = Color.white;
+            }
+        }
+
         const float rowH = 76f, pad = 10f, bottomPad = 40f; // 行間を広げて各カードを金枠で囲む
         _trayContent.sizeDelta = new Vector2(0, owned.Count * rowH + pad + bottomPad);
 

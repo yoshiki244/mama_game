@@ -103,6 +103,7 @@ public class ProtoMain : MonoBehaviour
         if (string.IsNullOrEmpty(id) || Db.FindCard(id) == null) return false;
         if (!OwnedCardIds.Contains(id)) OwnedCardIds.Add(id);
         CardStock[id] = OwnedCount(id) + 1;
+        ProtoUnlocks.MarkDiscovered(id);   // 図鑑に永続登録
         return true;
     }
 
@@ -361,12 +362,33 @@ public class ProtoMain : MonoBehaviour
 
         bool hasSave = ProtoSave.HasSave();
         ProtoUI.CreateGoldButton("TNew", rt, "最初から", 26, new Vector2(0, -20), new Vector2(340, 72),
-            new Color(0.35f, 0.3f, 0.55f, 0.98f), () => { Destroy(_titleGO); _titleGO = null; RestartRun(); });
+            new Color(0.35f, 0.3f, 0.55f, 0.98f), () =>
+            {
+                // セーブがあるときは誤操作でデータが消えないよう確認を挟む
+                if (hasSave) ShowTitleNewGameConfirm(rt);
+                else { Destroy(_titleGO); _titleGO = null; RestartRun(); }
+            });
         if (hasSave)
             ProtoUI.CreateGoldButton("TContinue", rt, "続きから", 26, new Vector2(0, -120), new Vector2(340, 72),
                 new Color(0.30f, 0.45f, 0.32f, 0.98f), () => { Destroy(_titleGO); _titleGO = null; ShowMap(); });
         ProtoUI.CreateText("TVer", rt, $"ver {Application.version}", 15,
             new Vector2(0, -380), new Vector2(900, 24), new Color(0.6f, 0.62f, 0.75f));
+    }
+
+    // タイトルの「最初から」確認（セーブ消去の警告）
+    void ShowTitleNewGameConfirm(RectTransform parent)
+    {
+        var ov = ProtoUI.CreateFullScreen("TitleConfirm", parent);
+        ov.gameObject.AddComponent<UnityEngine.UI.Image>().color = new Color(0, 0, 0, 0.75f);
+        ProtoUI.CreateFramedPanel("TCBox", ov, Vector2.zero, new Vector2(640, 300),
+            new Color(0.10f, 0.08f, 0.16f, 0.98f), new Color(0.85f, 0.72f, 0.4f, 0.9f));
+        ProtoUI.CreateText("TCMsg", ov, "最初から始めますか？", 28, new Vector2(0, 70), new Vector2(600, 40), Color.white);
+        ProtoUI.CreateText("TCSub", ov, "セーブデータ（カード・装備・進行）はすべて消去されます", 18,
+            new Vector2(0, 24), new Vector2(600, 30), new Color(1f, 0.6f, 0.6f));
+        ProtoUI.CreateGoldButton("TCYes", ov, "消して始める", 22, new Vector2(-150, -80), new Vector2(250, 64),
+            new Color(0.62f, 0.16f, 0.16f, 0.98f), () => { Destroy(_titleGO); _titleGO = null; RestartRun(); });
+        ProtoUI.CreateGoldButton("TCNo", ov, "やめる", 22, new Vector2(150, -80), new Vector2(250, 64),
+            new Color(0.3f, 0.3f, 0.4f, 0.98f), () => Destroy(ov.gameObject));
     }
 
     // 初期所持カードを在庫1ずつで設定
@@ -402,6 +424,7 @@ public class ProtoMain : MonoBehaviour
                 if (Db == null || Db.FindCard(id) == null) continue;
                 if (!OwnedCardIds.Contains(id)) OwnedCardIds.Add(id);
                 CardStock[id] = (counts != null && i < counts.Count) ? Mathf.Max(0, counts[i]) : 1;
+                ProtoUnlocks.MarkDiscovered(id);   // ロード復元分も図鑑に登録
             }
         }
     }
@@ -484,6 +507,8 @@ public class ProtoMain : MonoBehaviour
         Panel.UnlockInitial(InitialCols, InitialRows);
         InitInitialCards();
         ProtoSave.Clear();   // セーブも消去（次回起動でも初期状態に）
+        ProtoUnlocks.ClearDiscovered();   // 図鑑の発見記録もリセット
+        foreach (var id in OwnedCardIds) ProtoUnlocks.MarkDiscovered(id);   // 初期カードだけ図鑑に登録し直す
         _map.ResetRun();
         ShowMap();
     }

@@ -283,8 +283,15 @@ public class MenuScreen : MonoBehaviour
         {
             if (c == null) continue;
             if (c.unlockTier <= ProtoUnlocks.UnlockLevel) unlocked++;
-            if (_main.OwnsCard(c.id)) discovered++;
+            if (ProtoUnlocks.IsDiscovered(c.id)) discovered++;   // 発見済み＝一度でも入手したことがある（永続）
         }
+
+        // 盤面に配置中の枚数（在庫と合算して「本当の所持数」を出す）
+        var placedCnt = new Dictionary<string, int>();
+        if (_main.Panel != null)
+            foreach (var p in _main.Panel.Placements)
+                if (p.card != null)
+                { placedCnt.TryGetValue(p.card.id, out var n); placedCnt[p.card.id] = n + 1; }
         ProtoUI.CreateText("DexCount", ov, $"入手済み {discovered} 種　／　解放済み {unlocked} 種　／　全 {all.Count} 種", 18,
             new Vector2(0, 358), new Vector2(800, 26), new Color(0.8f, 0.85f, 1f));
 
@@ -316,7 +323,8 @@ public class MenuScreen : MonoBehaviour
             var card = sorted[i];
             int r = i / perRow, col = i % perRow;
             var pos = new Vector2(startX + col * (cw + gx), -20f - chh / 2f - r * (chh + gy));
-            bool isUnlocked = card.unlockTier <= ProtoUnlocks.UnlockLevel;
+            bool tierOpen = card.unlockTier <= ProtoUnlocks.UnlockLevel;
+            bool isUnlocked = tierOpen && ProtoUnlocks.IsDiscovered(card.id);   // 詳細表示は「発見済み」のみ
 
             // レアは後光（ハロー）を背後に敷く
             if (isUnlocked && card.rarity >= 2)
@@ -339,13 +347,16 @@ public class MenuScreen : MonoBehaviour
             if (!isUnlocked)
             {
                 ProtoUI.CreateText("Q", inner.transform, "？？？", 30, new Vector2(0, 16), new Vector2(200, 40), new Color(0.5f, 0.5f, 0.6f));
-                ProtoUI.CreateText("H", inner.transform, "クリアすると解放", 14, new Vector2(0, -40), new Vector2(220, 22), new Color(0.45f, 0.45f, 0.55f));
+                ProtoUI.CreateText("H", inner.transform, tierOpen ? "未入手（入手すると図鑑に登録）" : "クリアすると解放", 14,
+                    new Vector2(0, -40), new Vector2(240, 22), new Color(0.45f, 0.45f, 0.55f));
                 continue;
             }
 
-            int owned = _main.OwnedCount(card.id);
+            int stock = _main.OwnedCount(card.id);
+            placedCnt.TryGetValue(card.id, out int placed);
+            int totalOwned = stock + placed;   // 在庫＋盤面配置中＝本当の所持数
             var nm = ProtoUI.CreateText("N", inner.transform,
-                owned > 0 ? $"{card.displayName} ×{owned}" : card.displayName, 17,
+                totalOwned > 0 ? $"{card.displayName} ×{totalOwned}" : card.displayName, 17,
                 new Vector2(0, 66), new Vector2(cw - 20, 24), card.RarityColor);
             nm.fontStyle = FontStyles.Bold; nm.enableAutoSizing = true; nm.fontSizeMin = 11; nm.fontSizeMax = 17;
             nm.textWrappingMode = TMPro.TextWrappingModes.NoWrap;
@@ -360,7 +371,8 @@ public class MenuScreen : MonoBehaviour
             }
 
             ProtoUI.CreateText("K", inner.transform,
-                $"{card.RarityLabel}　{CardDef.KindLabel(card.Category)} / {card.Size}マス / マナ{card.ManaCost}", 12,
+                $"{card.RarityLabel}　{CardDef.KindLabel(card.Category)} / {card.Size}マス / マナ{card.ManaCost}" +
+                (placed > 0 ? $"　<color=#8FE08F>配置中{placed}</color>" : ""), 12,
                 new Vector2(0, 44), new Vector2(cw - 16, 18), new Color(0.8f, 0.85f, 1f));
 
             var art = ProtoUI.CreatePanel("Art", inner.transform, new Vector2(0, 2), new Vector2(cw - 40, 58), new Color(0.04f, 0.04f, 0.09f));

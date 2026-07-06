@@ -1277,29 +1277,40 @@ public class MapScreen : MonoBehaviour
         ov.gameObject.AddComponent<Image>().color = new Color(0, 0, 0, 0.82f);
 
         int sellPrice = Mathf.Max(1, (_main.Cfg != null ? _main.Cfg.shopBuyPrice : 40) / 2);
-        ProtoUI.CreateFramedPanel("SPBox", ov, Vector2.zero, new Vector2(1000, 620),
-            new Color(0.09f, 0.07f, 0.06f, 0.98f), new Color(0.85f, 0.72f, 0.4f, 0.9f));
-        var t = ProtoUI.CreateText("SPT", ov, $"売るカードを選ぶ（1枚 {sellPrice}コイン）", 28, new Vector2(0, 250), new Vector2(900, 42), ProtoUI.Gold);
+        var t = ProtoUI.CreateText("SPT", ov, $"売るカードを選ぶ（1枚 {sellPrice}コイン）", 28, new Vector2(0, 388), new Vector2(900, 42), ProtoUI.Gold);
         ProtoUI.StyleTitle(t, ProtoUI.Gold, 5f);
 
-        System.Action rebuild = null;
-        var listRoot = ProtoUI.CreateRect("SPList", ov);
-        listRoot.anchoredPosition = Vector2.zero; listRoot.sizeDelta = new Vector2(960, 460);
+        // スクロールリスト（カードが増えてもはみ出さない）
+        var viewport = ProtoUI.CreateRect("SPView", ov);
+        viewport.anchoredPosition = new Vector2(0, -10);
+        viewport.sizeDelta = new Vector2(1000, 640);
+        viewport.gameObject.AddComponent<Image>().color = new Color(0, 0, 0, 0.35f);
+        viewport.gameObject.AddComponent<RectMask2D>();
+        var srv = viewport.gameObject.AddComponent<ScrollRect>();
+        srv.horizontal = false; srv.vertical = true; srv.viewport = viewport;
+        srv.scrollSensitivity = 30f; srv.movementType = ScrollRect.MovementType.Clamped;
+        var listRoot = ProtoUI.CreateRect("SPList", viewport);
+        listRoot.anchorMin = new Vector2(0.5f, 1f); listRoot.anchorMax = new Vector2(0.5f, 1f);
+        listRoot.pivot = new Vector2(0.5f, 1f); listRoot.anchoredPosition = Vector2.zero;
+        srv.content = listRoot;
 
+        System.Action rebuild = null;
         rebuild = () =>
         {
             foreach (Transform c in listRoot) Destroy(c.gameObject);
             var owned = _main.OwnedCards();   // 在庫が1以上あるカード
             if (owned.Count == 0)
-                ProtoUI.CreateText("SPEmpty", listRoot, "売れるカードがない（配置中のカードは売れません）", 20, Vector2.zero, new Vector2(800, 30), new Color(0.8f, 0.8f, 0.9f));
+                ProtoUI.CreateText("SPEmpty", listRoot, "売れるカードがない（配置中のカードは売れません）", 20, new Vector2(0, -80), new Vector2(800, 30), new Color(0.8f, 0.8f, 0.9f));
             int perRow = 4; float cw = 224f, ch = 150f, gx = 8f, gy = 12f;
-            float startX = -(perRow - 1) * (cw + gx) / 2f, startY = 140f;
+            float startX = -(perRow - 1) * (cw + gx) / 2f;
             for (int i = 0; i < owned.Count; i++)
             {
                 var card = owned[i];
                 int r = i / perRow, c2 = i % perRow;
-                var pos = new Vector2(startX + c2 * (cw + gx), startY - r * (ch + gy));
+                var pos = new Vector2(startX + c2 * (cw + gx), -16f - ch / 2f - r * (ch + gy));
                 var frame = ProtoUI.CreatePanel($"SP_{card.id}", listRoot, pos, new Vector2(cw, ch), new Color(0.66f, 0.55f, 0.34f));
+                var frtSp = (RectTransform)frame.transform;
+                frtSp.anchorMin = frtSp.anchorMax = new Vector2(0.5f, 1f);   // 上端基準
                 var inner = ProtoUI.CreatePanel("In", frame.transform, Vector2.zero, new Vector2(cw - 10, ch - 10), new Color(0.10f, 0.08f, 0.16f));
                 inner.raycastTarget = false;
                 var nm = ProtoUI.CreateText("N", inner.transform, $"{card.displayName} ×{_main.OwnedCount(card.id)}", 16, new Vector2(0, 58), new Vector2(cw - 16, 24), card.RarityColor);
@@ -1320,10 +1331,12 @@ public class MapScreen : MonoBehaviour
                     }
                 });
             }
+            int rows = Mathf.CeilToInt(owned.Count / (float)perRow);
+            listRoot.sizeDelta = new Vector2(980, 32f + rows * (ch + gy));   // スクロール範囲を更新
         };
         rebuild();
 
-        ProtoUI.CreateGoldButton("SPClose", ov, "閉じる", 22, new Vector2(0, -260), new Vector2(240, 58),
+        ProtoUI.CreateGoldButton("SPClose", ov, "閉じる", 22, new Vector2(0, -388), new Vector2(240, 58),
             new Color(0.45f, 0.3f, 0.4f, 0.98f), () => { Destroy(_sellPicker); _sellPicker = null; });
     }
 

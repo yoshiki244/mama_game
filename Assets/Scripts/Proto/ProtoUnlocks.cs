@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using UnityEngine;
 
 // ラン間で永続するメタ進行（PlayerPrefs）。クリア回数・アンロック・アセンション・ベストスコア・シード。
@@ -43,6 +44,34 @@ public static class ProtoUnlocks
         if (ascension >= 3 && MaxAscUnlocked < 4) MaxAscUnlocked = 4;
         if (score > BestScore) BestScore = score;
         AddRunScore(score);
+    }
+
+    // ---- 図鑑の発見記録（一度入手したカードは「最初から」でも図鑑に残る） ----
+    const string KDisc = "meta_discovered";
+    static HashSet<string> _disc;
+    static HashSet<string> Disc
+    {
+        get
+        {
+            if (_disc == null)
+                _disc = new HashSet<string>(PlayerPrefs.GetString(KDisc, "")
+                    .Split(new[] { ',' }, System.StringSplitOptions.RemoveEmptyEntries));
+            return _disc;
+        }
+    }
+    public static bool IsDiscovered(string id) => !string.IsNullOrEmpty(id) && Disc.Contains(id);
+    public static void MarkDiscovered(string id)
+    {
+        if (string.IsNullOrEmpty(id)) return;
+        if (Disc.Add(id)) { PlayerPrefs.SetString(KDisc, string.Join(",", Disc)); PlayerPrefs.Save(); }
+    }
+
+    // 図鑑の発見記録をリセット（「最初から」で呼ばれる）
+    public static void ClearDiscovered()
+    {
+        _disc = new HashSet<string>();
+        PlayerPrefs.SetString(KDisc, "");
+        PlayerPrefs.Save();
     }
 
     // アンロック段階：クリア回数 または 累計スコア（tier×2000）のどちらかで解放
