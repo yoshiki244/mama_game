@@ -64,7 +64,18 @@ public class BuildScreen : MonoBehaviour
     static readonly Color AddBtnOff = new Color(0.28f, 0.42f, 0.32f, 0.98f); // 緑：マスを配置する
     static readonly Color AddBtnOn = new Color(0.62f, 0.16f, 0.16f, 0.98f);  // 赤：配置をやめる
 
-    public void Init(ProtoMain main) { _main = main; BuildUI(); Hide(); }
+    AudioSource _sfx;
+    AudioClip _synergyClip;
+    readonly HashSet<Vector2Int> _synCells = new HashSet<Vector2Int>();   // シナジー中のマス（常時点滅の対象）
+
+    public void Init(ProtoMain main)
+    {
+        _main = main;
+        BuildUI();
+        _sfx = gameObject.AddComponent<AudioSource>();
+        _synergyClip = ProtoAudio.CreateSynergyChime();
+        Hide();
+    }
 
     public void Show()
     {
@@ -196,6 +207,7 @@ public class BuildScreen : MonoBehaviour
             new Vector2(-330, -252), new Vector2(520, 40), null, TextAlignmentOptions.Center);
         _selectedText.textWrappingMode = TMPro.TextWrappingModes.Normal;
 
+
         var hint = ProtoUI.CreateText("Hint", _root,
             "カードを選択して左クリック：ピースを配置　　　右クリック：ピースを回転（ピース選択中）／ピースを削除", 16,
             new Vector2(0, -408), new Vector2(1560, 30), new Color(0.72f, 0.72f, 0.82f));
@@ -242,8 +254,8 @@ public class BuildScreen : MonoBehaviour
             for (int x = 0; x < w; x++)
             {
                 int cx = x, cy = y;
-                var cell = ProtoUI.CreatePanel($"Cell_{x}_{y}", _gridRt, Vector2.zero,
-                    new Vector2(_cellSize, _cellSize), EmptyColor);
+                var cell = ProtoUI.Bevel(ProtoUI.CreatePanel($"Cell_{x}_{y}", _gridRt, Vector2.zero,
+                    new Vector2(_cellSize, _cellSize), EmptyColor));   // 立体タイル
                 _cellImages[x, y] = cell;
 
                 // ピース境界用エッジ（上/下/左/右）。既定は非表示
@@ -428,13 +440,14 @@ public class BuildScreen : MonoBehaviour
             float ox = -200f - (maxX - minX) * (cs + cgap) / 2f;
             float oy = (maxY - minY) * (cs + cgap) / 2f;
             foreach (var v in shape)
-                ProtoUI.CreatePanel("Mas", img.transform,
+                ProtoUI.Bevel(ProtoUI.CreatePanel("Mas", img.transform,
                     new Vector2(ox + (v.x - minX) * (cs + cgap), oy - (v.y - minY) * (cs + cgap)),
-                    new Vector2(cs, cs), c.CategoryColor).raycastTarget = false;
+                    new Vector2(cs, cs), c.CategoryColor)).raycastTarget = false;
 
             string kindTag = CardDef.KindLabel(c.Category);
+            string rhex = ColorUtility.ToHtmlStringRGB(c.RarityColor);
             var title = ProtoUI.CreateText("T", img.transform,
-                $"{c.displayName}　<size=13>[{kindTag}] {c.Size}マス / マナ{c.ManaCost}</size>", 16,
+                $"<color=#{rhex}>{c.displayName}</color>　<size=13>[{kindTag}] {c.Size}マス / マナ{c.ManaCost}</size>", 16,
                 new Vector2(40, 12), new Vector2(360, 24), Color.white, TextAlignmentOptions.Left);
             title.raycastTarget = false;
             var desc = ProtoUI.CreateText("D", img.transform,
@@ -558,6 +571,7 @@ public class BuildScreen : MonoBehaviour
                 if (_main.OwnedCount(_selected.id) <= 0) _selected = null; // 在庫切れなら選択解除
                 RefreshTray();
                 UpdateSelectedText(); RefreshBoard();
+                PlaySynergyFx(P.GetAt(x, y));                          // 隣接シナジーが生まれたら光る
             }
             else { RefreshBoard(); ShowNotice("ここには置けません！スペースが足りません"); } // 通知を上書きしない
         }
@@ -594,6 +608,55 @@ public class BuildScreen : MonoBehaviour
         if (rPressed) RotateAny();
 
         UpdateHoverPreview();
+        PulseSynergyCells();
+        SynergyHoverTip();
+    }
+
+    // シナジー中のマスをゆっくり明滅させる（発動中であることを常に可視化）
+    void PulseSynergyCells()
+    {
+        if (_synCells.Count == 0 || _addMode || _synergyFxCo != null || _cellImages == null) return;
+        float k = (Mathf.Sin(Time.unscaledTime * 4f) + 1f) * 0.5f * 0.22f;   // 0〜0.22 のゆらぎ
+        foreach (var v in _synCells)
+        {
+            if (!P.IsValid(v.x, v.y)) continue;
+            var p = P.GetAt(v.x, v.y);
+            if (p == null || p.card == null) continue;
+            if (_boardSel.HasValue && P.GetAt(_boardSel.Value.x, _boardSel.Value.y) == p) continue;   // 選択中の白ハイライトを優先
+            _cellImages[v.x, v.y].color = Color.Lerp(p.card.CategoryColor, Color.white, 0.08f + k);
+        }
+    }
+
+    // シナジー中のピースにカーソルを合わせると、発動中の効果を表示
+    bool _synTipShown;
+    void SynergyHoverTip()
+    {
+        if (_selected != null || _isDragging || _addMode || _noticeCo != null)
+        {
+            if (_synTipShown) { _synTipShown = false; UpdateSelectedText(); }
+            return;
+        }
+        Vector2Int cell = default;
+        bool hit = TryGetPointerPos(out var sp)
+            && TryGetCellAtScreenPoint(sp, null, out cell)
+            && _synCells.Contains(new Vector2Int(cell.x, cell.y));
+        if (hit)
+        {
+            var p = P.GetAt(cell.x, cell.y);
+            if (p == null || p.card == null) return;
+            var s = _main.ComputeSynergy();
+            string eff;
+            switch (p.card.Category)
+            {
+                case CardKind.Attack: eff = $"攻撃カードの威力 +{s.attackPct}%"; break;
+                case CardKind.Defense: eff = $"戦闘の毎ターン開始時 ブロック+{s.block}"; break;
+                case CardKind.Heal: eff = $"戦闘の毎ターン開始時 HP+{s.regen}回復"; break;
+                default: eff = s.mana > 0 ? $"戦闘中のマナ +{s.mana}" : "スキル接続 2つごとにマナ+1（あと1接続）"; break;
+            }
+            _selectedText.text = $"<color=#FFD86A>シナジー発動中：</color>{eff}";
+            _synTipShown = true;
+        }
+        else if (_synTipShown) { _synTipShown = false; UpdateSelectedText(); }
     }
 
     void RotateAny()
@@ -681,13 +744,17 @@ public class BuildScreen : MonoBehaviour
         if (!_isDragging) return;
         _isDragging = false;
         bool placed = false;
+        Vector2Int landing = default;
         if (TryGetCellUnderPointer(e, out var cell))
         {
             var delta = cell - _dragGrabCell;
-            placed = P.PlaceCells(_dragCard, _dragOrigCells.Select(c => c + delta).ToList());
+            var target = _dragOrigCells.Select(c => c + delta).ToList();
+            placed = P.PlaceCells(_dragCard, target);
+            if (placed) landing = target[0];
         }
         if (!placed) { P.PlaceCells(_dragCard, _dragOrigCells); ShowNotice("そこには動かせません！元の場所に戻しました"); }
         RefreshBoard();
+        if (placed) PlaySynergyFx(P.GetAt(landing.x, landing.y));   // 移動先でシナジーが生まれたら光る
     }
 
     bool TryGetCellUnderPointer(UnityEngine.EventSystems.PointerEventData e, out Vector2Int cell)
@@ -766,6 +833,26 @@ public class BuildScreen : MonoBehaviour
                 }
             }
 
+        // シナジー中のマスを収集（同種別の別ピースと隣接しているピース＝常時点滅の対象）
+        _synCells.Clear();
+        foreach (var p in panel.Placements)
+        {
+            if (p.card == null) continue;
+            bool linked = false;
+            foreach (var c in p.cells)
+            {
+                for (int d = 0; d < 4 && !linked; d++)
+                {
+                    int nx = c.x + dx[d], ny = c.y + dy[d];
+                    if (!panel.IsUnlocked(nx, ny)) continue;
+                    var np = panel.GetAt(nx, ny);
+                    if (np != null && np != p && np.card != null && np.card.Category == p.card.Category) linked = true;
+                }
+                if (linked) break;
+            }
+            if (linked) foreach (var c in p.cells) _synCells.Add(c);
+        }
+
         int total = panel.ValidCount();
         int occupied = panel.OccupiedCount();
         var counts = panel.CountByCard();
@@ -793,6 +880,54 @@ public class BuildScreen : MonoBehaviour
         var ordered = parts.OrderByDescending(r => r.w).Select(r => r.text).ToList();
         ordered.Add($"通常攻撃: {WPct(emptyW, sumW)}%");
         _info.text = string.Join("\n", ordered);
+    }
+
+    // ==================== シナジー発動演出 ====================
+    // 置いたピースが同種別のピースと隣接したら、つながったピース全体を大きく光らせる
+    Coroutine _synergyFxCo;
+    void PlaySynergyFx(PanelModel.Placement placed)
+    {
+        if (placed == null || placed.card == null) return;
+
+        // 置いたピースに隣接する「同じ種別の別ピース」を収集
+        var linked = new HashSet<PanelModel.Placement> { placed };
+        int[] dx = { 1, -1, 0, 0 }, dy = { 0, 0, 1, -1 };
+        foreach (var c in placed.cells)
+            for (int d = 0; d < 4; d++)
+            {
+                int nx = c.x + dx[d], ny = c.y + dy[d];
+                if (!P.IsUnlocked(nx, ny)) continue;
+                var np = P.GetAt(nx, ny);
+                if (np != null && np != placed && np.card != null
+                    && np.card.Category == placed.card.Category) linked.Add(np);
+            }
+        if (linked.Count <= 1) return;   // 隣接シナジーなし
+
+        // 発動音＋つながった全ピースのセルを光らせる
+        if (_sfx != null && _synergyClip != null) _sfx.PlayOneShot(_synergyClip);
+        var cells = new List<Vector2Int>();
+        foreach (var p in linked) cells.AddRange(p.cells);
+        if (_synergyFxCo != null) StopCoroutine(_synergyFxCo);
+        _synergyFxCo = StartCoroutine(SynergyFlash(cells, placed.card.CategoryColor));
+    }
+
+    IEnumerator SynergyFlash(List<Vector2Int> cells, Color baseCol)
+    {
+        const float dur = 0.6f;
+        float t = 0f;
+        while (t < dur)
+        {
+            t += Time.deltaTime;
+            // 2回の強い明滅（白く弾ける）
+            float pulse = Mathf.Abs(Mathf.Sin(t / dur * Mathf.PI * 2f));
+            Color c = Color.Lerp(baseCol, Color.white, 0.15f + 0.85f * pulse);
+            foreach (var v in cells)
+                if (P.IsValid(v.x, v.y) && _cellImages[v.x, v.y] != null)
+                    _cellImages[v.x, v.y].color = c;
+            yield return null;
+        }
+        _synergyFxCo = null;
+        RefreshBoard();   // 元の色に戻す
     }
 
     static int Pct(int n, int total) => total > 0 ? Mathf.RoundToInt(100f * n / total) : 0;

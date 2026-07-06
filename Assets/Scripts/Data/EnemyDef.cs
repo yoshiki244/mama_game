@@ -3,6 +3,16 @@ using UnityEngine;
 // 敵の見た目（ProtoPixelArtのドット絵を選ぶ）
 public enum EnemySpriteKey { Slime, Bat, Golem, Dragon, Oni, Knight }
 
+// 敵の行動タイプ（攻撃以外のギミック）
+public enum EnemyActKind
+{
+    Attack,       // 通常攻撃（hits=0なら様子見）
+    Guard,        // ブロックを amount 獲得（次のプレイヤー攻撃を軽減）
+    PowerUp,      // 攻撃力を amount 上昇（戦闘中持続）
+    PoisonPlayer, // 攻撃＋プレイヤーに毒 amount を付与
+    Charge,       // チャージ（次の攻撃の威力1.8倍）
+}
+
 [System.Serializable]
 public class EnemyAttackDef
 {
@@ -10,6 +20,8 @@ public class EnemyAttackDef
     public float mult = 1f;   // 基本攻撃力に掛ける倍率
     public int hits = 1;      // ヒット数（0=様子見）
     public int weight = 30;   // 抽選の重み
+    public EnemyActKind act = EnemyActKind.Attack; // 行動タイプ
+    public int amount;        // Guard/PowerUp/PoisonPlayer の効果量
 }
 
 // 敵の定義。ScriptableObjectとしてUnity上で編集・追加できる。

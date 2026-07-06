@@ -1,0 +1,34 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: f14ebdacf6caf91459546f91917b1e91, type: 3}
+  m_Name: card_manabakuha
+  m_EditorClassIdentifier: Assembly-CSharp::CardDef
+  id: manabakuha
+  displayName: "\u30DE\u30CA\u30D0\u30FC\u30B9\u30C8"
+  description: "\u6B8B\u308A\u30DE\u30CA\u3092\u5168\u6D88\u8CBB\u3057\u30DE\u30CA\xD740\u3092\u5A01\u529B\u306B\u52A0\u7B97\u3002"
+  kind: 0
+  shapeRows:
+  - XXXX
+  - XXXX
+  - XX..
+  power: 40
+  minDepth: 6
+  maxDepth: 0
+  color: {r: 0.6, g: 0.5, b: 1, a: 1}
+  icon: {fileID: 0}
+  effects:
+  - type: 20
+    amount: 40
+    duration: 0
+  manaCostOverride: 1
+  unlockTier: 2
+  rarity: 2

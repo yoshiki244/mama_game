@@ -13,35 +13,45 @@ MonoBehaviour:
   m_Name: enemy_dragon
   m_EditorClassIdentifier: Assembly-CSharp::EnemyDef
   id: dragon
-  enemyName: "\u30C9\u30E9\u30B4\u30F3"
+  enemyName: "\u30A8\u30F3\u30B7\u30A7\u30F3\u30C8\u30C9\u30E9\u30B4\u30F3"
   spriteKey: 3
   useDragonFrontOnMap: 1
-  baseHP: 620
-  minAtk: 13
-  maxAtk: 21
+  baseHP: 900
+  minAtk: 16
+  maxAtk: 24
   battleSize: {x: 720, y: 440}
   mapSize: {x: 135, y: 82}
   flying: 1
   levelOffset: 9
-  moneyReward: 200
+  moneyReward: 300
   attacks:
   - name: "\u304B\u307F\u3064\u304D"
     mult: 1
     hits: 1
-    weight: 35
-  - name: "\u307B\u306E\u304A\u306E\u30D6\u30EC\u30B9"
-    mult: 1.9
+    weight: 32
+    act: 0
+    amount: 0
+  - name: "\u707C\u71B1\u306E\u30D6\u30EC\u30B9"
+    mult: 2
     hits: 1
-    weight: 22
+    weight: 24
+    act: 0
+    amount: 0
   - name: "\u3064\u3070\u3055\u306E\u9023\u6483"
     mult: 0.6
     hits: 3
     weight: 20
+    act: 0
+    amount: 0
   - name: "\u3057\u3063\u307D\u632F\u308A\u56DE\u3057"
-    mult: 0.85
+    mult: 0.9
     hits: 2
-    weight: 15
+    weight: 14
+    act: 0
+    amount: 0
   - name: "\u5929\u3092\u3042\u304A\u3044\u3067\u5486\u54EE\u3057\u305F"
-    mult: 0
-    hits: 0
-    weight: 8
+    mult: 1
+    hits: 1
+    weight: 12
+    act: 2
+    amount: 5

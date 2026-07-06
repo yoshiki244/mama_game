@@ -28,4 +28,6 @@ MonoBehaviour:
   - type: 8
     amount: 3
     duration: 0
-  manaCostOverride: -1
+  manaCostOverride: 2
+  unlockTier: 0
+  rarity: 0

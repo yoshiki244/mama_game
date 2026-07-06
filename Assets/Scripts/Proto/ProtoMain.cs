@@ -22,7 +22,7 @@ public class ProtoMain : MonoBehaviour
     public int CellStock { get; private set; }     // 入手済み・未配置のマス数
     public int CurrentHP { get; private set; }     // 戦闘をまたいで継続するHP
     public int BoardCells => Panel != null ? Panel.UnlockedCount() : 0; // 現在の解放マス数
-    public int MaxMana => BoardCells / 10 + (Equipped == EquipKind.ManaPendant ? 1 : 0); // マナ＝盤面÷10＋装備
+    public int MaxMana => BoardCells / 10 + (Equipped == EquipKind.ManaPendant ? 1 : 0); // マナ＝盤面÷10＋装備（初期30マス→3）
     public EquipKind Equipped { get; private set; } = EquipKind.None; // 装備（1つだけ）
     // 生命のペンダントで最大HP+10%
     public int MaxHP => Stats == null ? 0 : Stats.MaxHP + (Equipped == EquipKind.LifePendant ? Mathf.RoundToInt(Stats.MaxHP * 0.10f) : 0);
@@ -43,6 +43,35 @@ public class ProtoMain : MonoBehaviour
     }
     public int Wave { get; private set; } = 1;
     public int CurrentDepth { get; set; } = 1; // 現在地の深度（マップの列番号）。報酬/ショップの抽選に使う
+
+    // ---- メタ進行（アセンション／シード） ----
+    public int Ascension { get; private set; }      // このランの難度
+    public int MapSeed { get; private set; }        // 現在マップの生成シード（セーブで再現）
+    public void NewMapSeed() => MapSeed = Random.Range(1, int.MaxValue);
+
+    // ---- 演出速度（周回の快適性。Time.timeScaleで一括制御） ----
+    public float GameSpeed { get; private set; } = 1f;
+    public void SetGameSpeed(float s, bool save = true)
+    {
+        GameSpeed = Mathf.Clamp(s, 1f, 2f);
+        Time.timeScale = GameSpeed;
+        if (save) PlayerPrefs.SetFloat("gamespeed", GameSpeed);
+    }
+
+    // ---- ラン統計（リザルト表示用） ----
+    public int StatTotalDamage { get; private set; }
+    public int StatMaxHit { get; private set; }
+    public void AddDamageStat(int dmg)
+    {
+        if (dmg <= 0) return;
+        StatTotalDamage += dmg;
+        if (dmg > StatMaxHit) StatMaxHit = dmg;
+    }
+    public void ResetRunStats() { StatTotalDamage = 0; StatMaxHit = 0; }
+    // アセンション倍率
+    public float EnemyHpMul => 1f + 0.08f * Ascension;
+    public float EnemyDmgMul => 1f + 0.05f * Ascension;
+    public float ShopPriceMul => Ascension >= 3 ? 1.25f : 1f;
 
     public List<string> OwnedCardIds { get; private set; } = new List<string>();      // 所持したことのあるカードid（種類）
     public Dictionary<string, int> CardStock { get; private set; } = new Dictionary<string, int>(); // 未配置の在庫数
@@ -153,6 +182,47 @@ public class ProtoMain : MonoBehaviour
 
     public void SetWave(int wave) => Wave = wave;
 
+    // ---- 盤面の隣接シナジー ----
+    // 同じ種別のピースが隣接するほどボーナス。攻撃=威力% / 防御=開始ブロック / 回復=毎ターン回復 / スキル=毎ターンマナ
+    public struct Synergy { public int attackPct, block, regen, mana, atkC, defC, healC, skillC; }
+
+    public Synergy ComputeSynergy()
+    {
+        var s = new Synergy();
+        if (Panel == null) return s;
+        int w = Panel.W, h = Panel.H;
+        // 右・上の隣接だけ見て二重カウントを防ぐ
+        for (int x = 0; x < w; x++)
+            for (int y = 0; y < h; y++)
+            {
+                if (!Panel.IsUnlocked(x, y)) continue;
+                var a = Panel.GetAt(x, y);
+                if (a == null || a.card == null) continue;
+                CountEdge(a, x + 1, y, ref s);
+                CountEdge(a, x, y + 1, ref s);
+            }
+        s.attackPct = Mathf.Min(s.atkC * 4, 60);
+        s.block = s.defC * 3;
+        s.regen = s.healC * 2;
+        s.mana = s.skillC / 2;
+        return s;
+    }
+
+    void CountEdge(PanelModel.Placement a, int nx, int ny, ref Synergy s)
+    {
+        if (!Panel.IsUnlocked(nx, ny)) return;
+        var b = Panel.GetAt(nx, ny);
+        if (b == null || b.card == null || b == a) return;               // 別ピース同士のみ
+        if (a.card.Category != b.card.Category) return;                  // 同じ種別の接続だけ
+        switch (a.card.Category)
+        {
+            case CardKind.Attack: s.atkC++; break;
+            case CardKind.Defense: s.defC++; break;
+            case CardKind.Heal: s.healC++; break;
+            default: s.skillC++; break;
+        }
+    }
+
     // ---- カード成長（効果+20%・名前に＋） ----
     public Dictionary<string, int> GrowthLevels { get; private set; } = new Dictionary<string, int>();
 
@@ -204,7 +274,7 @@ public class ProtoMain : MonoBehaviour
     MenuScreen _menu;
     UnityEngine.UI.Image _bgImg;
     AudioSource _bgmSource;
-    AudioClip _fieldBgm, _battleBgm, _bossBgm;
+    AudioClip _fieldBgm, _battleBgm, _midBossBgm, _bossBgm, _shopBgm, _treeBgm, _evilBgm;
 
     void Awake()
     {
@@ -224,11 +294,15 @@ public class ProtoMain : MonoBehaviour
         _bgImg.color = new Color(0.85f, 0.9f, 0.9f);
         _bgImg.raycastTarget = false;
 
+        // メタ進行：アセンション適用・シード確定（マップ生成前に）
+        Ascension = ProtoUnlocks.Ascension;
+        NewMapSeed();
+
         // プレイヤー初期化
         Db?.ClearOverrides(); GrowthLevels.Clear();
         Stats = new PlayerStats(Cfg);
         Equipped = EquipKind.None;
-        CurrentHP = MaxHP;
+        CurrentHP = Ascension >= 2 ? Mathf.RoundToInt(MaxHP * 0.9f) : MaxHP; // A2+：開始HP-10%
         Money = 0;
         CellStock = 0;
         Panel = new PanelModel(GridDim, GridDim);
@@ -250,18 +324,50 @@ public class ProtoMain : MonoBehaviour
         // セーブ復元（あれば）
         ProtoSave.Load(this);
 
-        // BGM
+        // BGM：Assets/Resources に音源ファイルがあればそれを優先（bgm_field / bgm_battle / bgm_boss）
+        // 無ければ従来の生成音にフォールバック
         AudioListener.volume = PlayerPrefs.GetFloat("volume", 0.8f);
-        _fieldBgm = ProtoAudio.CreateBgm();
-        _battleBgm = ProtoAudio.CreateBattleBgm();
-        _bossBgm = ProtoAudio.CreateBossBgm();
+        _fieldBgm = Resources.Load<AudioClip>("bgm_field") ?? ProtoAudio.CreateBgm();
+        _battleBgm = Resources.Load<AudioClip>("bgm_battle") ?? ProtoAudio.CreateBattleBgm();
+        _midBossBgm = Resources.Load<AudioClip>("bgm_midboss") ?? ProtoAudio.CreateMidBossBgm();
+        _bossBgm = Resources.Load<AudioClip>("bgm_boss") ?? ProtoAudio.CreateBossBgm();
+        _shopBgm = Resources.Load<AudioClip>("bgm_shop") ?? ProtoAudio.CreateShopBgm();
+        _treeBgm = Resources.Load<AudioClip>("bgm_tree") ?? ProtoAudio.CreateTreeBgm();
+        _evilBgm = Resources.Load<AudioClip>("bgm_contract") ?? ProtoAudio.CreateEvilBgm();
         _bgmSource = gameObject.AddComponent<AudioSource>();
         _bgmSource.clip = _fieldBgm;
         _bgmSource.loop = true;
         SetBgmEnabled(PlayerPrefs.GetInt("bgm", 1) == 1);
+        SetGameSpeed(PlayerPrefs.GetFloat("gamespeed", 1f));
+        ResetRunStats();
     }
 
-    void Start() => ShowMap();
+    void Start() => ShowTitle();
+
+    // ==================== タイトル画面 ====================
+    GameObject _titleGO;
+    void ShowTitle()
+    {
+        _battle.Hide(); _build.Hide(); _map.Hide(); _menu.Hide();
+        _bgImg.enabled = false;
+
+        var rt = ProtoUI.CreateFullScreen("Title", Canvas.transform);
+        _titleGO = rt.gameObject;
+        var bg = rt.gameObject.AddComponent<UnityEngine.UI.Image>();
+        bg.color = Color.black;   // 背景は真っ黒
+
+        var title = ProtoUI.CreateText("TitleLogo", rt, "Project M（仮）", 72, new Vector2(0, 180), new Vector2(1200, 110), ProtoUI.Gold);
+        ProtoUI.StyleTitle(title, ProtoUI.Gold, 10f);
+
+        bool hasSave = ProtoSave.HasSave();
+        ProtoUI.CreateGoldButton("TNew", rt, "最初から", 26, new Vector2(0, -20), new Vector2(340, 72),
+            new Color(0.35f, 0.3f, 0.55f, 0.98f), () => { Destroy(_titleGO); _titleGO = null; RestartRun(); });
+        if (hasSave)
+            ProtoUI.CreateGoldButton("TContinue", rt, "続きから", 26, new Vector2(0, -120), new Vector2(340, 72),
+                new Color(0.30f, 0.45f, 0.32f, 0.98f), () => { Destroy(_titleGO); _titleGO = null; ShowMap(); });
+        ProtoUI.CreateText("TVer", rt, $"ver {Application.version}", 15,
+            new Vector2(0, -380), new Vector2(900, 24), new Color(0.6f, 0.62f, 0.75f));
+    }
 
     // 初期所持カードを在庫1ずつで設定
     void InitInitialCards()
@@ -300,6 +406,31 @@ public class ProtoMain : MonoBehaviour
         }
     }
 
+    // マップの踏破状況をセーブ用に取得（MapScreenへ委譲）
+    public void CaptureMap(List<int> cleared, out int curNode)
+    {
+        curNode = -1;
+        if (_map != null) _map.CaptureRun(cleared, out curNode);
+    }
+
+    // ランの途中状態を復元（ProtoSaveが呼ぶ・v5以降）
+    public void ApplyLoadedRun(int wave, int curHP, int maxHP, int depth, int ascension, int mapSeed, List<int> cleared, int curNode)
+    {
+        Wave = Mathf.Max(1, wave);
+        CurrentDepth = Mathf.Max(1, depth);
+        Ascension = Mathf.Clamp(ascension, 0, ProtoUnlocks.MaxAscension);
+        if (maxHP > 0 && Stats != null) Stats.MaxHP = maxHP;   // 契約/神聖樹で増減した最大HPを復元
+        if (curHP >= 0) CurrentHP = Mathf.Clamp(curHP, 1, MaxHP);
+        if (mapSeed != 0)
+        {
+            MapSeed = mapSeed;
+            _map?.RestoreRun(cleared, curNode);   // 同じマップを再生成して踏破状況を反映
+        }
+    }
+
+    // オートセーブ（マス到達・イベント解決ごとにMapScreenが呼ぶ）
+    public void AutoSaveRun() => ProtoSave.Save(this);
+
     void PlayBgm(AudioClip clip)
     {
         if (_bgmSource == null || clip == null) return;
@@ -309,11 +440,15 @@ public class ProtoMain : MonoBehaviour
     }
 
     public void PlayMapBgm(int area) => PlayBgm(_fieldBgm);
+    public void PlayShopBgm() => PlayBgm(_shopBgm);
+    public void PlayTreeBgm() => PlayBgm(_treeBgm);
+    public void PlayEvilBgm() => PlayBgm(_evilBgm);
 
-    public void SetBgmEnabled(bool enabled)
+    public void SetBgmEnabled(bool enabled, bool save = true)
     {
         BgmEnabled = enabled;
-        PlayerPrefs.SetInt("bgm", enabled ? 1 : 0);
+        if (save) PlayerPrefs.SetInt("bgm", enabled ? 1 : 0);
+        if (_bgmSource == null) return;   // 初期化前（起動時のHide経由）は状態だけ保持
         if (enabled && !_bgmSource.isPlaying) _bgmSource.Play();
         else if (!enabled && _bgmSource.isPlaying) _bgmSource.Stop();
     }
@@ -335,10 +470,13 @@ public class ProtoMain : MonoBehaviour
     // 最初から（すべてリセット：ステータス・Wave・お金・盤面・拡張・所持カード）
     public void RestartRun()
     {
+        Ascension = ProtoUnlocks.Ascension;   // 「最初から」で選択中アセンションを反映
+        NewMapSeed();
+        ResetRunStats();
         Db?.ClearOverrides(); GrowthLevels.Clear();   // 成長もリセット
         Stats = new PlayerStats(Cfg);
         Equipped = EquipKind.None;   // 装備もリセット
-        CurrentHP = MaxHP;
+        CurrentHP = Ascension >= 2 ? Mathf.RoundToInt(MaxHP * 0.9f) : MaxHP;
         Wave = 1;
         Money = 0;
         CellStock = 0;
@@ -376,7 +514,14 @@ public class ProtoMain : MonoBehaviour
         _bgImg.enabled = true;
         _build.Hide(); _map.Hide(); _menu.Hide();
         _battle.Begin(enemy);
-        PlayBgm(enemy != null && enemy.levelOffset > 0 ? _bossBgm : _battleBgm);
+        // BGMは3系統：ボス（Wave末の3体）／中ボス／雑魚
+        var bgm = _battleBgm;
+        if (enemy != null)
+        {
+            if (enemy.id == "dragon" || enemy.id.StartsWith("boss_")) bgm = _bossBgm;
+            else if (enemy.id.StartsWith("midboss_")) bgm = _midBossBgm;
+        }
+        PlayBgm(bgm);
     }
 
     // 戦闘勝利（報酬処理はProtoBattle側で完了済み）→ マップへ

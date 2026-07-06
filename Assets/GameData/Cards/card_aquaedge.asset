@@ -26,4 +26,6 @@ MonoBehaviour:
   color: {r: 0.4, g: 0.8, b: 1, a: 1}
   icon: {fileID: 0}
   effects: []
-  manaCostOverride: -1
+  manaCostOverride: 3
+  unlockTier: 0
+  rarity: 0

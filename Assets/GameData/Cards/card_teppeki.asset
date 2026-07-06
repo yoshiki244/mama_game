@@ -1,0 +1,34 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: f14ebdacf6caf91459546f91917b1e91, type: 3}
+  m_Name: card_teppeki
+  m_EditorClassIdentifier: Assembly-CSharp::CardDef
+  id: teppeki
+  displayName: "\u9244\u58C1"
+  description: "\u30D6\u30ED\u30C3\u30AF\u309220\u5F97\u308B\u3002"
+  kind: 1
+  shapeRows:
+  - XXX
+  - XXX
+  - X..
+  power: 0
+  minDepth: 3
+  maxDepth: 0
+  color: {r: 0.5, g: 0.65, b: 0.9, a: 1}
+  icon: {fileID: 0}
+  effects:
+  - type: 5
+    amount: 20
+    duration: 0
+  manaCostOverride: 2
+  unlockTier: 1
+  rarity: 0

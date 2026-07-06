@@ -1,0 +1,33 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: f14ebdacf6caf91459546f91917b1e91, type: 3}
+  m_Name: card_chargeken
+  m_EditorClassIdentifier: Assembly-CSharp::CardDef
+  id: chargeken
+  displayName: "\u30C1\u30E3\u30FC\u30B8\u65AC"
+  description: "\u3053\u306E\u6226\u95D8\u3067\u4F7F\u3046\u305F\u3073\u5A01\u529B+15\u3002"
+  kind: 0
+  shapeRows:
+  - XXX
+  - XXX
+  power: 50
+  minDepth: 2
+  maxDepth: 0
+  color: {r: 0.85, g: 0.85, b: 0.5, a: 1}
+  icon: {fileID: 0}
+  effects:
+  - type: 17
+    amount: 15
+    duration: 0
+  manaCostOverride: 3
+  unlockTier: 1
+  rarity: 1

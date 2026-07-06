@@ -27,3 +27,5 @@ MonoBehaviour:
   icon: {fileID: 0}
   effects: []
   manaCostOverride: 3
+  unlockTier: 0
+  rarity: 0

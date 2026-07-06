@@ -1,0 +1,33 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: f14ebdacf6caf91459546f91917b1e91, type: 3}
+  m_Name: card_rensei
+  m_EditorClassIdentifier: Assembly-CSharp::CardDef
+  id: rensei
+  displayName: "\u624B\u672D\u932C\u6210"
+  description: "\u624B\u672D\u3092\u30E9\u30F3\u30C0\u30E0\u306B1\u679A\u6368\u3066\u30662\u679A\u5F15\u304F\u3002"
+  kind: 1
+  shapeRows:
+  - XXX
+  - XX.
+  power: 0
+  minDepth: 3
+  maxDepth: 0
+  color: {r: 0.75, g: 0.85, b: 0.6, a: 1}
+  icon: {fileID: 0}
+  effects:
+  - type: 36
+    amount: 2
+    duration: 0
+  manaCostOverride: -1
+  unlockTier: 1
+  rarity: 0

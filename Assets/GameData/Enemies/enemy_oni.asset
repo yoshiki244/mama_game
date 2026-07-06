@@ -29,15 +29,23 @@ MonoBehaviour:
     mult: 1
     hits: 1
     weight: 40
+    act: 0
+    amount: 0
   - name: "\u5730\u7344\u7A81\u304D"
     mult: 1.9
     hits: 1
     weight: 25
+    act: 0
+    amount: 0
   - name: "\u9B3C\u306E\u9023\u6253"
     mult: 0.65
     hits: 3
     weight: 20
+    act: 0
+    amount: 0
   - name: "\u96C4\u53EB\u3073\u3092\u3042\u3052\u3066\u3044\u308B"
-    mult: 0
-    hits: 0
-    weight: 15
+    mult: 1
+    hits: 1
+    weight: 16
+    act: 2
+    amount: 4

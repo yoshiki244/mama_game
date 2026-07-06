@@ -58,6 +58,30 @@ public class ProtoBattle : MonoBehaviour
     TextMeshProUGUI _enemyStatusText; // 敵HPゲージ横の状態異常表示
     bool _primeBlink;    // 次のアタックで点滅
 
+    // 拡張効果の状態
+    int _stunTurns;                       // 敵の行動不能ターン
+    int _regenAmt, _regenTurns;           // 毎ターン回復
+    int _thornsDmg, _thornsTurns;         // 被弾時反撃
+    int _blockRegenAmt, _blockRegenTurns; // 毎ターンブロック
+    int _reflectPct;                      // 次の被弾を軽減＆反射（1回）
+    int _guardPct, _guardTurns;           // 継続被ダメ軽減
+    int _counterDmg;                      // 次の被弾で反撃（1回）
+    int _vulnPct, _vulnTurns;             // 敵の被ダメ増加
+    int _ailmentAmp;                      // 毒・やけど強化（この戦闘中）
+    int _nextTurnExtra;                   // 次ターンの手札追加枚数
+    int _timeBombDmg, _timeBombTurns;     // 時限爆弾
+    readonly Dictionary<string, int> _useCounts = new Dictionary<string, int>(); // GrowingPower用
+
+    EnemyAttackDef _intent;               // 敵の次の行動（インテント）
+    TextMeshProUGUI _intentText; Image _intentBg; GameObject _intentBadge; // インテント表示
+    ProtoMain.Synergy _syn;               // 盤面シナジー（戦闘開始時に確定）
+
+    // 敵ギミックの状態
+    int _enemyBlock;      // 敵のブロック（プレイヤーの攻撃を吸収。敵ターン開始でリセット）
+    int _enemyAtkUp;      // 敵の攻撃力上昇（戦闘中持続）
+    bool _enemyCharged;   // チャージ中（次の攻撃1.8倍）
+    int _playerPoison;    // プレイヤーが受けた毒（自ターン開始にダメージ、毎ターン1減衰）
+
     AudioSource _sfx;
     AudioClip[] _hitClips;
     AudioClip _swingClip;
@@ -90,6 +114,7 @@ public class ProtoBattle : MonoBehaviour
         _enemy = enemy;
         _root.gameObject.SetActive(true);
         _resultRoot.gameObject.SetActive(false);
+        Time.timeScale = _main.GameSpeed;
         _challengeRoot.gameObject.SetActive(false);
 
         // キャラ立ち絵・顔・位置サイズを通常に戻す（前回の倒れ絵/被弾絵をリセット）
@@ -116,9 +141,14 @@ public class ProtoBattle : MonoBehaviour
         _playerHP = Mathf.Clamp(_main.CurrentHP, 1, _playerMaxHP); // 前回の戦闘後HPを継続
         _block = 0; _strength = 0; _protectPct = 0; _weakPct = 0; _weakTurns = 0; _poison = 0; _burn = 0;
         _manaBoostNext = 0; _primeBlink = false;
+        _stunTurns = 0; _regenAmt = 0; _regenTurns = 0; _thornsDmg = 0; _thornsTurns = 0;
+        _blockRegenAmt = 0; _blockRegenTurns = 0; _reflectPct = 0; _guardPct = 0; _guardTurns = 0;
+        _counterDmg = 0; _vulnPct = 0; _vulnTurns = 0; _ailmentAmp = 0; _nextTurnExtra = 0;
+        _timeBombDmg = 0; _timeBombTurns = 0; _useCounts.Clear();
+        _enemyBlock = 0; _enemyAtkUp = 0; _enemyCharged = false; _playerPoison = 0;
 
         _effWave = _main.Wave + enemy.levelOffset;
-        _enemyMaxHP = enemy.baseHP + 40 * (_effWave - 1);
+        _enemyMaxHP = Mathf.RoundToInt((enemy.baseHP + 40 * (_effWave - 1)) * _main.EnemyHpMul); // アセンションでHP増
         _enemyHP = _enemyMaxHP;
         // グラヴィティペンダント：戦闘開始時に敵HP-5%
         if (_main.Equipped == EquipKind.GravityPendant) _enemyHP = Mathf.Max(1, Mathf.RoundToInt(_enemyMaxHP * 0.95f));
@@ -133,17 +163,36 @@ public class ProtoBattle : MonoBehaviour
         _enemyShadow = null;
         if (!enemy.flying) { AddGroundShadow(_slimeRt, enemy.battleSize.x * 0.5f); _enemyShadow = (RectTransform)_slimeRt.GetChild(0); }
 
+        _syn = _main.ComputeSynergy(); // 盤面シナジーを確定
+        RollIntent(); // 初回のインテント
         StartPlayerTurn(firstTurn: true);
     }
 
     void StartPlayerTurn(bool firstTurn = false)
     {
-        _block = 0; // ブロックは自ターン開始でリセット
-        _mana = _main.MaxMana + _manaBoostNext;
+        _block = _syn.block;   // シナジー：開始ブロック
+        _mana = _main.MaxMana + _manaBoostNext + _syn.mana; // シナジー：マナ
         _manaBoostNext = 0;
 
-        // 毎ターン、盤面構成の確率（出現率）に従って手札を5枚配り直す
-        DealHand();
+        // シナジー：毎ターン回復
+        if (_syn.regen > 0) _playerHP = Mathf.Min(_playerMaxHP, _playerHP + _syn.regen);
+
+        // プレイヤーの毒（毎ターンダメージ→1ずつ減衰）
+        if (_playerPoison > 0)
+        {
+            _playerHP = Mathf.Max(0, _playerHP - _playerPoison);
+            _message.text = $"毒が体を蝕む……{_playerPoison} ダメージ";
+            _playerPoison--;
+            if (_playerHP <= 0) { StartCoroutine(Defeat()); return; }
+        }
+
+        // 継続効果：リジェネ／持続ブロック
+        if (_regenTurns > 0) { _playerHP = Mathf.Min(_playerMaxHP, _playerHP + _regenAmt); _regenTurns--; }
+        if (_blockRegenTurns > 0) { _block += _blockRegenAmt; _blockRegenTurns--; }
+
+        // 毎ターン、盤面構成の確率（出現率）に従って手札を配り直す（次ターン追加分を加算）
+        DealHand(_nextTurnExtra);
+        _nextTurnExtra = 0;
 
         _inputLocked = false;
         RefreshAll(dealAnimation: true);
@@ -152,10 +201,96 @@ public class ProtoBattle : MonoBehaviour
 
     float HpRatio() => _playerMaxHP > 0 ? Mathf.Clamp01(_playerHP / (float)_playerMaxHP) : 1f;
 
-    void DealHand()
+    // 用語集ポップアップ（キーワードの説明）
+    GameObject _glossaryGO;
+    void ShowGlossary()
+    {
+        if (_glossaryGO != null) { Destroy(_glossaryGO); _glossaryGO = null; return; }
+        var ov = ProtoUI.CreateFullScreen("Glossary", _root);
+        _glossaryGO = ov.gameObject;
+        ov.gameObject.AddComponent<Image>().color = new Color(0, 0, 0, 0.85f);
+        ProtoUI.CreateFramedPanel("GLBox", ov, Vector2.zero, new Vector2(980, 700),
+            new Color(0.07f, 0.06f, 0.12f, 0.99f), new Color(0.85f, 0.72f, 0.4f, 0.95f));
+        var t = ProtoUI.CreateText("GLT", ov, "用語集", 32, new Vector2(0, 300), new Vector2(600, 44), ProtoUI.Gold);
+        ProtoUI.StyleTitle(t, ProtoUI.Gold, 5f);
+        string body =
+            "<color=#FF9060>やけど / 毒</color>　毎ターン敵にダメージ。重ねがけで増える\n" +
+            "<color=#C080FF>弱体化</color>　敵の攻撃力を一定ターン下げる\n" +
+            "<color=#FFD060>弱点</color>　敵の受けるダメージが一定ターン増える\n" +
+            "<color=#7FB0FF>ブロック</color>　被ダメージを肩代わり（自ターン開始で消える）\n" +
+            "<color=#90C0FF>軽減</color>　被ダメージを%カット（プロテクト=次の1発）\n" +
+            "<color=#70C0FF>麻痺 / 凍結</color>　敵が行動できない\n" +
+            "<color=#90FFB0>茨 / 反撃 / 反射</color>　被弾時に敵へダメージを返す\n" +
+            "<color=#A0E060>毒（自分）</color>　毎ターン自分がダメージ。1ずつ減衰\n" +
+            "<color=#FF7040>盤面シナジー</color>　ビルドで同じ種別のピースを隣接させると発動\n" +
+            "<color=#FFC94D>敵の予告</color>　頭上の表示が次の行動。「→数字」は軽減後の実効値\n" +
+            "<color=#F0A0FF>チャージ（敵）</color>　次の敵攻撃が1.8倍。防御か妨害で備えよう";
+        var b = ProtoUI.CreateText("GLB", ov, body, 21, new Vector2(0, -10), new Vector2(880, 520), new Color(0.94f, 0.94f, 1f), TextAlignmentOptions.Left);
+        b.lineSpacing = 16f;
+        ProtoUI.CreateGoldButton("GLClose", ov, "閉じる", 22, new Vector2(0, -300), new Vector2(240, 56),
+            new Color(0.45f, 0.3f, 0.4f, 0.98f), () => { Destroy(_glossaryGO); _glossaryGO = null; });
+    }
+
+    // 逃げる：ペナルティとして所持金の20%を落とす（ノーリスク離脱の防止）
+    void Retreat()
+    {
+        int loss = Mathf.RoundToInt(_main.Money * 0.2f);
+        if (loss > 0) _main.AddMoney(-loss);
+        _main.SetCurrentHP(_playerHP);
+        _main.AutoSaveRun();
+        _main.ShowMap();
+    }
+
+    // 敵の次の行動を抽選（インテント）
+    void RollIntent() { _intent = _enemy != null ? _enemy.PickAttack() : null; }
+
+    // インテントの予測ダメージ（1ヒットあたり、弱体を反映）
+    int IntentPerHit()
+    {
+        if (_intent == null) return 0;
+        float baseAtk = (_enemy.minAtk + _enemy.maxAtk) / 2f + _enemyAtkUp; // 敵の強化を反映
+        int per = Mathf.RoundToInt((baseAtk * _intent.mult + 3 * (_effWave - 1)) * _main.EnemyDmgMul);
+        if (_enemyCharged) per = Mathf.RoundToInt(per * 1.8f);              // チャージ済みなら1.8倍
+        if (_weakTurns > 0) per = Mathf.RoundToInt(per * (1f - _weakPct / 100f));
+        return Mathf.Max(1, per);
+    }
+
+    void UpdateIntent()
+    {
+        if (_intentText == null) return;
+        bool show = _intent != null && !_dead && _enemyHP > 0;
+        if (_intentBadge != null) _intentBadge.SetActive(show);
+        if (!show) return;
+        if (_stunTurns > 0) { _intentText.text = "行動不能"; _intentText.color = new Color(0.7f, 0.8f, 1f); return; }
+        // ギミック行動の予告
+        switch (_intent.act)
+        {
+            case EnemyActKind.Guard: _intentText.text = $"防御 {_intent.amount}"; _intentText.color = new Color(0.6f, 0.8f, 1f); return;
+            case EnemyActKind.PowerUp: _intentText.text = $"強化 +{_intent.amount}"; _intentText.color = new Color(1f, 0.6f, 0.9f); return;
+            case EnemyActKind.Charge: _intentText.text = "チャージ中…"; _intentText.color = new Color(1f, 0.85f, 0.4f); return;
+            case EnemyActKind.PoisonPlayer:
+                _intentText.text = $"毒攻撃 {IntentPerHit()}"; _intentText.color = new Color(0.65f, 0.95f, 0.4f); return;
+        }
+        if (_intent.hits == 0) { _intentText.text = "様子見"; _intentText.color = new Color(0.85f, 0.85f, 0.9f); return; }
+        int per = IntentPerHit();
+
+        // 実効値：軽減（装備/継続/1回）とブロックを加味した「実際に受けそうなダメージ」
+        float cut = per;
+        if (_main.Equipped == EquipKind.GuardPendant) cut *= 0.95f;
+        if (_guardTurns > 0) cut *= 1f - _guardPct / 100f;
+        if (_protectPct > 0) cut *= 1f - _protectPct / 100f;   // 次の1発のみだが目安として反映
+        int eff = Mathf.Max(0, Mathf.RoundToInt(cut) * _intent.hits - _block);
+
+        string baseTxt = _intent.hits > 1 ? $"攻撃 {per}×{_intent.hits}" : $"攻撃 {per}";
+        int rawTotal = per * _intent.hits;
+        _intentText.text = eff < rawTotal ? $"{baseTxt} → {eff}" : baseTxt;
+        _intentText.color = new Color(1f, 0.85f, 0.75f);
+    }
+
+    void DealHand(int extra = 0)
     {
         _hand.Clear();
-        int n = _main.Equipped == EquipKind.HandPendant ? 6 : 5;   // 手札枚数（手札増強で6枚）
+        int n = (_main.Equipped == EquipKind.HandPendant ? 6 : 5) + Mathf.Max(0, extra);   // 手札枚数（手札増強で6枚）
         for (int i = 0; i < n; i++)
         {
             CardDef c = _main.Panel.PickWeighted(HpRatio());   // HPが低いほど大型（強）カードが出やすい
@@ -222,6 +357,9 @@ public class ProtoBattle : MonoBehaviour
             new Color(1f, 0.55f, 0.3f), TextAlignmentOptions.Right);
         _enemyStatusText.fontStyle = FontStyles.Bold;
 
+        // 敵インテントのバッジ表示は廃止（行動の抽選・実行ロジックは維持）
+        // ※復活させる場合はここでバッジUIを生成し、_intentText/_intentBadge に代入する
+
         // キャラ
         _slimeImg = CreateCharacterSprite("EnemySprite", ProtoPixelArt.Dragon(), new Vector2(400, 70), new Vector2(540, 355));
         _slimeRt = (RectTransform)_slimeImg.transform.parent;
@@ -274,7 +412,11 @@ public class ProtoBattle : MonoBehaviour
             new Color(0.38f, 0.13f, 0.12f, 0.96f), OnEndTurn);
         ProtoUI.CreatePanel("RetreatBorder", _root, new Vector2(632, -374), new Vector2(224, 80), new Color(0.85f, 0.72f, 0.4f, 0.95f)).raycastTarget = false;
         ProtoUI.CreateButton("RetreatBtn", _root, "逃げる", 20, new Vector2(632, -374), new Vector2(212, 68),
-            new Color(0.16f, 0.14f, 0.18f, 0.96f), () => { _main.SetCurrentHP(_playerHP); _main.ShowMap(); });
+            new Color(0.16f, 0.14f, 0.18f, 0.96f), Retreat);
+
+        // 用語集（？ボタン・敵HUDの右）
+        ProtoUI.CreateGoldButton("GlossaryBtn", _root, "？", 22, new Vector2(770, 416), new Vector2(52, 44),
+            new Color(0.3f, 0.28f, 0.5f, 0.98f), ShowGlossary);
 
         // 点滅チャレンジ
         _challengeRoot = ProtoUI.CreateFullScreen("Challenge", _root);
@@ -303,7 +445,18 @@ public class ProtoBattle : MonoBehaviour
         _pHpText.text = $"HP {_playerHP}/{_playerMaxHP}";
         ProtoUI.SetGauge(_enemyFill, _enemyHP / (float)_enemyMaxHP, GaugeWidth);
         _enemyHPText.text = $"{_enemyHP}/{_enemyMaxHP}";
-        if (_enemyStatusText != null) _enemyStatusText.text = _burn > 0 ? "やけど" : "";
+        if (_enemyStatusText != null)
+        {
+            var es = new List<string>();
+            if (_burn > 0) es.Add("やけど");
+            if (_poison > 0) es.Add("毒");
+            if (_stunTurns > 0) es.Add("麻痺");
+            if (_vulnTurns > 0) es.Add("弱点");
+            if (_enemyBlock > 0) es.Add($"盾{_enemyBlock}");
+            if (_enemyAtkUp > 0) es.Add($"攻+{_enemyAtkUp}");
+            _enemyStatusText.text = string.Join(" ", es);
+        }
+        UpdateIntent();
         RefreshMana();
 
         var st = new List<string>();
@@ -312,7 +465,14 @@ public class ProtoBattle : MonoBehaviour
         if (_protectPct > 0) st.Add($"<color=#90C0FF>軽減{_protectPct}%</color>");
         if (_primeBlink) st.Add("<color=#FFD040>点滅構え</color>");
         if (_weakTurns > 0) st.Add($"<color=#C080FF>敵弱体{_weakTurns}T</color>");
-        if (_poison > 0) st.Add($"<color=#80FF60>敵毒{_poison}</color>");
+        if (_playerPoison > 0) st.Add($"<color=#A0E060>毒{_playerPoison}</color>");
+        if (_guardTurns > 0) st.Add($"<color=#90C0FF>継続軽減{_guardPct}%</color>");
+        if (_thornsTurns > 0) st.Add($"<color=#90FFB0>茨{_thornsDmg}</color>");
+        // 盤面シナジー（この戦闘中ずっと有効）
+        if (_syn.attackPct > 0) st.Add($"<color=#FF7040>盤面攻+{_syn.attackPct}%</color>");
+        if (_syn.block > 0) st.Add($"<color=#7FB0FF>盤面盾+{_syn.block}</color>");
+        if (_syn.regen > 0) st.Add($"<color=#70FF90>盤面再生+{_syn.regen}</color>");
+        if (_syn.mana > 0) st.Add($"<color=#C0A0FF>盤面マナ+{_syn.mana}</color>");
         _statusText.text = string.Join("  ", st);
 
         RefreshHand(dealAnimation);
@@ -325,7 +485,8 @@ public class ProtoBattle : MonoBehaviour
         foreach (Transform c in _handArea) Destroy(c.gameObject);
         _cardRects.Clear();
         int n = _hand.Count;
-        const float R = 940f, step = 9f;
+        const float R = 940f;
+        float step = n <= 6 ? 9f : 54f / (n - 1);   // 7枚以上は扇の全幅54°に収めて圧縮（画面はみ出し防止）
         float mid = (n - 1) / 2f;
         var made = new List<RectTransform>();
         for (int i = 0; i < n; i++)
@@ -356,7 +517,7 @@ public class ProtoBattle : MonoBehaviour
         for (int i = made.Count - 1; i >= 0; i--) made[i].SetAsLastSibling();
     }
 
-    // カードをクリック＝発動
+    // カードをクリック＝即発動
     void TryPlayCard(int index)
     {
         if (_inputLocked || index < 0 || index >= _hand.Count) return;
@@ -391,11 +552,11 @@ public class ProtoBattle : MonoBehaviour
         int minX = shape.Min(v => v.x), minY = shape.Min(v => v.y), maxX = shape.Max(v => v.x), maxY = shape.Max(v => v.y);
         float ox = -(maxX - minX) * (cs + gap) / 2f, oy = (maxY - minY) * (cs + gap) / 2f;
         foreach (var v in shape)
-            ProtoUI.CreatePanel("M", art.transform, new Vector2(ox + (v.x - minX) * (cs + gap), oy - (v.y - minY) * (cs + gap)), new Vector2(cs, cs), card.CategoryColor).raycastTarget = false;
+            ProtoUI.Bevel(ProtoUI.CreatePanel("M", art.transform, new Vector2(ox + (v.x - minX) * (cs + gap), oy - (v.y - minY) * (cs + gap)), new Vector2(cs, cs), card.CategoryColor)).raycastTarget = false;
 
-        string eff = card.kind == CardKind.Attack
-            ? (card.HasEffect(CardEffectType.BlinkOnUse) ? $"威力{card.power}・点滅" : $"威力 {card.power}")
-            : (string.IsNullOrEmpty(card.description) ? "" : card.description);
+        string eff = !string.IsNullOrEmpty(card.description)
+            ? (card.power > 0 ? $"威力{card.power}　{card.description}" : card.description)
+            : (card.kind == CardKind.Attack ? $"威力 {card.power}" : "");
         var deff = ProtoUI.CreateText("DEff", _detailContent, eff, 15, new Vector2(0, -88), new Vector2(202, 104), new Color(0.92f, 0.92f, 1f));
         deff.textWrappingMode = TMPro.TextWrappingModes.Normal;
         deff.enableAutoSizing = true; deff.fontSizeMin = 11; deff.fontSizeMax = 16;
@@ -490,8 +651,8 @@ public class ProtoBattle : MonoBehaviour
                 if (match) col = hc;
                 else if (!panel.IsUnlocked(x, y)) col = new Color(0.04f, 0.04f, 0.06f, 0.85f);  // 未解放
                 else { var pl = panel.GetAt(x, y); col = pl != null ? pl.card.CategoryColor : new Color(0.16f, 0.14f, 0.24f, 0.95f); } // ピース/空き
-                var p = ProtoUI.CreatePanel($"BC_{x}_{y}", _boardContent,
-                    new Vector2(ox + x * cell, oy - y * cell), new Vector2(cell - 2, cell - 2), col);
+                var p = ProtoUI.Bevel(ProtoUI.CreatePanel($"BC_{x}_{y}", _boardContent,
+                    new Vector2(ox + x * cell, oy - y * cell), new Vector2(cell - 2, cell - 2), col));   // 立体タイル
                 p.raycastTarget = false;
                 if (match) { _glowImgs.Add(p); _glowBase.Add(hc); }
             }
@@ -515,8 +676,10 @@ public class ProtoBattle : MonoBehaviour
         if (onClick != null) btn.onClick.AddListener(() => onClick());
         btn.interactable = affordable;
 
-        var inner = ProtoUI.CreatePanel("Inner", frame.transform, Vector2.zero, new Vector2(180, 252), affordable ? new Color(0.045f, 0.055f, 0.075f, 0.98f) : new Color(0.065f, 0.06f, 0.07f, 0.92f));
+        var inner = ProtoUI.VGrad(ProtoUI.CreatePanel("Inner", frame.transform, Vector2.zero, new Vector2(180, 252),
+            affordable ? new Color(0.10f, 0.11f, 0.16f, 0.98f) : new Color(0.09f, 0.085f, 0.10f, 0.92f)));   // 上品な縦グラデ
         inner.raycastTarget = false;
+        if (card.rarity >= 2 && affordable) ProtoUI.AddShine(inner, new Vector2(180, 252));   // レアの手札は走査光
         ProtoUI.AddPanelTrim(inner, new Vector2(180, 252), Color.Lerp(accent, Color.black, 0.35f), new Color(1f, 1f, 1f, 0.06f));
 
         var accentLine = ProtoUI.CreatePanel("AccentLine", inner.transform, new Vector2(0, 123), new Vector2(168, 5), affordable ? accent : Color.Lerp(accent, Color.black, 0.4f));
@@ -544,14 +707,14 @@ public class ProtoBattle : MonoBehaviour
         int minX = shape.Min(v => v.x), minY = shape.Min(v => v.y), maxX = shape.Max(v => v.x), maxY = shape.Max(v => v.y);
         float ox = -(maxX - minX) * (cs + gap) / 2f, oy = (maxY - minY) * (cs + gap) / 2f;
         foreach (var v in shape)
-            ProtoUI.CreatePanel("Mas", art.transform, new Vector2(ox + (v.x - minX) * (cs + gap), oy - (v.y - minY) * (cs + gap)), new Vector2(cs, cs), card.CategoryColor).raycastTarget = false;
+            ProtoUI.Bevel(ProtoUI.CreatePanel("Mas", art.transform, new Vector2(ox + (v.x - minX) * (cs + gap), oy - (v.y - minY) * (cs + gap)), new Vector2(cs, cs), card.CategoryColor)).raycastTarget = false;
 
         // 効果説明：マス背景（形状アート）のすぐ下に配置
         var footer = ProtoUI.CreatePanel("Footer", inner.transform, new Vector2(0, -76), new Vector2(168, 64), new Color(0.075f, 0.08f, 0.105f, 0.94f));
         footer.raycastTarget = false;
-        string footText = card.kind == CardKind.Attack
-            ? (card.HasEffect(CardEffectType.BlinkOnUse) ? $"威力{card.power}・点滅" : $"威力 {card.power}")
-            : (string.IsNullOrEmpty(card.description) ? "" : card.description);
+        string footText = !string.IsNullOrEmpty(card.description)
+            ? (card.power > 0 ? $"威力{card.power}　{card.description}" : card.description)
+            : (card.kind == CardKind.Attack ? $"威力 {card.power}" : "");
         var ft = ProtoUI.CreateText("FT", footer.transform, footText, 13, Vector2.zero, new Vector2(160, 60), ProtoUI.Gold);
         ft.enableAutoSizing = true; ft.fontSizeMin = 9; ft.fontSizeMax = 14;
 
@@ -618,15 +781,102 @@ public class ProtoBattle : MonoBehaviour
         bool blink = card.HasEffect(CardEffectType.BlinkOnUse) || _primeBlink;
         _primeBlink = false;
 
+        // ミニゲーム（点滅／ゲージ／数字順タップ／スロット）で倍率決定
         float mult = 1f;
         if (blink) { yield return RunChallenge(card); mult = _challengeMultiplier; }
+        else if (card.HasEffect(CardEffectType.GaugeOnUse)) { yield return RunGauge(card); mult = _challengeMultiplier; }
+        else if (card.HasEffect(CardEffectType.TapOrderOnUse)) { yield return RunTapOrder(card); mult = _challengeMultiplier; }
+        else if (card.HasEffect(CardEffectType.SlotOnUse)) { yield return RunSlot(card); mult = _challengeMultiplier; }
         else { _message.text = $"{card.displayName}！"; yield return new WaitForSeconds(0.3f); }
 
-        int dmg = Mathf.RoundToInt((card.power + _main.Stats.Attack + _strength) * mult);
+        // ---- 威力計算（基礎＋加算系） ----
+        int basePow = card.power + _main.Stats.Attack + _strength;
+        if (_syn.attackPct > 0 && card.power > 0) basePow = Mathf.RoundToInt(basePow * (1f + _syn.attackPct / 100f)); // 盤面シナジー
+        if (card.HasEffect(CardEffectType.GrowingPower))
+        {
+            int used = _useCounts.TryGetValue(card.id, out var u) ? u : 0;
+            basePow += used * card.EffectAmount(CardEffectType.GrowingPower);
+            _useCounts[card.id] = used + 1;
+        }
+        if (card.HasEffect(CardEffectType.BoardPower)) basePow += _main.BoardCells * card.EffectAmount(CardEffectType.BoardPower);
+        if (card.HasEffect(CardEffectType.HandPower)) basePow += _hand.Count * card.EffectAmount(CardEffectType.HandPower);
+        if (card.HasEffect(CardEffectType.ManaBurst)) { basePow += _mana * card.EffectAmount(CardEffectType.ManaBurst); _mana = 0; }
+        if (card.HasEffect(CardEffectType.CurrentHpDmg)) basePow += Mathf.RoundToInt(_enemyHP * card.EffectAmount(CardEffectType.CurrentHpDmg) / 100f);
+
+        // ---- 倍率系 ----
+        if (card.HasEffect(CardEffectType.LowHpPower))
+            basePow = Mathf.RoundToInt(basePow * (1f + (1f - HpRatio()) * card.EffectAmount(CardEffectType.LowHpPower) / 100f));
+        if (card.HasEffect(CardEffectType.Execute) && _enemyHP <= _enemyMaxHP * card.EffectAmount(CardEffectType.Execute) / 100f)
+            basePow *= 2;
+        bool fizzle = false;
+        if (card.HasEffect(CardEffectType.Gamble5050))
+        {
+            if (Random.value < 0.5f) basePow *= 2;
+            else fizzle = true;
+        }
+        if (_vulnTurns > 0) basePow = Mathf.RoundToInt(basePow * (1f + _vulnPct / 100f)); // 弱点看破
+
+        int hits = card.HasEffect(CardEffectType.MultiHit) ? Mathf.Max(1, card.EffectAmount(CardEffectType.MultiHit)) : 1;
+        int totalDealt = 0;
+
         yield return AttackMotionFor(card);
-        yield return Impact(_slimeRt, _slimeImg, card, dmg, mult);
-        _enemyHP = Mathf.Max(0, _enemyHP - dmg);
-        _message.text = $"{(mult > 1.01f ? "会心！" : "")}{card.displayName}で {dmg} ダメージ！";
+        if (fizzle)
+        {
+            _message.text = $"{card.displayName}は空を切った……！";
+            yield return new WaitForSeconds(0.6f);
+        }
+        else
+        {
+            for (int h = 0; h < hits; h++)
+            {
+                int dmg = Mathf.Max(1, Mathf.RoundToInt(basePow * mult));
+                if (_enemyBlock > 0)   // 敵のブロックが吸収
+                {
+                    int ab = Mathf.Min(_enemyBlock, dmg);
+                    _enemyBlock -= ab; dmg -= ab;
+                    if (dmg <= 0)
+                    {
+                        _message.text = $"{_enemy.enemyName}のブロックに防がれた！";
+                        yield return Pulse(_slimeRt, 1.04f, 0.15f);
+                        RefreshAll();
+                        continue;
+                    }
+                }
+                yield return Impact(_slimeRt, _slimeImg, card, dmg, mult);
+                _enemyHP = Mathf.Max(0, _enemyHP - dmg); _main.AddDamageStat(dmg);
+                totalDealt += dmg;
+                _message.text = hits > 1
+                    ? $"{h + 1}ヒット！{dmg} ダメージ！"
+                    : $"{(mult > 1.01f ? "会心！" : "")}{card.displayName}で {dmg} ダメージ！";
+                RefreshAll();
+                if (_enemyHP <= 0) break;
+                if (hits > 1) yield return new WaitForSeconds(0.18f);
+            }
+        }
+
+        // 起爆：毒・やけどを消費して追加ダメージ
+        if (card.HasEffect(CardEffectType.Detonate) && (_poison > 0 || _burn > 0) && _enemyHP > 0)
+        {
+            int stock = _poison + _burn;
+            int extra = stock * card.EffectAmount(CardEffectType.Detonate);
+            if (_vulnTurns > 0) extra = Mathf.RoundToInt(extra * (1f + _vulnPct / 100f));
+            _poison = 0; _burn = 0;
+            _message.text = $"起爆！ {extra} の追加ダメージ！";
+            yield return Impact(_slimeRt, _slimeImg, card, extra, 1.3f);
+            _enemyHP = Mathf.Max(0, _enemyHP - extra); _main.AddDamageStat(extra);
+            totalDealt += extra;
+            RefreshAll();
+        }
+
+        // 吸血
+        if (card.HasEffect(CardEffectType.LifeSteal) && totalDealt > 0)
+        {
+            int heal = Mathf.RoundToInt(totalDealt * card.EffectAmount(CardEffectType.LifeSteal) / 100f);
+            _playerHP = Mathf.Min(_playerMaxHP, _playerHP + heal);
+            _message.text = $"HPを {heal} 吸収した！";
+            RefreshAll();
+            yield return new WaitForSeconds(0.35f);
+        }
 
         // アタックに付随する他効果（あれば）
         ApplyCardEffects(card, attackContext: true);
@@ -669,6 +919,70 @@ public class ProtoBattle : MonoBehaviour
                 case CardEffectType.Burn: _burn += e.amount; break;
                 case CardEffectType.PrimeNextAttackBlink: _primeBlink = true; break;
                 case CardEffectType.BlinkOnUse: break; // ResolveAttackで処理済み
+
+                // ---- 拡張効果 ----
+                case CardEffectType.SelfDamage: _playerHP = Mathf.Max(0, _playerHP - e.amount); break;
+                case CardEffectType.StunChance: if (Random.Range(0, 100) < e.amount) { _stunTurns = Mathf.Max(_stunTurns, 1); _message.text = "敵は麻痺した！"; } break;
+                case CardEffectType.Stun: _stunTurns = Mathf.Max(_stunTurns, Mathf.Max(1, e.duration)); break;
+                case CardEffectType.Regen: _regenAmt = e.amount; _regenTurns = Mathf.Max(_regenTurns, e.duration); break;
+                case CardEffectType.Thorns: _thornsDmg = e.amount; _thornsTurns = Mathf.Max(_thornsTurns, e.duration); break;
+                case CardEffectType.BlockRegen: _blockRegenAmt = e.amount; _blockRegenTurns = Mathf.Max(_blockRegenTurns, e.duration); break;
+                case CardEffectType.Reflect: _reflectPct = Mathf.Max(_reflectPct, e.amount); break;
+                case CardEffectType.GuardTurns: _guardPct = e.amount; _guardTurns = Mathf.Max(_guardTurns, e.duration); break;
+                case CardEffectType.Counter: _counterDmg += e.amount; break;
+                case CardEffectType.GainMoney: _main.AddMoney(e.amount); break;
+                case CardEffectType.Vulnerable: _vulnPct = e.amount; _vulnTurns = Mathf.Max(_vulnTurns, e.duration); break;
+                case CardEffectType.AilmentAmp: _ailmentAmp += e.amount; break;
+                case CardEffectType.ManaNow: _mana += e.amount; break;
+                case CardEffectType.NextTurnExtraCards: _nextTurnExtra += e.amount; break;
+                case CardEffectType.PoisonBoost: { bool had = _poison > 0; _poison += e.amount; if (had) _poison *= 2; } break;
+                case CardEffectType.BurnBoost: { bool had = _burn > 0; _burn += e.amount; if (had) _burn *= 2; } break;
+                case CardEffectType.HealOverflowBlock:
+                    {
+                        int over = Mathf.Max(0, _playerHP + e.amount - _playerMaxHP);
+                        _playerHP = Mathf.Min(_playerMaxHP, _playerHP + e.amount);
+                        _block += over;
+                    }
+                    break;
+                case CardEffectType.HealMissing: _playerHP = Mathf.Min(_playerMaxHP, _playerHP + Mathf.RoundToInt((_playerMaxHP - _playerHP) * e.amount / 100f)); break;
+                case CardEffectType.TimeBomb: _timeBombDmg += e.amount; _timeBombTurns = Mathf.Max(1, e.duration); break;
+                case CardEffectType.RandomDiscardDraw:
+                    {
+                        if (_hand.Count > 0) _hand.RemoveAt(Random.Range(0, _hand.Count));
+                        for (int i = 0; i < e.amount; i++)
+                        {
+                            var dr = _main.Panel.PickWeighted(HpRatio()) ?? _main.Db.normalAttack;
+                            _hand.Add(dr); _pendingDrawn.Add(dr);
+                        }
+                    }
+                    break;
+                case CardEffectType.RedrawAll:
+                    {
+                        int keep = _hand.Count;
+                        _hand.Clear();
+                        for (int i = 0; i < keep; i++)
+                        {
+                            var dr = _main.Panel.PickWeighted(HpRatio()) ?? _main.Db.normalAttack;
+                            _hand.Add(dr); _pendingDrawn.Add(dr);
+                        }
+                    }
+                    break;
+                // 以下はResolveAttack側で処理する（ここでは何もしない）
+                case CardEffectType.MultiHit:
+                case CardEffectType.LifeSteal:
+                case CardEffectType.Execute:
+                case CardEffectType.Detonate:
+                case CardEffectType.GrowingPower:
+                case CardEffectType.BoardPower:
+                case CardEffectType.LowHpPower:
+                case CardEffectType.ManaBurst:
+                case CardEffectType.HandPower:
+                case CardEffectType.Gamble5050:
+                case CardEffectType.CurrentHpDmg:
+                case CardEffectType.GaugeOnUse:
+                case CardEffectType.TapOrderOnUse:
+                case CardEffectType.SlotOnUse:
+                    break;
             }
         }
     }
@@ -688,10 +1002,10 @@ public class ProtoBattle : MonoBehaviour
         // 毒の処理
         if (_poison > 0)
         {
-            int pdmg = _poison * ailMul;
+            int pdmg = (_poison + _ailmentAmp) * ailMul; // 刻印で強化
             _message.text = $"毒！敵に {pdmg} ダメージ";
             yield return Impact(_slimeRt, _slimeImg, null, pdmg, 1f, 0);
-            _enemyHP = Mathf.Max(0, _enemyHP - pdmg);
+            _enemyHP = Mathf.Max(0, _enemyHP - pdmg); _main.AddDamageStat(pdmg);
             RefreshAll();
             yield return new WaitForSeconds(0.5f);
             if (_enemyHP <= 0) { yield return Victory(); yield break; }
@@ -700,23 +1014,55 @@ public class ProtoBattle : MonoBehaviour
         // やけどの処理
         if (_burn > 0)
         {
-            int bdmg = _burn * ailMul;
+            int bdmg = (_burn + _ailmentAmp) * ailMul;
             _message.text = $"やけど！敵に {bdmg} ダメージ";
             yield return Impact(_slimeRt, _slimeImg, null, bdmg, 1f, 0);
-            _enemyHP = Mathf.Max(0, _enemyHP - bdmg);
+            _enemyHP = Mathf.Max(0, _enemyHP - bdmg); _main.AddDamageStat(bdmg);
             RefreshAll();
             yield return new WaitForSeconds(0.5f);
             if (_enemyHP <= 0) { yield return Victory(); yield break; }
         }
 
-        _message.text = $"{_enemy.enemyName}のターン…";
-        yield return new WaitForSeconds(0.7f);
-        yield return EnemyAttackSequence();
+        // 時限爆弾のカウントダウン
+        if (_timeBombDmg > 0)
+        {
+            _timeBombTurns--;
+            if (_timeBombTurns <= 0)
+            {
+                _message.text = $"時限爆弾が爆発！ {_timeBombDmg} ダメージ！";
+                yield return Impact(_slimeRt, _slimeImg, null, _timeBombDmg, 1.3f, 2);
+                _enemyHP = Mathf.Max(0, _enemyHP - _timeBombDmg); _main.AddDamageStat(_timeBombDmg);
+                _timeBombDmg = 0;
+                RefreshAll();
+                yield return new WaitForSeconds(0.5f);
+                if (_enemyHP <= 0) { yield return Victory(); yield break; }
+            }
+            else { _message.text = $"時限爆弾……あと {_timeBombTurns} ターン"; yield return new WaitForSeconds(0.5f); }
+        }
+
+        // 麻痺・凍結などの行動不能
+        if (_stunTurns > 0)
+        {
+            _stunTurns--;
+            _message.text = $"{_enemy.enemyName}は動けない！";
+            yield return Pulse(_slimeRt, 1.05f, 0.3f);
+            yield return new WaitForSeconds(0.7f);
+        }
+        else
+        {
+            _message.text = $"{_enemy.enemyName}のターン…";
+            yield return new WaitForSeconds(0.7f);
+            yield return EnemyAttackSequence();
+        }
 
         if (_weakTurns > 0) _weakTurns--;
+        if (_vulnTurns > 0) _vulnTurns--;
+        if (_thornsTurns > 0) _thornsTurns--;
+        if (_guardTurns > 0) _guardTurns--;
 
         if (_playerHP <= 0) { yield return Defeat(); yield break; }
 
+        RollIntent(); // 次のプレイヤーターン用に予告を更新
         StartPlayerTurn();
     }
 
@@ -744,15 +1090,52 @@ public class ProtoBattle : MonoBehaviour
         var t = ProtoUI.CreateText("GOText", go, "GAME OVER", 64, new Vector2(0, 180), new Vector2(900, 100), new Color(1f, 0.36f, 0.36f));
         ProtoUI.StyleTitle(t, new Color(1f, 0.4f, 0.4f), 8f);
         ProtoUI.CreateText("GOSub", go, "MAMAは倒れてしまった…", 24, new Vector2(0, 110), new Vector2(900, 40), new Color(0.92f, 0.92f, 1f));
-        ProtoUI.CreateGoldButton("Retry", go, "もう一度やり直す", 24, new Vector2(0, 30), new Vector2(330, 68),
+
+        // 敗北でもスコアが貯まる（到達度に応じて加算→累計でカード解放が進む）
+        int prevLv = ProtoUnlocks.UnlockLevel;
+        int runScore = _main.CurrentDepth * 25 + (_main.Wave - 1) * 250 + _main.StatTotalDamage / 50;
+        ProtoUnlocks.AddRunScore(runScore);
+        ProtoUI.CreateText("GOScore", go, $"今回のスコア {runScore}　／　累計 {ProtoUnlocks.TotalScore}", 22,
+            new Vector2(0, 68), new Vector2(900, 32), ProtoUI.Gold);
+        if (ProtoUnlocks.UnlockLevel > prevLv)
+            ProtoUI.CreateText("GOUnlock", go, "◆ 新しいカードが解放された！", 20,
+                new Vector2(0, 34), new Vector2(900, 28), new Color(1f, 0.7f, 0.9f));
+
+        ProtoUI.CreateGoldButton("Retry", go, "もう一度やり直す", 24, new Vector2(0, -40), new Vector2(330, 68),
             new Color(0.30f, 0.45f, 0.32f), () => _main.RestartRun());
-        ProtoUI.CreateGoldButton("Quit", go, "ゲームを終了する", 22, new Vector2(0, -60), new Vector2(330, 62),
+        ProtoUI.CreateGoldButton("Quit", go, "ゲームを終了する", 22, new Vector2(0, -130), new Vector2(330, 62),
             new Color(0.45f, 0.25f, 0.25f), () => { /* ここでは何もしない */ });
     }
 
     IEnumerator EnemyAttackSequence()
     {
-        var atk = _enemy.PickAttack();
+        var atk = _intent ?? _enemy.PickAttack(); // 予告した行動を実行
+        _enemyBlock = 0;   // 敵ブロックは敵ターン開始でリセット
+
+        // ---- ギミック行動 ----
+        if (atk.act == EnemyActKind.Guard)
+        {
+            _enemyBlock = atk.amount;
+            _message.text = $"{_enemy.enemyName}は身を固めた！（ブロック{atk.amount}）";
+            yield return Pulse(_slimeRt, 1.08f, 0.25f);
+            yield return new WaitForSeconds(0.6f); RefreshAll(); yield break;
+        }
+        if (atk.act == EnemyActKind.PowerUp)
+        {
+            _enemyAtkUp += atk.amount;
+            _message.text = $"{_enemy.enemyName}の攻撃力が上がった！（+{_enemyAtkUp}）";
+            StartCoroutine(FlashSprite(_slimeImg, new Color(1f, 0.5f, 0.8f)));
+            yield return Pulse(_slimeRt, 1.15f, 0.3f);
+            yield return new WaitForSeconds(0.6f); RefreshAll(); yield break;
+        }
+        if (atk.act == EnemyActKind.Charge)
+        {
+            _enemyCharged = true;
+            _message.text = $"{_enemy.enemyName}は力を溜めている……次の攻撃が強力になる！";
+            StartCoroutine(FlashSprite(_slimeImg, new Color(1f, 0.9f, 0.4f)));
+            yield return Pulse(_slimeRt, 1.12f, 0.3f);
+            yield return new WaitForSeconds(0.7f); RefreshAll(); yield break;
+        }
         _message.text = $"{_enemy.enemyName}の {atk.name}！";
         yield return new WaitForSeconds(0.4f);
 
@@ -770,11 +1153,19 @@ public class ProtoBattle : MonoBehaviour
 
         for (int h = 0; h < atk.hits; h++)
         {
-            int raw = Mathf.RoundToInt(Random.Range(_enemy.minAtk, _enemy.maxAtk + 1) * atk.mult) + 3 * (_effWave - 1);
+            int raw = Mathf.RoundToInt(((Random.Range(_enemy.minAtk, _enemy.maxAtk + 1) + _enemyAtkUp) * atk.mult + 3 * (_effWave - 1)) * _main.EnemyDmgMul); // アセンション・強化で攻撃増
+            if (_enemyCharged) raw = Mathf.RoundToInt(raw * 1.8f);   // チャージ解放
             if (_weakTurns > 0) raw = Mathf.RoundToInt(raw * (1f - _weakPct / 100f));
             int dmg = Mathf.Max(1, raw);
             if (_main.Equipped == EquipKind.GuardPendant) dmg = Mathf.Max(1, Mathf.RoundToInt(dmg * 0.95f)); // 加護のペンダント
+            if (_guardTurns > 0) dmg = Mathf.Max(0, Mathf.RoundToInt(dmg * (1f - _guardPct / 100f)));        // 聖なる誓い（継続軽減）
             if (_protectPct > 0) { dmg = Mathf.Max(0, Mathf.RoundToInt(dmg * (1f - _protectPct / 100f))); _protectPct = 0; }
+            int reflected = 0;
+            if (_reflectPct > 0)
+            {
+                reflected = Mathf.RoundToInt(dmg * _reflectPct / 100f);
+                dmg -= reflected; _reflectPct = 0; // 反射は1回きり
+            }
             if (_block > 0) { int absorb = Mathf.Min(_block, dmg); _block -= absorb; dmg -= absorb; }
 
             if (dmg <= 0)
@@ -793,7 +1184,28 @@ public class ProtoBattle : MonoBehaviour
             yield return new WaitForSeconds(0.35f);
             if (_faceImg != null) _faceImg.sprite = ProtoPixelArt.FrontMama(); // 顔写真を通常に戻す
             if (_playerHP <= 0) yield break;
+
+            // 毒攻撃：ヒット時にプレイヤーへ毒を付与
+            if (atk.act == EnemyActKind.PoisonPlayer && dmg > 0 && atk.amount > 0)
+            {
+                _playerPoison += atk.amount;
+                _message.text = $"毒を受けた！（毒{_playerPoison}）";
+                yield return new WaitForSeconds(0.3f);
+            }
+
+            // 反射・反撃・茨のダメージを敵へ返す
+            int payback = reflected + (_thornsTurns > 0 ? _thornsDmg : 0);
+            if (_counterDmg > 0) { payback += _counterDmg; _counterDmg = 0; }
+            if (payback > 0 && _enemyHP > 0)
+            {
+                _message.text = $"反撃！敵に {payback} ダメージ！";
+                yield return Impact(_slimeRt, _slimeImg, null, payback, 1f, 0);
+                _enemyHP = Mathf.Max(0, _enemyHP - payback); _main.AddDamageStat(payback);
+                RefreshAll();
+                if (_enemyHP <= 0) { yield return Victory(); yield break; }
+            }
         }
+        _enemyCharged = false;   // チャージは攻撃1回で消費
         yield return new WaitForSeconds(0.3f);
     }
 
@@ -811,7 +1223,7 @@ public class ProtoBattle : MonoBehaviour
         // 獲得ピース候補
         int count = _main.Cfg != null ? _main.Cfg.rewardChoiceCount : 3;
         var owned = new HashSet<string>(_main.OwnedCardIds);
-        var choices = _main.Db.RandomCards(count, owned, _main.CurrentDepth);
+        var choices = _main.Db.RandomCards(count, owned, _main.CurrentDepth, ProtoUnlocks.UnlockLevel);
 
         // レイアウト（中央寄り）
         ((RectTransform)_resultText.transform).anchoredPosition = new Vector2(0, 230);
@@ -857,10 +1269,19 @@ public class ProtoBattle : MonoBehaviour
             _main.OnBattleWon();
         });
 
-        var inner = ProtoUI.CreatePanel("In", frame.transform, Vector2.zero, new Vector2(238, 288), new Color(0.10f, 0.08f, 0.16f));
+        var inner = ProtoUI.VGrad(ProtoUI.CreatePanel("In", frame.transform, Vector2.zero, new Vector2(238, 288), new Color(0.15f, 0.13f, 0.21f)));
         inner.raycastTarget = false;
-        var nm = ProtoUI.CreateText("N", inner.transform, card.displayName, 20, new Vector2(0, 120), new Vector2(230, 30), Color.white);
+        if (card.rarity >= 2)   // レア報酬：後光＋走査光
+        {
+            var halo = ProtoUI.CreateGlow("Halo", frame.transform, Vector2.zero, new Vector2(350, 400), new Color(1f, 0.82f, 0.35f, 0.5f));
+            halo.transform.SetAsFirstSibling();
+            var hg = halo.gameObject.AddComponent<RareGlow>();
+            hg.target = halo; hg.colA = new Color(1f, 0.8f, 0.3f, 0.2f); hg.colB = new Color(1f, 0.88f, 0.5f, 0.6f);
+            ProtoUI.AddShine(inner, new Vector2(238, 288));
+        }
+        var nm = ProtoUI.CreateText("N", inner.transform, card.displayName, 20, new Vector2(0, 120), new Vector2(230, 30), card.RarityColor);
         nm.fontStyle = FontStyles.Bold;
+        if (card.rarity >= 2) { var rg = nm.gameObject.AddComponent<RareGlow>(); rg.target = nm; rg.colA = card.RarityColor; rg.colB = Color.white; }   // レアは光る
         ProtoUI.CreateText("K", inner.transform,
             $"{(CardDef.KindLabel(card.Category))} / {card.Size}マス / マナ{card.ManaCost}", 14,
             new Vector2(0, 92), new Vector2(230, 22), new Color(0.8f, 0.85f, 1f));
@@ -872,7 +1293,7 @@ public class ProtoBattle : MonoBehaviour
         int minX = shape.Min(v => v.x), minY = shape.Min(v => v.y), maxX = shape.Max(v => v.x), maxY = shape.Max(v => v.y);
         float ox = -(maxX - minX) * (cs + gap) / 2f, oy = (maxY - minY) * (cs + gap) / 2f;
         foreach (var v in shape)
-            ProtoUI.CreatePanel("M", art.transform, new Vector2(ox + (v.x - minX) * (cs + gap), oy - (v.y - minY) * (cs + gap)), new Vector2(cs, cs), card.CategoryColor).raycastTarget = false;
+            ProtoUI.Bevel(ProtoUI.CreatePanel("M", art.transform, new Vector2(ox + (v.x - minX) * (cs + gap), oy - (v.y - minY) * (cs + gap)), new Vector2(cs, cs), card.CategoryColor)).raycastTarget = false;
 
         string eff = card.kind == CardKind.Attack
             ? (card.HasEffect(CardEffectType.BlinkOnUse) ? $"威力{card.power}・使用時に点滅" : $"威力 {card.power}")
@@ -904,6 +1325,167 @@ public class ProtoBattle : MonoBehaviour
 
     float _challengeMultiplier;
 
+    // このフレームで左クリックされたか（ミニゲーム用）
+    bool ClickedThisFrame()
+    {
+#if ENABLE_INPUT_SYSTEM
+        var ms = UnityEngine.InputSystem.Mouse.current;
+        if (ms != null && ms.leftButton.wasPressedThisFrame) return true;
+#endif
+#if ENABLE_LEGACY_INPUT_MANAGER
+        if (Input.GetMouseButtonDown(0)) return true;
+#endif
+        return false;
+    }
+
+    // ==================== ミニゲーム：ゲージストップ ====================
+    // 高速で往復するカーソルを会心ゾーンで止める。ど真ん中=2倍 / ゾーン内=1.4倍 / 外=0.9倍
+    IEnumerator RunGauge(CardDef card)
+    {
+        _challengeRoot.gameObject.SetActive(true);
+        Time.timeScale = 1f;   // ミニゲーム中は演出速度に関係なく等速（反射神経ゲーのため）
+        foreach (Transform c in _pieceArea) Destroy(c.gameObject);
+        _challengePrompt.text = $"「{card.displayName}」発動！　会心ゾーンで止めろ！";
+        ProtoUI.SetGauge(_timerFill, 1f, 500f);
+
+        const float W = 640f;
+        var barBg = ProtoUI.CreatePanel("GBar", _pieceArea, new Vector2(0, 0), new Vector2(W, 46), new Color(0.12f, 0.12f, 0.2f, 0.98f));
+        ProtoUI.CreatePanel("GZone", barBg.transform, new Vector2(0, 0), new Vector2(W * 0.26f, 46), new Color(0.85f, 0.65f, 0.2f, 0.85f)).raycastTarget = false;   // 1.4倍ゾーン
+        ProtoUI.CreatePanel("GCrit", barBg.transform, new Vector2(0, 0), new Vector2(W * 0.08f, 46), new Color(0.95f, 0.3f, 0.25f, 0.95f)).raycastTarget = false;   // 2倍ゾーン
+        var cursor = ProtoUI.CreatePanel("GCur", barBg.transform, Vector2.zero, new Vector2(8, 62), Color.white);
+        cursor.raycastTarget = false;
+
+        yield return null; // 開いた瞬間のクリックを無視
+
+        float t = 0f; const float speed = 1.6f; float timeout = 5f; float pos = 0f; bool stopped = false;
+        while (timeout > 0f)
+        {
+            t += Time.deltaTime * speed;
+            pos = Mathf.PingPong(t, 1f);                       // 0..1
+            ((RectTransform)cursor.transform).anchoredPosition = new Vector2((pos - 0.5f) * W, 0);
+            timeout -= Time.deltaTime;
+            ProtoUI.SetGauge(_timerFill, timeout / 5f, 500f);
+            if (ClickedThisFrame()) { stopped = true; break; }
+            yield return null;
+        }
+
+        float dist = Mathf.Abs(pos - 0.5f); // 中心からの距離（0〜0.5）
+        _challengeMultiplier = !stopped ? 0.9f : dist <= 0.04f ? 2f : dist <= 0.13f ? 1.4f : 0.9f;
+        _challengePrompt.text = _challengeMultiplier >= 2f ? "ジャスト！ 会心の一撃！（威力200%）"
+            : _challengeMultiplier > 1f ? "いい感じ！（威力140%）" : "うーん、外した…（威力90%）";
+        yield return new WaitForSeconds(0.9f);
+        Time.timeScale = _main.GameSpeed;
+        _challengeRoot.gameObject.SetActive(false);
+    }
+
+    // ==================== ミニゲーム：数字順タップ ====================
+    // ピースのマスに数字が表示される。小さい順にタップ！ 正答率で倍率
+    IEnumerator RunTapOrder(CardDef card)
+    {
+        _challengeRoot.gameObject.SetActive(true);
+        Time.timeScale = 1f;   // ミニゲーム中は演出速度に関係なく等速（反射神経ゲーのため）
+        foreach (Transform c in _pieceArea) Destroy(c.gameObject);
+        _challengePrompt.text = $"「{card.displayName}」発動！　数字を小さい順にタップ！";
+        ProtoUI.SetGauge(_timerFill, 1f, 500f);
+
+        var shape = card.Shape;
+        float cs = 64f, gap = 6f;
+        int minX = shape.Min(v => v.x), minY = shape.Min(v => v.y), maxX = shape.Max(v => v.x), maxY = shape.Max(v => v.y);
+        float ox = -(maxX - minX) * (cs + gap) / 2f, oy = (maxY - minY) * (cs + gap) / 2f;
+
+        int n = shape.Length;
+        var order = Enumerable.Range(1, n).OrderBy(_ => Random.value).ToList(); // 各マスに割り当てる数字
+        int expected = 1, correct = 0, wrong = 0; bool open = true;
+
+        for (int i = 0; i < n; i++)
+        {
+            var v = shape[i];
+            int num = order[i];
+            Color bc = Color.Lerp(card.CategoryColor, Color.black, 0.4f);
+            var img = ProtoUI.CreatePanel("TCell", _pieceArea,
+                new Vector2(ox + (v.x - minX) * (cs + gap), oy - (v.y - minY) * (cs + gap)), new Vector2(cs, cs), bc);
+            var label = ProtoUI.CreateText("TNum", img.transform, num.ToString(), 32, Vector2.zero, new Vector2(cs, cs), Color.white);
+            label.fontStyle = FontStyles.Bold; label.raycastTarget = false;
+            var btn = img.gameObject.AddComponent<Button>(); btn.targetGraphic = img;
+            btn.onClick.AddListener(() =>
+            {
+                if (!open || !btn.interactable) return;
+                if (num == expected)
+                {
+                    expected++; correct++;
+                    img.color = new Color(0.3f, 0.7f, 0.35f, 0.9f); btn.interactable = false;
+                }
+                else { wrong++; StartCoroutine(TapFeedback(img, bc)); }
+            });
+        }
+
+        float total = 3f + n * 0.8f, remain = total;
+        while (remain > 0f && correct < n)
+        {
+            remain -= Time.deltaTime;
+            ProtoUI.SetGauge(_timerFill, remain / total, 500f);
+            yield return null;
+        }
+        open = false;
+
+        float ratio = Mathf.Clamp01((float)correct / n - wrong * 0.1f);
+        _challengeMultiplier = ratio <= 0.8f ? (ratio / 0.8f) : (1f + (ratio - 0.8f) / 0.2f * 0.5f); // 全問正解で1.5倍
+        _challengePrompt.text = $"正答率 {Mathf.RoundToInt(ratio * 100)}% → 威力 {Mathf.RoundToInt(_challengeMultiplier * 100)}%";
+        yield return new WaitForSeconds(1.0f);
+        Time.timeScale = _main.GameSpeed;
+        _challengeRoot.gameObject.SetActive(false);
+    }
+
+    // ==================== ミニゲーム：スロット ====================
+    // 3つのリールをクリックで順に止める。7×3=2.5倍 / 絵柄3つ=1.8倍 / 2つ=1.2倍 / バラバラ=0.8倍
+    static readonly string[] SlotSymbols = { "７", "♦", "♥", "★" };
+    IEnumerator RunSlot(CardDef card)
+    {
+        _challengeRoot.gameObject.SetActive(true);
+        Time.timeScale = 1f;   // ミニゲーム中は演出速度に関係なく等速（反射神経ゲーのため）
+        foreach (Transform c in _pieceArea) Destroy(c.gameObject);
+        _challengePrompt.text = $"「{card.displayName}」発動！　クリックでリールを止めろ！";
+        ProtoUI.SetGauge(_timerFill, 1f, 500f);
+
+        var labels = new TextMeshProUGUI[3];
+        var result = new int[3];
+        for (int i = 0; i < 3; i++)
+        {
+            var box = ProtoUI.CreatePanel($"Reel{i}", _pieceArea, new Vector2((i - 1) * 150f, 0), new Vector2(130, 150), new Color(0.1f, 0.1f, 0.18f, 0.98f));
+            ProtoUI.CreatePanel("RB", box.transform, Vector2.zero, new Vector2(136, 156), new Color(0.85f, 0.72f, 0.4f, 0.9f)).transform.SetAsFirstSibling();
+            labels[i] = ProtoUI.CreateText("RS", box.transform, "７", 64, Vector2.zero, new Vector2(130, 150), Color.white);
+            labels[i].fontStyle = FontStyles.Bold;
+        }
+
+        yield return null;
+
+        for (int reel = 0; reel < 3; reel++)
+        {
+            float spin = 0f; int cur = 0; float timeout = 6f;
+            while (timeout > 0f)
+            {
+                spin += Time.deltaTime;
+                if (spin >= 0.07f) { spin = 0f; cur = (cur + 1) % SlotSymbols.Length; labels[reel].text = SlotSymbols[cur]; }
+                timeout -= Time.deltaTime;
+                if (ClickedThisFrame()) break;
+                yield return null;
+            }
+            result[reel] = cur;
+            labels[reel].color = ProtoUI.Gold;
+            yield return new WaitForSeconds(0.15f); // 連打で複数リールが同時に止まるのを防ぐ
+        }
+
+        bool all = result[0] == result[1] && result[1] == result[2];
+        bool pair = result[0] == result[1] || result[1] == result[2] || result[0] == result[2];
+        _challengeMultiplier = all && result[0] == 0 ? 2.5f : all ? 1.8f : pair ? 1.2f : 0.8f;
+        _challengePrompt.text = all && result[0] == 0 ? "７７７！ 大当たり！（威力250%）"
+            : all ? "絵柄が揃った！（威力180%）"
+            : pair ? "惜しい！2つ揃い（威力120%）" : "揃わず…（威力80%）";
+        yield return new WaitForSeconds(1.1f);
+        Time.timeScale = _main.GameSpeed;
+        _challengeRoot.gameObject.SetActive(false);
+    }
+
     IEnumerator RunChallenge(CardDef card)
     {
         // blinkTimeScale は「速度倍率」。2なら2倍速＝点灯時間・間隔は半分。
@@ -911,6 +1493,7 @@ public class ProtoBattle : MonoBehaviour
         float onTime = BaseFlashOn / scale, gapTime = BaseFlashGap / scale;
 
         _challengeRoot.gameObject.SetActive(true);
+        Time.timeScale = 1f;   // ミニゲーム中は演出速度に関係なく等速（反射神経ゲーのため）
         _challengePrompt.text = $"「{card.displayName}」発動！　光る順番を覚えろ…！";
         ProtoUI.SetGauge(_timerFill, 1f, 500f);
 
@@ -992,6 +1575,7 @@ public class ProtoBattle : MonoBehaviour
 
         _challengePrompt.text = $"正答率 {Mathf.RoundToInt(ratio * 100)}% → 威力 {Mathf.RoundToInt(_challengeMultiplier * 100)}%";
         yield return new WaitForSeconds(1.0f);
+        Time.timeScale = _main.GameSpeed;
         _challengeRoot.gameObject.SetActive(false);
     }
 
@@ -1046,7 +1630,7 @@ public class ProtoBattle : MonoBehaviour
 #if ENABLE_LEGACY_INPUT_MANAGER
         if (!esc && Input.GetKeyDown(KeyCode.Escape)) esc = true;
 #endif
-        if (esc) { _main.ShowMap(); return; }
+        if (esc && !_dead) { Retreat(); return; }   // Esc離脱も「逃げる」と同じペナルティ（戦闘不能後は不可）
 
         float t = Time.time;
         // 倒れたら主人公は揺らさない
@@ -1320,7 +1904,7 @@ public class ProtoBattle : MonoBehaviour
         yield return Shake(target, shakeAmp, shakeDur);
     }
 
-    IEnumerator HitStop(float realSeconds) { Time.timeScale = 0.05f; yield return new WaitForSecondsRealtime(realSeconds); Time.timeScale = 1f; }
+    IEnumerator HitStop(float realSeconds) { Time.timeScale = 0.05f; yield return new WaitForSecondsRealtime(realSeconds); Time.timeScale = _main.GameSpeed; }
 
     IEnumerator DamagePopup(Vector2 pos, int damage, float multiplier)
     {

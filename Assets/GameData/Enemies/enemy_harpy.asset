@@ -1,0 +1,51 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 918556e4ee2892f459d5d57d2f9fae34, type: 3}
+  m_Name: enemy_harpy
+  m_EditorClassIdentifier: Assembly-CSharp::EnemyDef
+  id: harpy
+  enemyName: "\u30CF\u30FC\u30D4\u30FC"
+  spriteKey: 1
+  useDragonFrontOnMap: 0
+  baseHP: 165
+  minAtk: 11
+  maxAtk: 18
+  battleSize: {x: 320, y: 210}
+  mapSize: {x: 84, y: 54}
+  flying: 1
+  levelOffset: 1
+  moneyReward: 32
+  attacks:
+  - name: "\u304B\u304E\u722A"
+    mult: 1
+    hits: 1
+    weight: 40
+    act: 0
+    amount: 0
+  - name: "\u6025\u964D\u4E0B"
+    mult: 1.6
+    hits: 1
+    weight: 24
+    act: 0
+    amount: 0
+  - name: "\u98A8\u306E\u5203"
+    mult: 0.6
+    hits: 3
+    weight: 24
+    act: 0
+    amount: 0
+  - name: "\u304B\u304F\u4E71\u306E\u7FBD\u3070\u305F\u304D"
+    mult: 1
+    hits: 1
+    weight: 13
+    act: 2
+    amount: 2

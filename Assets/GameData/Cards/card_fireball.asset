@@ -29,3 +29,5 @@ MonoBehaviour:
     amount: 5
     duration: 0
   manaCostOverride: 3
+  unlockTier: 0
+  rarity: 0

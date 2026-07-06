@@ -20,6 +20,42 @@ public enum CardEffectType
     Heal,                 // amount 回復
     HealPercent,          // 最大HPの amount% を回復
     Burn,                 // 敵をやけど状態にする（毎ターン amount ダメージ）
+    // ---- 拡張効果（※シリアライズ値保持のため末尾に追加すること） ----
+    MultiHit,             // amount回の多段ヒット（powerが1ヒットあたりの威力）
+    LifeSteal,            // 与ダメージの amount% をHP回復
+    Execute,              // 敵HPが amount% 以下なら威力2倍
+    Detonate,             // 敵の毒・やけどを消費し、残量×amount の追加ダメージ
+    SelfDamage,           // 自分に amount ダメージ（反動）
+    GrowingPower,         // この戦闘で使うたび威力+amount（累積）
+    BoardPower,           // 解放マス数×amount を威力に加算
+    LowHpPower,           // 失ったHP割合に応じ威力増（最大+amount%）
+    ManaBurst,            // 残りマナを全消費し マナ×amount を威力に加算
+    HandPower,            // 使用後の手札枚数×amount を威力に加算
+    Gamble5050,           // 50%で威力2倍、50%で不発（威力0）
+    StunChance,           // amount% で敵を1ターン行動不能
+    Stun,                 // 敵を duration(最低1)ターン行動不能
+    CurrentHpDmg,         // 敵の現在HP×amount% を追加ダメージ
+    Regen,                // durationターンの間、毎ターンHPをamount回復
+    Thorns,               // durationターンの間、被弾時に敵へamount反撃
+    BlockRegen,           // durationターンの間、毎ターンブロックをamount獲得
+    Reflect,              // 次の被ダメージをamount%軽減し、軽減分を敵に返す
+    GuardTurns,           // durationターンの間、被ダメージをamount%軽減
+    Counter,              // 次に被弾したとき敵へamountダメージの反撃
+    GainMoney,            // お金を amount 入手
+    Vulnerable,           // durationターンの間、敵の受けるダメージ+amount%
+    AilmentAmp,           // この戦闘中、毒・やけどダメージ+amount
+    ManaNow,              // このターンのマナ+amount
+    RandomDiscardDraw,    // 手札をランダムに1枚捨てて amount 枚引く
+    RedrawAll,            // 手札をすべて捨てて同じ枚数引き直す
+    NextTurnExtraCards,   // 次のターンの手札+amount枚
+    PoisonBoost,          // 毒amountを付与。すでに毒なら合計を2倍
+    BurnBoost,            // やけどamountを付与。すでにやけどなら合計を2倍
+    HealOverflowBlock,    // amount回復し、最大HPを超えた分はブロックに変換
+    HealMissing,          // 失っているHPの amount% を回復
+    TimeBomb,             // durationターン後に敵へ amount の大ダメージ
+    GaugeOnUse,           // 使用時にゲージストップ発動（威力倍率）
+    TapOrderOnUse,        // 使用時に数字順タップ発動（威力倍率）
+    SlotOnUse,            // 使用時にスロット発動（威力倍率）
 }
 
 [System.Serializable]
@@ -54,6 +90,17 @@ public class CardDef : ScriptableObject
     [Tooltip("-1で自動（=Ceil(マス数/10)）。0以上で固定値")]
     public int manaCostOverride = -1;
 
+    [Tooltip("アンロック段階。0=最初から / 1=1回クリア後 / 2=2回クリア後 …（報酬・ショップ・精霊樹の抽選に影響）")]
+    public int unlockTier = 0;
+
+    [Tooltip("レアリティ。0=コモン / 1=アンコモン / 2=レア（出現率と枠色に影響）")]
+    public int rarity = 0;
+
+    public Color RarityColor => rarity >= 2 ? new Color(1f, 0.79f, 0.30f)   // レア=金
+        : rarity == 1 ? new Color(0.50f, 0.83f, 1f)                         // アンコモン=水色
+        : new Color(0.92f, 0.92f, 0.95f);                                   // コモン=白
+    public string RarityLabel => rarity >= 2 ? "レア" : rarity == 1 ? "アンコモン" : "コモン";
+
     Vector2Int[] _shape; // パース結果のキャッシュ
 
     void OnEnable() => _shape = null; // 再生開始/アセット読込時にキャッシュをクリア
@@ -74,8 +121,13 @@ public class CardDef : ScriptableObject
         get
         {
             if (power > 0) return CardKind.Attack;
-            if (HasEffect(CardEffectType.Heal) || HasEffect(CardEffectType.HealPercent)) return CardKind.Heal;
-            if (HasEffect(CardEffectType.Protect) || HasEffect(CardEffectType.Block)) return CardKind.Defense;
+            if (HasEffect(CardEffectType.Heal) || HasEffect(CardEffectType.HealPercent)
+                || HasEffect(CardEffectType.Regen) || HasEffect(CardEffectType.HealMissing)
+                || HasEffect(CardEffectType.HealOverflowBlock)) return CardKind.Heal;
+            if (HasEffect(CardEffectType.Protect) || HasEffect(CardEffectType.Block)
+                || HasEffect(CardEffectType.Thorns) || HasEffect(CardEffectType.BlockRegen)
+                || HasEffect(CardEffectType.Reflect) || HasEffect(CardEffectType.GuardTurns)
+                || HasEffect(CardEffectType.Counter)) return CardKind.Defense;
             return CardKind.Skill;
         }
     }
@@ -102,6 +154,41 @@ public class CardDef : ScriptableObject
                     case CardEffectType.Strength: lines.Add($"自分の攻撃力を {e.amount} 上昇（戦闘中）"); break;
                     case CardEffectType.Heal: lines.Add($"HPを {e.amount} 回復"); break;
                     case CardEffectType.HealPercent: lines.Add($"最大HPの {e.amount}% を回復"); break;
+                    case CardEffectType.MultiHit: lines.Add($"{e.amount} 回連続でヒット"); break;
+                    case CardEffectType.LifeSteal: lines.Add($"与ダメージの {e.amount}% をHP回復"); break;
+                    case CardEffectType.Execute: lines.Add($"敵HPが {e.amount}% 以下なら威力2倍"); break;
+                    case CardEffectType.Detonate: lines.Add($"毒・やけどを消費し 残量×{e.amount} の追加ダメージ"); break;
+                    case CardEffectType.SelfDamage: lines.Add($"反動で自分に {e.amount} ダメージ"); break;
+                    case CardEffectType.GrowingPower: lines.Add($"この戦闘で使うたび威力+{e.amount}"); break;
+                    case CardEffectType.BoardPower: lines.Add($"解放マス数×{e.amount} を威力に加算"); break;
+                    case CardEffectType.LowHpPower: lines.Add($"HPが低いほど威力増（最大+{e.amount}%）"); break;
+                    case CardEffectType.ManaBurst: lines.Add($"残マナを全消費し マナ×{e.amount} を威力に加算"); break;
+                    case CardEffectType.HandPower: lines.Add($"手札の残り枚数×{e.amount} を威力に加算"); break;
+                    case CardEffectType.Gamble5050: lines.Add("50%で威力2倍、50%で不発"); break;
+                    case CardEffectType.StunChance: lines.Add($"{e.amount}% で敵を1ターン行動不能"); break;
+                    case CardEffectType.Stun: lines.Add($"敵を {Mathf.Max(1, e.duration)} ターン行動不能"); break;
+                    case CardEffectType.CurrentHpDmg: lines.Add($"敵の現在HPの {e.amount}% を追加ダメージ"); break;
+                    case CardEffectType.Regen: lines.Add($"{e.duration}ターンの間、毎ターンHP{e.amount}回復"); break;
+                    case CardEffectType.Thorns: lines.Add($"{e.duration}ターンの間、被弾時に敵へ{e.amount}反撃"); break;
+                    case CardEffectType.BlockRegen: lines.Add($"{e.duration}ターンの間、毎ターンブロック{e.amount}獲得"); break;
+                    case CardEffectType.Reflect: lines.Add($"次の被ダメージを{e.amount}%軽減し、軽減分を敵に返す"); break;
+                    case CardEffectType.GuardTurns: lines.Add($"{e.duration}ターンの間、被ダメージを{e.amount}%軽減"); break;
+                    case CardEffectType.Counter: lines.Add($"次に被弾したとき敵へ{e.amount}の反撃"); break;
+                    case CardEffectType.GainMoney: lines.Add($"お金を {e.amount} 入手"); break;
+                    case CardEffectType.Vulnerable: lines.Add($"{e.duration}ターンの間、敵の受けるダメージ+{e.amount}%"); break;
+                    case CardEffectType.AilmentAmp: lines.Add($"この戦闘中、毒・やけどダメージ+{e.amount}"); break;
+                    case CardEffectType.ManaNow: lines.Add($"このターンのマナ+{e.amount}"); break;
+                    case CardEffectType.RandomDiscardDraw: lines.Add($"手札を1枚捨てて {e.amount} 枚引く"); break;
+                    case CardEffectType.RedrawAll: lines.Add("手札をすべて引き直す"); break;
+                    case CardEffectType.NextTurnExtraCards: lines.Add($"次のターンの手札+{e.amount}枚"); break;
+                    case CardEffectType.PoisonBoost: lines.Add($"毒{e.amount}を付与。すでに毒なら合計2倍"); break;
+                    case CardEffectType.BurnBoost: lines.Add($"やけど{e.amount}を付与。すでにやけどなら合計2倍"); break;
+                    case CardEffectType.HealOverflowBlock: lines.Add($"HP{e.amount}回復。あふれた分はブロックに"); break;
+                    case CardEffectType.HealMissing: lines.Add($"失ったHPの {e.amount}% を回復"); break;
+                    case CardEffectType.TimeBomb: lines.Add($"{e.duration}ターン後に敵へ {e.amount} の大ダメージ"); break;
+                    case CardEffectType.GaugeOnUse: lines.Add("使用時にゲージストップ（会心）が発動"); break;
+                    case CardEffectType.TapOrderOnUse: lines.Add("使用時に数字順タップが発動"); break;
+                    case CardEffectType.SlotOnUse: lines.Add("使用時にスロットが発動"); break;
                 }
             }
         if (lines.Count == 0 && !string.IsNullOrEmpty(description)) lines.Add(description);
