@@ -15,9 +15,13 @@ public class BuildScreen : MonoBehaviour
     RectTransform _root;
 
     Image[,] _cellImages;
+    Image[,] _cellMarks;           // 特殊マスのグロー（空きマス用）
+    Image[,] _cellBadges;          // 特殊マスのバッジ（ピースで覆われた時用・縁取り付きひし形）
     Image[,,] _cellEdges;          // 各セル4辺のピース境界エッジ（薄い金色）
+    bool _debugBuild;              // ビルド画面のデバッグモード（ストック消費なしで解放）
     static readonly Color EdgeColor = new Color(1f, 1f, 1f, 0.92f);
-    TextMeshProUGUI _title, _info, _selectedText, _boardCountText, _manaInfoText, _trayTitle;
+    TextMeshProUGUI _title, _info, _selectedText, _boardCountText, _manaInfoText, _trayTitle, _blessTitle, _blessText;
+    RectTransform _blessContent;   // 発動加護のスクロール内容
     readonly List<(CardDef card, Image img)> _trayButtons = new List<(CardDef, Image)>();
 
     CardDef _selected;
@@ -65,7 +69,7 @@ public class BuildScreen : MonoBehaviour
     static readonly Color AddBtnOn = new Color(0.62f, 0.16f, 0.16f, 0.98f);  // 赤：配置をやめる
 
     AudioSource _sfx;
-    AudioClip _synergyClip;
+    AudioClip _synergyClip, _specialClip;
     readonly HashSet<Vector2Int> _synCells = new HashSet<Vector2Int>();   // シナジー中のマス（常時点滅の対象）
 
     public void Init(ProtoMain main)
@@ -74,6 +78,7 @@ public class BuildScreen : MonoBehaviour
         BuildUI();
         _sfx = gameObject.AddComponent<AudioSource>();
         _synergyClip = ProtoAudio.CreateSynergyChime();
+        _specialClip = ProtoAudio.CreateSpecialChime();
         Hide();
     }
 
@@ -108,6 +113,20 @@ public class BuildScreen : MonoBehaviour
 
         _title = ProtoUI.CreateText("Title", _root, "スキルビルド", 34, new Vector2(0, 410), new Vector2(560, 50));
         ProtoUI.StyleTitle(_title, ProtoUI.Gold, 6f);
+
+#if UNITY_EDITOR
+        // デバッグモード切替（エディタのみ）：ONの間はストック消費なしで上限までマスを解放できる
+        var dbgBtn = ProtoUI.CreateGoldButton("BuildDebug", _root, "モード：プレイ", 15, new Vector2(-660, 410), new Vector2(170, 42),
+            new Color(0.25f, 0.25f, 0.35f, 0.98f), null);
+        var dbgLabel = dbgBtn.GetComponentInChildren<TextMeshProUGUI>();
+        var dbgImg = (Image)dbgBtn.targetGraphic;
+        dbgBtn.onClick.AddListener(() =>
+        {
+            _debugBuild = !_debugBuild;
+            dbgLabel.text = _debugBuild ? "モード：デバッグ" : "モード：プレイ";
+            dbgImg.color = _debugBuild ? new Color(0.6f, 0.35f, 0.15f, 0.98f) : new Color(0.25f, 0.25f, 0.35f, 0.98f);
+        });
+#endif
         ProtoUI.CreatePanel("TitleLine", _root, new Vector2(0, 384), new Vector2(620, 3), new Color(0.85f, 0.72f, 0.4f, 0.9f)).raycastTarget = false;
 
         // マス配置モード切替（ストックマスをロック中のセルへ配置して盤面を広げる）
@@ -214,12 +233,38 @@ public class BuildScreen : MonoBehaviour
         hint.textWrappingMode = TMPro.TextWrappingModes.NoWrap;
         hint.enableAutoSizing = true; hint.fontSizeMin = 10; hint.fontSizeMax = 15;
 
-        // カードの出現率（カード一覧の右側に別枠・縦サイズは一覧と同じ）
-        ProtoUI.CreateFramedPanel("ProbBox", _root, new Vector2(585, 25), new Vector2(320, 476),
+        // ---- 上2/3：出現率の枠（カードにカーソルを当てた時の詳細もこちらに表示） ----
+        ProtoUI.CreateFramedPanel("ProbBox", _root, new Vector2(585, 106), new Vector2(320, 314),
             new Color(0.06f, 0.07f, 0.11f, 0.96f), new Color(0.65f, 0.55f, 0.36f, 0.85f));
-        _probTitle = ProtoUI.CreateText("ProbTitle", _root, "出現率", 22, new Vector2(585, 238), new Vector2(300, 30), ProtoUI.Gold);
-        _info = ProtoUI.CreateText("Info", _root, "", 16,
-            new Vector2(585, 5), new Vector2(292, 430), new Color(0.88f, 0.85f, 1f), TextAlignmentOptions.Top);
+        _probTitle = ProtoUI.CreateText("ProbTitle", _root, "出現率", 22, new Vector2(585, 236), new Vector2(300, 30), ProtoUI.Gold);
+        _info = ProtoUI.CreateText("Info", _root, "", 15,
+            new Vector2(585, 90), new Vector2(292, 250), new Color(0.88f, 0.85f, 1f), TextAlignmentOptions.Top);
+
+        // ---- 下1/3：発動加護の枠（発動した加護だけが並ぶ。あふれたらスクロール） ----
+        ProtoUI.CreateFramedPanel("BlessBox", _root, new Vector2(585, -134), new Vector2(320, 158),
+            new Color(0.08f, 0.07f, 0.05f, 0.96f), new Color(0.85f, 0.72f, 0.4f, 0.85f));
+        _blessTitle = ProtoUI.CreateText("BlessTitle", _root, "発動加護", 18, new Vector2(585, -78), new Vector2(292, 24), ProtoUI.Gold);
+        ProtoUI.StyleTitle(_blessTitle, ProtoUI.Gold, 4f);
+
+        var blessView = ProtoUI.CreateRect("BlessView", _root);
+        blessView.anchoredPosition = new Vector2(585, -148);
+        blessView.sizeDelta = new Vector2(292, 110);
+        blessView.gameObject.AddComponent<Image>().color = new Color(0, 0, 0, 0.01f);   // スクロール入力の受け皿
+        blessView.gameObject.AddComponent<RectMask2D>();
+        var blessSr = blessView.gameObject.AddComponent<ScrollRect>();
+        blessSr.horizontal = false; blessSr.vertical = true; blessSr.viewport = blessView;
+        blessSr.scrollSensitivity = 18f; blessSr.movementType = ScrollRect.MovementType.Clamped;
+
+        _blessContent = ProtoUI.CreateRect("BlessContent", blessView);
+        _blessContent.anchorMin = new Vector2(0.5f, 1f); _blessContent.anchorMax = new Vector2(0.5f, 1f);
+        _blessContent.pivot = new Vector2(0.5f, 1f); _blessContent.anchoredPosition = Vector2.zero;
+        blessSr.content = _blessContent;
+
+        _blessText = ProtoUI.CreateText("BlessVal", _blessContent, "", 13,
+            Vector2.zero, new Vector2(284, 100), Color.white, TextAlignmentOptions.TopLeft);
+        var btr = _blessText.rectTransform;
+        btr.anchorMin = btr.anchorMax = new Vector2(0.5f, 1f); btr.pivot = new Vector2(0.5f, 1f);
+        _blessText.lineSpacing = 10f;
 
         var goldB = new Color(0.85f, 0.72f, 0.4f, 0.95f);
         ProtoUI.CreatePanel("MenuBackBorder", _root, new Vector2(340, -312), new Vector2(260, 74), goldB).raycastTarget = false;
@@ -248,6 +293,8 @@ public class BuildScreen : MonoBehaviour
         _gridRt.sizeDelta = new Vector2(w * unit, h * unit);
 
         _cellImages = new Image[w, h];
+        _cellMarks = new Image[w, h];
+        _cellBadges = new Image[w, h];
         _cellEdges = new Image[w, h, 4];
         float et = Mathf.Max(2f, _cellSize * 0.07f); // エッジの太さ
         for (int y = 0; y < h; y++)
@@ -257,6 +304,26 @@ public class BuildScreen : MonoBehaviour
                 var cell = ProtoUI.Bevel(ProtoUI.CreatePanel($"Cell_{x}_{y}", _gridRt, Vector2.zero,
                     new Vector2(_cellSize, _cellSize), EmptyColor));   // 立体タイル
                 _cellImages[x, y] = cell;
+
+                // 特殊マスのエフェクト（空きマス用：マス全体を覆う放射グローが脈動）
+                var mark = ProtoUI.CreateGlow("Mark", cell.transform, Vector2.zero,
+                    new Vector2(_cellSize * 1.35f, _cellSize * 1.35f), Color.white);
+                mark.gameObject.AddComponent<RareGlow>();   // 色はRefreshBoardで種別ごとに設定
+                mark.gameObject.SetActive(false);
+                _cellMarks[x, y] = mark;
+
+                // ピースで覆われた時用：黒縁取り付きのひし形バッジ（どの色のピースでもくっきり見える）
+                float bs = _cellSize * 0.42f;
+                var badgeOutline = ProtoUI.CreatePanel("Badge", cell.transform, Vector2.zero,
+                    new Vector2(bs, bs), new Color(0.02f, 0.02f, 0.05f, 0.95f));
+                badgeOutline.transform.localRotation = Quaternion.Euler(0, 0, 45f);
+                badgeOutline.raycastTarget = false;
+                var badgeInner = ProtoUI.CreatePanel("BadgeIn", badgeOutline.transform, Vector2.zero,
+                    new Vector2(bs * 0.6f, bs * 0.6f), Color.white);
+                badgeInner.raycastTarget = false;
+                badgeInner.gameObject.AddComponent<RareGlow>();   // 種別色⇔白で脈動
+                badgeOutline.gameObject.SetActive(false);
+                _cellBadges[x, y] = badgeInner;
 
                 // ピース境界用エッジ（上/下/左/右）。既定は非表示
                 float hs = _cellSize / 2f, ho = et / 2f;
@@ -518,7 +585,8 @@ public class BuildScreen : MonoBehaviour
     {
         if (!_addMode)
         {
-            if (_main.CellStock <= 0) { ShowNotice("ストックマスが0のため、配置できません！"); return; } // ストック無しは入れない
+            // デバッグモード中はストック0でも配置モードに入れる
+            if (!_debugBuild && _main.CellStock <= 0) { ShowNotice("ストックマスが0のため、配置できません！"); return; } // ストック無しは入れない
             SetAddMode(true);   // 配置開始
         }
         else ShowPlaceConfirm();           // 配置をやめる→確認
@@ -566,8 +634,10 @@ public class BuildScreen : MonoBehaviour
         {
             if (!P.IsUnlocked(x, y))
             {
-                if (_main.UnlockCell(x, y)) RefreshBoard();
-                else ShowNotice(_main.CellStock <= 0 ? "ストックマスが0のため、配置できません！" : "これ以上拡張できません(最大100)");
+                // デバッグモード中はストックを消費せず解放できる
+                bool ok = _debugBuild ? _main.DebugUnlockCell(x, y) : _main.UnlockCell(x, y);
+                if (ok) RefreshBoard();
+                else ShowNotice(!_debugBuild && _main.CellStock <= 0 ? "ストックマスが0のため、配置できません！" : "これ以上拡張できません(最大100)");
             }
             return;
         }
@@ -591,6 +661,7 @@ public class BuildScreen : MonoBehaviour
                 RefreshTray();
                 UpdateSelectedText(); RefreshBoard();
                 PlaySynergyFx(P.GetAt(x, y));                          // 隣接シナジーが生まれたら光る
+                PlaySpecialFx(P.GetAt(x, y));                          // 特殊マスを覆ったら音＋発光
             }
             else { RefreshBoard(); ShowNotice("ここには置けません！スペースが足りません"); } // 通知を上書きしない
         }
@@ -646,6 +717,85 @@ public class BuildScreen : MonoBehaviour
         }
     }
 
+    // ==================== 特殊マス起動演出 ====================
+    // 置いたピースが特殊マスを覆ったら、音を鳴らして該当マスを強く光らせる
+    Coroutine _specialFxCo;
+    void PlaySpecialFx(PanelModel.Placement placed)
+    {
+        if (placed == null) return;
+        var hits = new List<(Vector2Int pos, CellKind kind)>();
+        foreach (var c in placed.cells)
+        {
+            var k = P.KindAt(c.x, c.y);
+            if (k != CellKind.Normal) hits.Add((c, k));
+        }
+        if (hits.Count == 0) return;
+
+        if (_sfx != null && _specialClip != null) _sfx.PlayOneShot(_specialClip);
+        if (_specialFxCo != null) StopCoroutine(_specialFxCo);
+        _specialFxCo = StartCoroutine(SpecialFlash(hits));
+    }
+
+    IEnumerator SpecialFlash(List<(Vector2Int pos, CellKind kind)> hits)
+    {
+        const float dur = 0.8f;
+
+        // 各マスから広がる光の波紋を生成（純白→種別色でフェードしながら3倍まで拡大）
+        var waves = new List<(RectTransform rt, Image img, Color col)>();
+        foreach (var (pos, kind) in hits)
+        {
+            if (!P.IsValid(pos.x, pos.y) || _cellImages[pos.x, pos.y] == null) continue;
+            var wave = ProtoUI.CreateGlow("SpWave", _cellImages[pos.x, pos.y].transform, Vector2.zero,
+                new Vector2(_cellSize, _cellSize), Color.white);
+            waves.Add(((RectTransform)wave.transform, wave, SpecialColor(kind)));
+        }
+
+        float t = 0f;
+        while (t < dur)
+        {
+            t += Time.deltaTime;
+            float p = Mathf.Clamp01(t / dur);
+
+            // 高コントラストのストロボ点滅（純白 ⇔ ほぼ黒）＋マス自体が弾む
+            bool on = Mathf.FloorToInt(t * 14f) % 2 == 0;
+            float punch = 1f + 0.35f * (1f - p);   // 置いた直後ほど大きく膨らむ
+            foreach (var (pos, kind) in hits)
+            {
+                if (!P.IsValid(pos.x, pos.y) || _cellImages[pos.x, pos.y] == null) continue;
+                _cellImages[pos.x, pos.y].color = on ? Color.white : Color.Lerp(SpecialColor(kind), Color.black, 0.55f);
+                _cellImages[pos.x, pos.y].transform.localScale = Vector3.one * punch;
+            }
+            // 波紋の拡大＆フェード
+            foreach (var (rt, img, col) in waves)
+            {
+                if (rt == null) continue;
+                rt.localScale = Vector3.one * Mathf.Lerp(1f, 3.2f, p);
+                img.color = Color.Lerp(Color.white, new Color(col.r, col.g, col.b, 0f), p);
+            }
+            yield return null;
+        }
+
+        foreach (var (rt, _, _) in waves) if (rt != null) Destroy(rt.gameObject);
+        foreach (var (pos, _) in hits)
+            if (P.IsValid(pos.x, pos.y) && _cellImages[pos.x, pos.y] != null)
+                _cellImages[pos.x, pos.y].transform.localScale = Vector3.one;
+        _specialFxCo = null;
+        RefreshBoard();
+    }
+
+    // 特殊マスの色と説明
+    static Color SpecialColor(CellKind k) =>
+        k == CellKind.Power ? new Color(1f, 0.45f, 0.25f)
+        : k == CellKind.Gold ? new Color(1f, 0.85f, 0.3f)
+        : k == CellKind.Resonance ? new Color(0.4f, 0.9f, 1f)
+        : new Color(0.75f, 0.4f, 0.95f);
+
+    static string SpecialDesc(CellKind k) =>
+        k == CellKind.Power ? $"<color=#FF7340>強化マス</color>：覆った攻撃カードの威力+{GameBalance.PowerPctInt}%（1マスごと）"
+        : k == CellKind.Gold ? $"<color=#FFD84D>黄金マス</color>：覆ったカードが手札に出るたびコイン+{GameBalance.GoldCoinPerCell}"
+        : k == CellKind.Resonance ? $"<color=#66E5FF>共鳴マス</color>：このマスの隣接シナジーを{GameBalance.ResonanceMult}倍で数える"
+        : $"<color=#BF66F2>呪いマス</color>：覆ったカードの出現率{GameBalance.CurseWeightMult:0.#}倍。ただし使用時にHP-{GameBalance.CurseHpPerCell}";
+
     // シナジー中のピースにカーソルを合わせると、発動中の効果を表示
     bool _synTipShown;
     void SynergyHoverTip()
@@ -656,9 +806,17 @@ public class BuildScreen : MonoBehaviour
             return;
         }
         Vector2Int cell = default;
-        bool hit = TryGetPointerPos(out var sp)
-            && TryGetCellAtScreenPoint(sp, null, out cell)
-            && _synCells.Contains(new Vector2Int(cell.x, cell.y));
+        bool overCell = TryGetPointerPos(out var sp) && TryGetCellAtScreenPoint(sp, null, out cell);
+        bool hit = overCell && _synCells.Contains(new Vector2Int(cell.x, cell.y));
+
+        // 特殊マスのホバー説明（シナジー表示がないマスで優先表示）
+        if (!hit && overCell && P.IsUnlocked(cell.x, cell.y) && P.KindAt(cell.x, cell.y) != CellKind.Normal)
+        {
+            _selectedText.text = SpecialDesc(P.KindAt(cell.x, cell.y));
+            _synTipShown = true;
+            return;
+        }
+
         if (hit)
         {
             var p = P.GetAt(cell.x, cell.y);
@@ -773,7 +931,11 @@ public class BuildScreen : MonoBehaviour
         }
         if (!placed) { P.PlaceCells(_dragCard, _dragOrigCells); ShowNotice("そこには動かせません！元の場所に戻しました"); }
         RefreshBoard();
-        if (placed) PlaySynergyFx(P.GetAt(landing.x, landing.y));   // 移動先でシナジーが生まれたら光る
+        if (placed)
+        {
+            PlaySynergyFx(P.GetAt(landing.x, landing.y));   // 移動先でシナジーが生まれたら光る
+            PlaySpecialFx(P.GetAt(landing.x, landing.y));   // 移動先で特殊マスを覆ったら音＋発光
+        }
     }
 
     bool TryGetCellUnderPointer(UnityEngine.EventSystems.PointerEventData e, out Vector2Int cell)
@@ -820,7 +982,11 @@ public class BuildScreen : MonoBehaviour
                     continue;
                 }
                 var p = panel.GetAt(x, y);
-                _cellImages[x, y].color = p == null ? EmptyColor : p.card.CategoryColor;
+                var kind0 = panel.KindAt(x, y);
+                // 空きの特殊マスはマス自体を種別色に染める（グローと合わせて一目で分かる）
+                _cellImages[x, y].color = p != null ? p.card.CategoryColor
+                    : kind0 != CellKind.Normal ? Color.Lerp(EmptyColor, SpecialColor(kind0), 0.55f)
+                    : EmptyColor;
             }
 
         if (_boardSel.HasValue)
@@ -849,6 +1015,52 @@ public class BuildScreen : MonoBehaviour
                         boundary = np != p && (np == null || d == 1 || d == 3);
                     }
                     _cellEdges[x, y, d].gameObject.SetActive(boundary);
+                }
+            }
+
+        // 特殊マスのエフェクト表示（空き＝マス全体グロー／ピースで覆われている＝縁取りバッジ）
+        for (int x = 0; x < panel.W; x++)
+            for (int y = 0; y < panel.H; y++)
+            {
+                if (_cellMarks[x, y] == null) continue;
+                var kind = panel.KindAt(x, y);
+                bool special = kind != CellKind.Normal;
+                bool unlockedCell = panel.IsUnlocked(x, y);
+                bool covered = special && unlockedCell && panel.GetAt(x, y) != null;
+
+                _cellMarks[x, y].gameObject.SetActive(special && !covered);   // 空き/未解放：グロー
+                if (special && !covered)
+                {
+                    var glow = _cellMarks[x, y].GetComponent<RareGlow>();
+                    if (glow != null)
+                    {
+                        var c = SpecialColor(kind);
+                        glow.target = _cellMarks[x, y];
+                        // 未解放（4隅など）は薄く光らせて「目指す目標」として見せる
+                        float a1 = unlockedCell ? 0.30f : 0.10f;
+                        float a2 = unlockedCell ? 0.85f : 0.30f;
+                        glow.colA = new Color(c.r, c.g, c.b, a1);
+                        glow.colB = new Color(c.r, c.g, c.b, a2);
+                        glow.speed = 3f;
+                    }
+                }
+
+                var badge = _cellBadges[x, y];
+                if (badge != null)
+                {
+                    badge.transform.parent.gameObject.SetActive(covered);     // 配置済み：バッジ
+                    if (covered)
+                    {
+                        var bg = badge.GetComponent<RareGlow>();
+                        if (bg != null)
+                        {
+                            var c = SpecialColor(kind);
+                            bg.target = badge;
+                            bg.colA = c;
+                            bg.colB = Color.white;
+                            bg.speed = 5f;
+                        }
+                    }
                 }
             }
 
@@ -898,7 +1110,55 @@ public class BuildScreen : MonoBehaviour
         }
         var ordered = parts.OrderByDescending(r => r.w).Select(r => r.text).ToList();
         ordered.Add($"通常攻撃: {WPct(emptyW, sumW)}%");
+
         _info.text = string.Join("\n", ordered);
+
+        RefreshBlessings();
+    }
+
+    // ==================== 発動加護の表示 ====================
+    // 「発動しているもの」だけを列挙：特殊マス（ピースで覆われて効いているもの）＋四隅の加護
+    void RefreshBlessings()
+    {
+        if (_blessText == null) return;
+        var lines = new List<string>();
+
+        // 特殊マスの加護（覆っているピースごとに1行）
+        foreach (var p in P.Placements)
+        {
+            if (p.card == null) continue;
+            int pw = 0, gd = 0, cs = 0; bool rs = false;
+            foreach (var c in p.cells)
+            {
+                switch (P.KindAt(c.x, c.y))
+                {
+                    case CellKind.Power: pw++; break;
+                    case CellKind.Gold: gd++; break;
+                    case CellKind.Resonance: rs = true; break;
+                    case CellKind.Curse: cs++; break;
+                }
+            }
+            string nm = p.card.displayName;
+            if (pw > 0) lines.Add($"<color=#FF7340>強化</color>　{nm}：威力+{GameBalance.PowerPctInt * pw}%");
+            if (gd > 0) lines.Add($"<color=#FFD84D>黄金</color>　{nm}：ドロー時コイン+{GameBalance.GoldCoinPerCell * gd}");
+            if (rs) lines.Add($"<color=#66E5FF>共鳴</color>　{nm}：シナジー{GameBalance.ResonanceMult}倍");
+            if (cs > 0) lines.Add($"<color=#BF66F2>呪い</color>　{nm}：出現率{GameBalance.CurseWeightMult:0.#}倍／使用時HP-{GameBalance.CurseHpPerCell * cs}");
+        }
+
+        // 四隅の加護（達成したレベルぶんだけ）
+        int corners = _main.CornersUnlocked;
+        string[] bless = { $"攻撃威力 +{GameBalance.CornerAtkPctInt}%", $"毎ターン ブロック +{GameBalance.CornerBlock}", $"毎ターン HP +{GameBalance.CornerRegen}回復", $"最大マナ +{GameBalance.CornerMana}" };
+        for (int bi = 0; bi < corners && bi < 4; bi++)
+            lines.Add($"<color=#FFE080>四隅</color>　{bless[bi]}");
+
+        if (_blessTitle != null) _blessTitle.text = lines.Count > 0 ? $"発動加護（{lines.Count}）" : "発動加護";
+        _blessText.text = lines.Count > 0 ? string.Join("\n", lines) : "<color=#6a6a78>（なし）</color>";
+
+        // 内容量に合わせてスクロール範囲を更新（あふれたら下にスクロールできる）
+        _blessText.ForceMeshUpdate();
+        float h = Mathf.Max(100f, _blessText.preferredHeight + 8f);
+        _blessText.rectTransform.sizeDelta = new Vector2(284, h);
+        if (_blessContent != null) _blessContent.sizeDelta = new Vector2(292, h);
     }
 
     // ==================== シナジー発動演出 ====================

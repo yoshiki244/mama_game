@@ -36,6 +36,9 @@ public static class ProtoSave
         public int ascension;
         public int mapSeed;            // マップ再生成用シード
         public List<int> clearedNodes = new List<int>(); // 踏破済みノードindex
+        public List<int> skx = new List<int>();          // 特殊マスX
+        public List<int> sky = new List<int>();          // 特殊マスY
+        public List<int> skk = new List<int>();          // 特殊マス種別(CellKind)
         public int curNode = -1;       // 現在地ノードindex
     }
 
@@ -68,6 +71,7 @@ public static class ProtoSave
             d.pieces.Add(ps);
         }
         main.CaptureMap(d.clearedNodes, out d.curNode); // マップ踏破状況
+        main.Panel.CaptureSpecials(d.skx, d.sky, d.skk); // 特殊マス
 
         try { File.WriteAllText(FilePath, JsonUtility.ToJson(d)); }
         catch (System.Exception e) { Debug.LogWarning($"[ProtoSave] 保存に失敗: {e.Message}"); }
@@ -97,6 +101,11 @@ public static class ProtoSave
             for (int i = 0; i < d.ux.Length && i < d.uy.Length; i++)
                 unlocked.Add(new Vector2Int(d.ux[i], d.uy[i]));
         main.ApplyLoaded(d.money, d.cellStock, d.owned, d.ownedCounts, unlocked, d.equip, d.growIds, d.growLevels);
+
+        // 特殊マスを復元
+        if (d.skx != null && d.sky != null && d.skk != null)
+            for (int i = 0; i < d.skx.Count && i < d.sky.Count && i < d.skk.Count; i++)
+                main.Panel.SetKind(d.skx[i], d.sky[i], (CellKind)d.skk[i]);
 
         // 盤面の配置を復元
         if (d.pieces != null)

@@ -966,6 +966,21 @@ public class MapScreen : MonoBehaviour
         ProtoUI.CreateGoldButton("SellBtn", rt, "カードを売る", 20, new Vector2(-330, -380), new Vector2(240, 60),
             new Color(0.5f, 0.4f, 0.2f, 0.98f), () => { if (!closing) ShowSellPicker(say, refresh); });
 
+        // 呪いの浄化（盤面の呪いマスをすべて通常マスに戻す）
+        int purifyPrice = debugFree ? 0 : Mathf.RoundToInt(GameBalance.CursePurifyPrice * _main.ShopPriceMul);
+        ProtoUI.CreateGoldButton("PurifyBtn", rt, $"呪いを浄化する（{purifyPrice}コイン）", 18, new Vector2(330, -380), new Vector2(300, 60),
+            new Color(0.35f, 0.25f, 0.5f, 0.98f), () =>
+            {
+                if (closing) return;
+                int n = _main.Panel.CountKind(CellKind.Curse);
+                if (n == 0) { say("おや、あんたの盤面に呪いは見当たらないよ。"); return; }
+                if (_main.Money < purifyPrice) { say("おっと、お金が足りないようだね……"); return; }
+                _main.AddMoney(-purifyPrice);
+                _main.Panel.ClearKind(CellKind.Curse);
+                say($"呪いマス{n}個を清めておいたよ。もう安心だね。");
+                refresh();
+            });
+
         // デバッグ：全カードから選んで無料入手
         if (debugFree)
             ProtoUI.CreateGoldButton("DbgPick", rt, "カードを選んで入手(デバッグ)", 16, new Vector2(-600, 380), new Vector2(300, 48),

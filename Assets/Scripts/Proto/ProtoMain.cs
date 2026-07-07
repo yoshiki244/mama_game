@@ -22,7 +22,24 @@ public class ProtoMain : MonoBehaviour
     public int CellStock { get; private set; }     // 入手済み・未配置のマス数
     public int CurrentHP { get; private set; }     // 戦闘をまたいで継続するHP
     public int BoardCells => Panel != null ? Panel.UnlockedCount() : 0; // 現在の解放マス数
-    public int MaxMana => BoardCells / 10 + (Equipped == EquipKind.ManaPendant ? 1 : 0); // マナ＝盤面÷10＋装備（初期30マス→3）
+    public int MaxMana => BoardCells / 10 + (Equipped == EquipKind.ManaPendant ? 1 : 0)
+        + (CornersUnlocked >= 4 ? GameBalance.CornerMana : 0); // マナ＝盤面÷10＋装備＋四隅の加護Lv4
+
+    // ---- 四隅の加護：解放した隅の数だけ累積ボーナス ----
+    // Lv1: 攻撃威力+5% / Lv2: 毎ターン開始ブロック+3 / Lv3: 毎ターンHP+2回復 / Lv4: 最大マナ+1
+    public int CornersUnlocked
+    {
+        get
+        {
+            if (Panel == null) return 0;
+            int n = 0, w = Panel.W - 1, h = Panel.H - 1;
+            if (Panel.IsUnlocked(0, 0)) n++;
+            if (Panel.IsUnlocked(w, 0)) n++;
+            if (Panel.IsUnlocked(0, h)) n++;
+            if (Panel.IsUnlocked(w, h)) n++;
+            return n;
+        }
+    }
     public EquipKind Equipped { get; private set; } = EquipKind.None; // 装備（1つだけ）
     // 生命のペンダントで最大HP+10%
     public int MaxHP => Stats == null ? 0 : Stats.MaxHP + (Equipped == EquipKind.LifePendant ? Mathf.RoundToInt(Stats.MaxHP * 0.10f) : 0);
@@ -158,7 +175,43 @@ public class ProtoMain : MonoBehaviour
         if (Panel.UnlockedCount() >= MaxCells) return false;
         if (!Panel.Unlock(x, y)) return false;
         CellStock--;
+        RollSpecialCell(x, y);
         return true;
+    }
+
+    // デバッグ用：ストックマスを消費せずに解放（ビルド画面のデバッグモード）
+    public bool DebugUnlockCell(int x, int y)
+    {
+        if (Panel.UnlockedCount() >= MaxCells) return false;
+        if (!Panel.Unlock(x, y)) return false;
+        RollSpecialCell(x, y);
+        return true;
+    }
+
+    // 盤面の4隅は確定で特殊マス（4種を1つずつシャッフルして配置）
+    // 隅は解放コストが高い（遠い）ぶん、確実なご褒美として機能する
+    void SetupCornerSpecials()
+    {
+        var kinds = new List<CellKind> { CellKind.Power, CellKind.Gold, CellKind.Resonance, CellKind.Curse };
+        for (int i = kinds.Count - 1; i > 0; i--) { int j = Random.Range(0, i + 1); (kinds[i], kinds[j]) = (kinds[j], kinds[i]); }
+        int w = Panel.W - 1, h = Panel.H - 1;
+        Panel.SetKind(0, 0, kinds[0]);
+        Panel.SetKind(w, 0, kinds[1]);
+        Panel.SetKind(0, h, kinds[2]);
+        Panel.SetKind(w, h, kinds[3]);
+    }
+
+    // 新しく解放したマスは18%で特殊マスになる（強化/黄金/共鳴/呪い）
+    void RollSpecialCell(int x, int y)
+    {
+        if (Panel.KindAt(x, y) != CellKind.Normal) return;   // 既に特殊なら維持
+        if (Random.value >= GameBalance.SpecialRollChance) return;
+        float r = Random.value * 100f;
+        var k = r < GameBalance.RollPower ? CellKind.Power
+              : r < GameBalance.RollPower + GameBalance.RollGold ? CellKind.Gold
+              : r < GameBalance.RollPower + GameBalance.RollGold + GameBalance.RollResonance ? CellKind.Resonance
+              : CellKind.Curse;
+        Panel.SetKind(x, y, k);
     }
 
     // 配置セッション開始時の状態(keep)まで戻し、その間に解放したマスをストックマスへ払い戻す
@@ -199,8 +252,8 @@ public class ProtoMain : MonoBehaviour
                 if (!Panel.IsUnlocked(x, y)) continue;
                 var a = Panel.GetAt(x, y);
                 if (a == null || a.card == null) continue;
-                CountEdge(a, x + 1, y, ref s);
-                CountEdge(a, x, y + 1, ref s);
+                CountEdge(a, x, y, x + 1, y, ref s);
+                CountEdge(a, x, y, x, y + 1, ref s);
             }
         s.attackPct = Mathf.Min(s.atkC * 4, 60);
         s.block = s.defC * 3;
@@ -209,18 +262,20 @@ public class ProtoMain : MonoBehaviour
         return s;
     }
 
-    void CountEdge(PanelModel.Placement a, int nx, int ny, ref Synergy s)
+    void CountEdge(PanelModel.Placement a, int ax, int ay, int nx, int ny, ref Synergy s)
     {
         if (!Panel.IsUnlocked(nx, ny)) return;
         var b = Panel.GetAt(nx, ny);
         if (b == null || b.card == null || b == a) return;               // 別ピース同士のみ
         if (a.card.Category != b.card.Category) return;                  // 同じ種別の接続だけ
+        // 共鳴マス：接続のどちらかが共鳴マスなら2倍で数える
+        int inc = (Panel.KindAt(ax, ay) == CellKind.Resonance || Panel.KindAt(nx, ny) == CellKind.Resonance) ? GameBalance.ResonanceMult : 1;
         switch (a.card.Category)
         {
-            case CardKind.Attack: s.atkC++; break;
-            case CardKind.Defense: s.defC++; break;
-            case CardKind.Heal: s.healC++; break;
-            default: s.skillC++; break;
+            case CardKind.Attack: s.atkC += inc; break;
+            case CardKind.Defense: s.defC += inc; break;
+            case CardKind.Heal: s.healC += inc; break;
+            default: s.skillC += inc; break;
         }
     }
 
@@ -308,6 +363,7 @@ public class ProtoMain : MonoBehaviour
         CellStock = 0;
         Panel = new PanelModel(GridDim, GridDim);
         Panel.UnlockInitial(InitialCols, InitialRows);
+        SetupCornerSpecials();   // 4隅は確定で特殊マス
 
         // 初期所持カード
         InitInitialCards();
@@ -505,6 +561,7 @@ public class ProtoMain : MonoBehaviour
         CellStock = 0;
         Panel = new PanelModel(GridDim, GridDim);
         Panel.UnlockInitial(InitialCols, InitialRows);
+        SetupCornerSpecials();   // 4隅は確定で特殊マス
         InitInitialCards();
         ProtoSave.Clear();   // セーブも消去（次回起動でも初期状態に）
         ProtoUnlocks.ClearDiscovered();   // 図鑑の発見記録もリセット

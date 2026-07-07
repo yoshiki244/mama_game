@@ -84,7 +84,7 @@ public class ProtoBattle : MonoBehaviour
 
     AudioSource _sfx;
     AudioClip[] _hitClips;
-    AudioClip _swingClip;
+    AudioClip _swingClip, _coinClip, _curseClip;
 
     Image _actorImg, _slimeImg, _faceImg;
     RectTransform _actorRt, _slimeRt, _enemyInner, _playerInner, _enemyShadow;
@@ -96,6 +96,8 @@ public class ProtoBattle : MonoBehaviour
         _sfx = gameObject.AddComponent<AudioSource>();
         _hitClips = new[] { ProtoAudio.CreateHitClip(0), ProtoAudio.CreateHitClip(1), ProtoAudio.CreateHitClip(2), ProtoAudio.CreateHitClip(3) };
         _swingClip = ProtoAudio.CreateSwing();
+        _coinClip = ProtoAudio.CreateCoinChime();
+        _curseClip = ProtoAudio.CreateCurseHit();
         Hide();
     }
 
@@ -171,11 +173,13 @@ public class ProtoBattle : MonoBehaviour
     void StartPlayerTurn(bool firstTurn = false)
     {
         _block = _syn.block;   // シナジー：開始ブロック
+        if (_main.CornersUnlocked >= 2) _block += GameBalance.CornerBlock;   // 四隅の加護Lv2：毎ターン開始ブロック
         _mana = _main.MaxMana + _manaBoostNext + _syn.mana; // シナジー：マナ
         _manaBoostNext = 0;
 
         // シナジー：毎ターン回復
         if (_syn.regen > 0) _playerHP = Mathf.Min(_playerMaxHP, _playerHP + _syn.regen);
+        if (_main.CornersUnlocked >= 3) _playerHP = Mathf.Min(_playerMaxHP, _playerHP + GameBalance.CornerRegen);   // 四隅の加護Lv3：毎ターンHP回復
 
         // プレイヤーの毒（毎ターンダメージ→1ずつ減衰）
         if (_playerPoison > 0)
@@ -200,6 +204,21 @@ public class ProtoBattle : MonoBehaviour
     }
 
     float HpRatio() => _playerMaxHP > 0 ? Mathf.Clamp01(_playerHP / (float)_playerMaxHP) : 1f;
+
+    // 1枚ドロー（黄金マスを覆うカードならコイン獲得）
+    CardDef DrawCard()
+    {
+        var c = _main.Panel.PickWeighted(HpRatio()) ?? _main.Db.normalAttack;
+        int g = _main.Panel.MaxKindCover(c.id, CellKind.Gold);
+        if (g > 0)
+        {
+            int coin = GameBalance.GoldCoinPerCell * g;   // 黄金マス：手札に出るたびコイン獲得
+            _main.AddMoney(coin);
+            if (_sfx != null && _coinClip != null) _sfx.PlayOneShot(_coinClip, 0.8f);
+            StartCoroutine(TextPopup(new Vector2(-330f, 260f), $"+{coin}コイン", new Color(1f, 0.85f, 0.3f)));
+        }
+        return c;
+    }
 
     // 用語集ポップアップ（キーワードの説明）
     GameObject _glossaryGO;
@@ -293,8 +312,8 @@ public class ProtoBattle : MonoBehaviour
         int n = (_main.Equipped == EquipKind.HandPendant ? 6 : 5) + Mathf.Max(0, extra);   // 手札枚数（手札増強で6枚）
         for (int i = 0; i < n; i++)
         {
-            CardDef c = _main.Panel.PickWeighted(HpRatio());   // HPが低いほど大型（強）カードが出やすい
-            _hand.Add(c ?? _main.Db.normalAttack);
+            CardDef c = DrawCard();   // HPが低いほど大型（強）カードが出やすい（黄金マスのコイン込み）
+            _hand.Add(c);
         }
     }
 
@@ -468,6 +487,23 @@ public class ProtoBattle : MonoBehaviour
         if (_playerPoison > 0) st.Add($"<color=#A0E060>毒{_playerPoison}</color>");
         if (_guardTurns > 0) st.Add($"<color=#90C0FF>継続軽減{_guardPct}%</color>");
         if (_thornsTurns > 0) st.Add($"<color=#90FFB0>茨{_thornsDmg}</color>");
+        int corners = _main.CornersUnlocked;
+        if (corners > 0) st.Add($"<color=#FFE080>四隅の加護Lv{corners}</color>");
+        // 特殊マスの加護（ピースで覆われて効いているもの）
+        int spPw = 0, spGd = 0, spCs = 0; bool spRs = false;
+        foreach (var pl in _main.Panel.Placements)
+            foreach (var cc in pl.cells)
+                switch (_main.Panel.KindAt(cc.x, cc.y))
+                {
+                    case CellKind.Power: spPw++; break;
+                    case CellKind.Gold: spGd++; break;
+                    case CellKind.Resonance: spRs = true; break;
+                    case CellKind.Curse: spCs++; break;
+                }
+        if (spPw > 0) st.Add($"<color=#FF7340>強化マス{spPw}</color>");
+        if (spGd > 0) st.Add($"<color=#FFD84D>黄金マス{spGd}</color>");
+        if (spRs) st.Add("<color=#66E5FF>共鳴マス</color>");
+        if (spCs > 0) st.Add($"<color=#BF66F2>呪いマス{spCs}</color>");
         // 盤面シナジー（この戦闘中ずっと有効）
         if (_syn.attackPct > 0) st.Add($"<color=#FF7040>盤面攻+{_syn.attackPct}%</color>");
         if (_syn.block > 0) st.Add($"<color=#7FB0FF>盤面盾+{_syn.block}</color>");
@@ -739,6 +775,18 @@ public class ProtoBattle : MonoBehaviour
         _hand.RemoveAt(index);
         _mana -= card.ManaCost;
 
+        // 呪いマス：覆っているカードは使用時にHPを失う（HP1未満にはならない）
+        int curse = _main.Panel.MaxKindCover(card.id, CellKind.Curse);
+        if (curse > 0)
+        {
+            int cost = GameBalance.CurseHpPerCell * curse;
+            _playerHP = Mathf.Max(1, _playerHP - cost);
+            _message.text = $"呪いの代償……HP-{cost}";
+            if (_sfx != null && _curseClip != null) _sfx.PlayOneShot(_curseClip);
+            StartCoroutine(TextPopup(new Vector2(-330f, 200f), $"-{cost} 呪い", new Color(0.85f, 0.3f, 1f), 44));
+            RefreshAll();
+        }
+
         if (card.kind == CardKind.Skill)
             yield return ResolveSkill(card);
         else
@@ -792,6 +840,9 @@ public class ProtoBattle : MonoBehaviour
         // ---- 威力計算（基礎＋加算系） ----
         int basePow = card.power + _main.Stats.Attack + _strength;
         if (_syn.attackPct > 0 && card.power > 0) basePow = Mathf.RoundToInt(basePow * (1f + _syn.attackPct / 100f)); // 盤面シナジー
+        if (_main.CornersUnlocked >= 1 && card.power > 0) basePow = Mathf.RoundToInt(basePow * (1f + GameBalance.CornerAtkPct));            // 四隅の加護Lv1：攻撃威力アップ
+        int pwCells = _main.Panel.MaxKindCover(card.id, CellKind.Power);
+        if (pwCells > 0 && card.power > 0) basePow = Mathf.RoundToInt(basePow * (1f + GameBalance.PowerPctPerCell * pwCells));               // 強化マス：威力アップ/マス
         if (card.HasEffect(CardEffectType.GrowingPower))
         {
             int used = _useCounts.TryGetValue(card.id, out var u) ? u : 0;
@@ -903,7 +954,7 @@ public class ProtoBattle : MonoBehaviour
                 case CardEffectType.Draw:
                     for (int i = 0; i < e.amount; i++)
                     {
-                        var drawn = _main.Panel.PickWeighted(HpRatio()) ?? _main.Db.normalAttack; // HP連動の重み抽選
+                        var drawn = DrawCard(); // HP連動の重み抽選＋黄金マス
                         _hand.Add(drawn);
                         _pendingDrawn.Add(drawn);
                     }
@@ -951,7 +1002,7 @@ public class ProtoBattle : MonoBehaviour
                         if (_hand.Count > 0) _hand.RemoveAt(Random.Range(0, _hand.Count));
                         for (int i = 0; i < e.amount; i++)
                         {
-                            var dr = _main.Panel.PickWeighted(HpRatio()) ?? _main.Db.normalAttack;
+                            var dr = DrawCard();
                             _hand.Add(dr); _pendingDrawn.Add(dr);
                         }
                     }
@@ -962,7 +1013,7 @@ public class ProtoBattle : MonoBehaviour
                         _hand.Clear();
                         for (int i = 0; i < keep; i++)
                         {
-                            var dr = _main.Panel.PickWeighted(HpRatio()) ?? _main.Db.normalAttack;
+                            var dr = DrawCard();
                             _hand.Add(dr); _pendingDrawn.Add(dr);
                         }
                     }
@@ -1905,6 +1956,25 @@ public class ProtoBattle : MonoBehaviour
     }
 
     IEnumerator HitStop(float realSeconds) { Time.timeScale = 0.05f; yield return new WaitForSecondsRealtime(realSeconds); Time.timeScale = _main.GameSpeed; }
+
+    // 汎用の浮き上がりテキスト（コイン獲得・呪いの代償など）
+    IEnumerator TextPopup(Vector2 pos, string text, Color col, float fontSize = 34)
+    {
+        var holder = ProtoUI.CreateRect("TextPopup", _root);
+        holder.anchoredPosition = pos + new Vector2(Random.Range(-25f, 25f), 0);
+        holder.sizeDelta = new Vector2(400, 60);
+        var group = holder.gameObject.AddComponent<CanvasGroup>(); group.blocksRaycasts = false;
+        var shadow = ProtoUI.CreateText("Shadow", holder, text, fontSize, new Vector2(3, -3), new Vector2(400, 60), new Color(0.05f, 0.04f, 0.1f));
+        shadow.fontStyle = FontStyles.Bold; shadow.raycastTarget = false;
+        var main = ProtoUI.CreateText("Main", holder, text, fontSize, Vector2.zero, new Vector2(400, 60), col);
+        main.fontStyle = FontStyles.Bold; main.raycastTarget = false; main.outlineWidth = 0.22f; main.outlineColor = new Color32(10, 8, 24, 255);
+        float t = 0f;
+        while (t < 0.1f) { t += Time.deltaTime; holder.localScale = Vector3.one * Mathf.Lerp(1.5f, 1f, t / 0.1f); yield return null; }
+        yield return new WaitForSeconds(0.35f);
+        t = 0f; const float fade = 0.4f;
+        while (t < fade) { t += Time.deltaTime; group.alpha = 1f - t / fade; holder.anchoredPosition += new Vector2(0, Time.deltaTime * 100f); yield return null; }
+        Destroy(holder.gameObject);
+    }
 
     IEnumerator DamagePopup(Vector2 pos, int damage, float multiplier)
     {

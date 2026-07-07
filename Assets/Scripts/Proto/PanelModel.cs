@@ -1,6 +1,16 @@
 using UnityEngine;
 using System.Collections.Generic;
 
+// 盤面マスの種別（特殊マス＝地形システム）
+public enum CellKind
+{
+    Normal = 0,
+    Power = 1,      // 強化マス：覆った攻撃カードの威力+50%（1マスごと）
+    Gold = 2,       // 黄金マス：覆ったカードが手札に出るたびコイン+5
+    Resonance = 3,  // 共鳴マス：このマスが絡む隣接シナジーを3倍で数える
+    Curse = 4,      // 呪いマス：覆ったカードの出現率3倍、ただし使用時にHP-3
+}
+
 // スキルパネルの盤面データ（配置判定・確率算出）。本設では単一・正方形・可変サイズ(5×5〜10×10)。
 // 1マス＝出現率の分子。空白マスは通常攻撃に変換される。出現率 = ピースのマス数 / 盤面マス数。
 public class PanelModel
@@ -25,11 +35,66 @@ public class PanelModel
     int _nextId = 1;
     public List<Placement> Placements = new List<Placement>();
 
+    CellKind[,] _kinds;   // 特殊マスの種別
+
     public PanelModel(int w, int h)
     {
         W = w; H = h;
         _grid = new Placement[w, h];
         _unlocked = new bool[w, h];
+        _kinds = new CellKind[w, h];
+    }
+
+    // ---- 特殊マス ----
+    public CellKind KindAt(int x, int y) => IsValid(x, y) ? _kinds[x, y] : CellKind.Normal;
+    public void SetKind(int x, int y, CellKind k) { if (IsValid(x, y)) _kinds[x, y] = k; }
+
+    // 指定カードのピースが指定種別のマスを何個覆っているか（複数配置なら最大値）
+    public int MaxKindCover(string cardId, CellKind kind)
+    {
+        int best = 0;
+        foreach (var p in Placements)
+        {
+            if (p.card == null || p.card.id != cardId) continue;
+            int n = 0;
+            foreach (var c in p.cells) if (_kinds[c.x, c.y] == kind) n++;
+            if (n > best) best = n;
+        }
+        return best;
+    }
+
+    bool CoversKind(Placement p, CellKind kind)
+    {
+        foreach (var c in p.cells) if (_kinds[c.x, c.y] == kind) return true;
+        return false;
+    }
+
+    // 指定種別の特殊マスの個数
+    public int CountKind(CellKind kind)
+    {
+        int n = 0;
+        for (int x = 0; x < W; x++)
+            for (int y = 0; y < H; y++)
+                if (_kinds[x, y] == kind) n++;
+        return n;
+    }
+
+    // 指定種別の特殊マスをすべて通常マスに戻す（呪いの浄化など）。戻した個数を返す。
+    public int ClearKind(CellKind kind)
+    {
+        int n = 0;
+        for (int x = 0; x < W; x++)
+            for (int y = 0; y < H; y++)
+                if (_kinds[x, y] == kind) { _kinds[x, y] = CellKind.Normal; n++; }
+        return n;
+    }
+
+    // セーブ用：特殊マスの位置と種別を書き出し／復元
+    public void CaptureSpecials(List<int> xs, List<int> ys, List<int> ks)
+    {
+        for (int x = 0; x < W; x++)
+            for (int y = 0; y < H; y++)
+                if (_kinds[x, y] != CellKind.Normal) { xs.Add(x); ys.Add(y); ks.Add((int)_kinds[x, y]); }
     }
 
     // 中央に cols×rows マス（横cols×縦rows）を初期解放
@@ -253,7 +318,12 @@ public class PanelModel
         float k = 1f - 2f * Mathf.Clamp01(hpRatio);
         var list = new List<(CardDef, float)>();
         foreach (var p in Placements)
-            if (p.cells.Count > 0) list.Add((p.card, CardWeightScale * Mathf.Pow(p.cells.Count, k)));
+            if (p.cells.Count > 0)
+            {
+                float w = CardWeightScale * Mathf.Pow(p.cells.Count, k);
+                if (CoversKind(p, CellKind.Curse)) w *= GameBalance.CurseWeightMult;   // 呪いマス：出現率アップ
+                list.Add((p.card, w));
+            }
         int empty = UnlockedCount() - OccupiedCount();
         for (int i = 0; i < empty; i++) list.Add((null, 1f)); // 空きマス＝通常攻撃
         return list;

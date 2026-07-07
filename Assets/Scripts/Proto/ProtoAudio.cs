@@ -682,6 +682,75 @@ public static class ProtoAudio
         return Bake("SynergyChime", d);
     }
 
+    // 特殊マス起動音（ジャキーン♪ と力が宿る二段音）
+    public static AudioClip CreateSpecialChime()
+    {
+        const float dur = 0.45f;
+        int total = (int)(SR * dur);
+        var d = new float[total];
+        float[] notes = { 587.33f, 880f };   // D5 → A5（力強い五度跳躍）
+        for (int n = 0; n < notes.Length; n++)
+        {
+            int start = n * (int)(SR * 0.10f);
+            int len = (int)(SR * 0.32f);
+            for (int s = 0; s < len && start + s < total; s++)
+            {
+                float p = s / (float)len;
+                float env = Mathf.Exp(-5f * p);
+                float t = s / (float)SR;
+                d[start + s] += Mathf.Sin(2f * Mathf.PI * notes[n] * t) * 0.11f * env;
+                d[start + s] += Mathf.Sign(Mathf.Sin(2f * Mathf.PI * notes[n] * 0.5f * t)) * 0.03f * env; // 低い矩形で芯を出す
+            }
+        }
+        for (int i = 0; i < total; i++) d[i] = Mathf.Clamp(d[i], -0.9f, 0.9f);
+        return Bake("SpecialChime", d);
+    }
+
+    // コイン獲得音（チャリン♪ 高く軽い二連ベル）
+    public static AudioClip CreateCoinChime()
+    {
+        const float dur = 0.30f;
+        int total = (int)(SR * dur);
+        var d = new float[total];
+        float[] notes = { 1318.51f, 1975.53f };   // E6 → B6（軽やかな五度）
+        for (int n = 0; n < notes.Length; n++)
+        {
+            int start = n * (int)(SR * 0.06f);
+            int len = (int)(SR * 0.22f);
+            for (int s = 0; s < len && start + s < total; s++)
+            {
+                float p = s / (float)len;
+                float env = Mathf.Exp(-7f * p);
+                float t = s / (float)SR;
+                d[start + s] += Mathf.Sin(2f * Mathf.PI * notes[n] * t) * 0.09f * env;
+                d[start + s] += Mathf.Sin(2f * Mathf.PI * notes[n] * 2.01f * t) * 0.03f * env;   // わずかにずれた倍音で金属感
+            }
+        }
+        for (int i = 0; i < total; i++) d[i] = Mathf.Clamp(d[i], -0.9f, 0.9f);
+        return Bake("CoinChime", d);
+    }
+
+    // 呪い発動音（ズン……と沈む不協和音）
+    public static AudioClip CreateCurseHit()
+    {
+        const float dur = 0.5f;
+        int total = (int)(SR * dur);
+        var d = new float[total];
+        float[] notes = { 138.59f, 146.83f, 92.5f };   // C#3+D3の濁り＋低いF#2
+        for (int i = 0; i < total; i++)
+        {
+            float p = i / (float)total;
+            float env = Mathf.Exp(-3.5f * p);
+            float t = i / (float)SR;
+            float f0 = notes[0] * (1f - 0.15f * p);   // 音程が沈んでいく
+            d[i] += Mathf.Sin(2f * Mathf.PI * f0 * t) * 0.14f * env;
+            d[i] += Mathf.Sin(2f * Mathf.PI * notes[1] * t) * 0.10f * env;
+            d[i] += Mathf.Sign(Mathf.Sin(2f * Mathf.PI * notes[2] * t)) * 0.05f * env;
+        }
+        for (int i = 0; i < total; i++) d[i] = Mathf.Clamp(d[i], -0.9f, 0.9f);
+        return Bake("CurseHit", d);
+    }
+
     // 敵の攻撃の風切り音（ヒュッ！）
     public static AudioClip CreateSwing()
     {
