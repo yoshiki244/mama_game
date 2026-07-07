@@ -248,8 +248,6 @@ public static class ContentGenerator
             new[]{ EA("斬りかかり",1.0f,1,42), EA("尾撃",1.5f,1,24), EA("二刀連撃",0.6f,2,24), EAct("威嚇", EnemyActKind.PowerUp, 2, 11) }));
         enemies.Add(MakeEnemy("sandworm", "サンドワーム", EnemySpriteKey.Slime, 380, 14, 22, new Vector2(340,240), new Vector2(84,58), false, 3, 46,
             new[]{ EA("のみこみ",1.0f,1,40), EA("地中からの一撃",1.9f,1,24), EA("砂あらし",0.7f,2,22), EAct("もぐっている", EnemyActKind.Charge, 0, 16) }));
-        enemies.Add(MakeEnemy("oni", "オニ", EnemySpriteKey.Oni, 680, 17, 25, new Vector2(460,530), new Vector2(92,106), false, 4, 80,
-            new[]{ EA("かなぼう振り回し",1.0f,1,40), EA("地獄突き",1.9f,1,25), EA("鬼の連打",0.65f,3,20), EAct("雄叫びをあげている", EnemyActKind.PowerUp, 4, 16) }));
 
         // ---- ボス（Wave別・全3体） ----
         var boss1 = MakeEnemy("boss_goblinking", "ゴブリンキング", EnemySpriteKey.Knight, 520, 13, 20, new Vector2(430,420), new Vector2(104,104), false, 2, 180,

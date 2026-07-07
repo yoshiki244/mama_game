@@ -52,7 +52,7 @@ public class EnemyDef : ScriptableObject
             case EnemySpriteKey.Bat:    return ProtoPixelArt.Bat();
             case EnemySpriteKey.Golem:  return ProtoPixelArt.Golem();
             case EnemySpriteKey.Dragon: return ProtoPixelArt.Dragon();
-            case EnemySpriteKey.Oni:    return ProtoPixelArt.Oni();
+            case EnemySpriteKey.Oni:    return ProtoPixelArt.Golem();   // 鬼のドット絵は廃止（既存データ互換のためキーは残す）
             case EnemySpriteKey.Knight: return ProtoPixelArt.Knight();
             default:                    return ProtoPixelArt.Slime();
         }

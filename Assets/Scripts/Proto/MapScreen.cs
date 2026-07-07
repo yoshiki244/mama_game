@@ -512,7 +512,7 @@ public class MapScreen : MonoBehaviour
         e.levelOffset = 1;
         e.moneyReward = 60;
         int hp = 220 + col * 12;
-        switch (R(3))
+        switch (R(2))
         {
             case 0:
                 e.id = "midboss_knight"; e.enemyName = "黒騎士"; e.spriteKey = EnemySpriteKey.Knight;
@@ -523,18 +523,6 @@ public class MapScreen : MonoBehaviour
                     new EnemyAttackDef { name = "斬撃", mult = 1f, hits = 1, weight = 50 },
                     new EnemyAttackDef { name = "連撃", mult = 0.7f, hits = 2, weight = 30 },
                     new EnemyAttackDef { name = "強打", mult = 1.6f, hits = 1, weight = 20 },
-                };
-                break;
-            case 1:
-                e.id = "midboss_oni"; e.enemyName = "赤鬼"; e.spriteKey = EnemySpriteKey.Oni;
-                e.baseHP = hp + 60; e.minAtk = 14; e.maxAtk = 22;
-                e.battleSize = new Vector2(400, 440); e.mapSize = new Vector2(94, 100);
-                e.attacks = new[]
-                {
-                    new EnemyAttackDef { name = "金棒たたき", mult = 1f, hits = 1, weight = 45 },
-                    new EnemyAttackDef { name = "鬼の乱打", mult = 0.6f, hits = 3, weight = 25 },
-                    new EnemyAttackDef { name = "怒りの一撃", mult = 2f, hits = 1, weight = 18 },
-                    new EnemyAttackDef { name = "睨みつけ", mult = 0f, hits = 0, weight = 12, act = EnemyActKind.PowerUp, amount = 3 },
                 };
                 break;
             default:

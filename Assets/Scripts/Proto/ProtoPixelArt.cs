@@ -510,57 +510,6 @@ public static class ProtoPixelArt
         return FromMap(rows, palette);
     }
 
-    // 中ボスの鬼: 赤い肌・黒い荒髪・金の角・ニカッと笑う白い歯の大口・豹柄パンツ・黒い金棒
-    public static Sprite Oni()
-    {
-        var rows = new string[]
-        {
-            "......KKKKKKKKKK...........",
-            "....KKKKKKKKKKKKKK.........",
-            "...KKYKKKKKKKKYKKK.........",
-            "...KYYKKKKKKKKYYKK.........",
-            "..KKKKKKKKKKKKKKKK.........",
-            "..KKRRRRRRRRRRRRKK.........",
-            ".KKRRKKKRRRRKKKRRKK........",
-            ".KKRWWPRRRRRRPWWRKK........",
-            "..KRRRRRRrrRRRRRRK.........",
-            "..KRRWWWWWWWWWWRRK.........",
-            "..KRWWWWWWWWWWWWRK.........",
-            "..KRWWWWWWWWWWWWRK.........",
-            "..KRRWWWWWWWWWWRRK.........",
-            "...RRRrrrrrrrrRRR..........",
-            "...RRRRRRRRRRRRRR.....cc...",
-            "..RRRRRRRRRRRRRRRR...cNcc..",
-            ".RRRRRRRRRRRRRRRRRR..cccc..",
-            ".RRrRRRRRRRRRRRRrRR..cNcc..",
-            ".RRrRRRRRRRRRRRRrRRR.cccc..",
-            ".RRr.RRRRRRRRRR.rRRRRcNcc..",
-            ".RRr.RRRRRRRRRR...RRRcccc..",
-            ".....RRRRRRRRRR......ccc...",
-            "....YYYYYYYYYYYY......cc...",
-            "....YBYYBYYBYYBY......cc...",
-            "....YYBYYBYYBYYY......cc...",
-            "....YYYYYYYYYYYY...........",
-            "....RRRR....RRRR...........",
-            "....RRRR....RRRR...........",
-            "....RRRR....RRRR...........",
-            "...RRRRR....RRRRR..........",
-            "...rRRRR....rRRRR..........",
-        };
-        var palette = new Dictionary<char, Color>
-        {
-            { 'K', new Color(0.13f, 0.11f, 0.12f) },  // 荒れた黒髪・眉
-            { 'Y', new Color(0.95f, 0.78f, 0.20f) },  // 角・豹柄パンツの地（金/黄）
-            { 'B', new Color(0.14f, 0.11f, 0.09f) },  // 豹柄の黒斑点
-            { 'R', new Color(0.85f, 0.22f, 0.15f) },  // 赤い肌（鮮烈な赤）
-            { 'r', new Color(0.58f, 0.13f, 0.09f) },  // 肌の陰
-            { 'W', new Color(0.97f, 0.96f, 0.92f) },  // ニカッと並ぶ白い歯・白目
-            { 'P', new Color(0.10f, 0.08f, 0.08f) },  // 鋭い瞳
-            { 'c', new Color(0.16f, 0.14f, 0.14f) },  // 黒い金棒
-            { 'N', new Color(0.42f, 0.40f, 0.38f) },  // 金棒のトゲ（鋲）
-        };
-        return FromMap(rows, palette);
-    }
 
     // マップ歩行用のMAMAミニスプライト（14x18）
     // dir: 0=正面（下向き） 1=背面（上向き） 2=左向き ※右向きは左をX反転して使う
@@ -854,11 +803,11 @@ public static class ProtoPixelArt
         return FromMap(rows, palette);
     }
 
-    // 中ボス（騎士）。enemy_knight 画像、無ければ鬼にフォールバック
+    // 中ボス（騎士）。enemy_knight 画像、無ければゴーレムにフォールバック
     public static Sprite Knight()
     {
         if (TryPhoto("enemy_knight", out var photo)) return photo;
-        return Oni();
+        return Golem();
     }
 
     public static Sprite Slime()
