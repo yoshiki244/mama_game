@@ -1,0 +1,34 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: f14ebdacf6caf91459546f91917b1e91, type: 3}
+  m_Name: card_rensazan
+  m_EditorClassIdentifier: Assembly-CSharp::CardDef
+  id: rensazan
+  displayName: "\u9023\u9396\u65AC"
+  description: "\u76E4\u9762\u3067\u3053\u306E\u30D4\u30FC\u30B9\u306B\u96A3\u63A5\u3059\u308B\u30D4\u30FC\u30B91\u3064\u306B\u3064\u304D\u5A01\u529B+8\u3002"
+  kind: 0
+  shapeRows:
+  - XXXX
+  - XXXX
+  - XX..
+  power: 90
+  minDepth: 5
+  maxDepth: 0
+  color: {r: 0.9, g: 0.8, b: 0.5, a: 1}
+  icon: {fileID: 0}
+  effects:
+  - type: 54
+    amount: 8
+    duration: 0
+  manaCostOverride: 4
+  unlockTier: 0
+  rarity: 0

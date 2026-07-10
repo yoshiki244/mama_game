@@ -7,7 +7,7 @@ using System.Collections.Generic;
 using System.Linq;
 
 // ビルド画面: 単一の可変サイズ盤面(5×5〜10×10)にカード(ピース)を配置する。
-// 左クリック=配置 / 右クリック=撤去 / ドラッグ=移動 / クリック選択→Rキー=回転
+// 左クリック=配置/選択 / 右クリック=回転(配置前後どちらも) / ダブルクリック=撤去 / ドラッグ=移動 / Rキー=回転
 // 配置プレビュー（マウス位置にゴースト表示→左クリック確定）。所持カードのみ一覧表示・スクロール可。
 public class BuildScreen : MonoBehaviour
 {
@@ -22,6 +22,9 @@ public class BuildScreen : MonoBehaviour
     static readonly Color EdgeColor = new Color(1f, 1f, 1f, 0.92f);
     TextMeshProUGUI _title, _info, _selectedText, _boardCountText, _manaInfoText, _trayTitle, _blessTitle, _blessText;
     RectTransform _blessContent;   // 発動加護のスクロール内容
+    GameObject _pieceTip;          // 盤面のピースにカーソルを合わせた時のポップアップ
+    RectTransform _pieceTipRt;
+    TextMeshProUGUI _pieceTipText;
     readonly List<(CardDef card, Image img)> _trayButtons = new List<(CardDef, Image)>();
 
     CardDef _selected;
@@ -228,7 +231,7 @@ public class BuildScreen : MonoBehaviour
 
 
         var hint = ProtoUI.CreateText("Hint", _root,
-            "カードを選択して左クリック：ピースを配置　　　右クリック：ピースを回転（ピース選択中）／ピースを削除", 16,
+            "左クリック：配置／選択　　右クリック：回転（配置前も配置後もOK）　　ダブルクリック：ピースを削除　　ドラッグ：移動", 16,
             new Vector2(0, -408), new Vector2(1560, 30), new Color(0.72f, 0.72f, 0.82f));
         hint.textWrappingMode = TMPro.TextWrappingModes.NoWrap;
         hint.enableAutoSizing = true; hint.fontSizeMin = 10; hint.fontSizeMax = 15;
@@ -265,6 +268,16 @@ public class BuildScreen : MonoBehaviour
         var btr = _blessText.rectTransform;
         btr.anchorMin = btr.anchorMax = new Vector2(0.5f, 1f); btr.pivot = new Vector2(0.5f, 1f);
         _blessText.lineSpacing = 10f;
+
+        // 盤面ピースのホバー用ポップアップ（カーソル追従・既定は非表示）
+        _pieceTipRt = ProtoUI.CreateRect("PieceTip", _root);
+        _pieceTipRt.sizeDelta = new Vector2(260, 62);
+        _pieceTip = _pieceTipRt.gameObject;
+        ProtoUI.CreateFramedPanel("PieceTipBox", _pieceTipRt, Vector2.zero, new Vector2(260, 62),
+            new Color(0.06f, 0.06f, 0.10f, 0.98f), new Color(0.85f, 0.72f, 0.4f, 0.95f));
+        _pieceTipText = ProtoUI.CreateText("PieceTipT", _pieceTipRt, "", 18, Vector2.zero, new Vector2(248, 52), Color.white);
+        _pieceTipText.raycastTarget = false;
+        _pieceTip.SetActive(false);
 
         var goldB = new Color(0.85f, 0.72f, 0.4f, 0.95f);
         ProtoUI.CreatePanel("MenuBackBorder", _root, new Vector2(340, -312), new Vector2(260, 74), goldB).raycastTarget = false;
@@ -335,7 +348,11 @@ public class BuildScreen : MonoBehaviour
                 var handler = cell.gameObject.AddComponent<CellClickHandler>();
                 handler.onClick = e =>
                 {
-                    if (e.button == UnityEngine.EventSystems.PointerEventData.InputButton.Left) OnCellLeftClick(cx, cy);
+                    if (e.button == UnityEngine.EventSystems.PointerEventData.InputButton.Left)
+                    {
+                        if (e.clickCount >= 2) OnCellDoubleClick(cx, cy);   // ダブルクリックで撤去
+                        else OnCellLeftClick(cx, cy);
+                    }
                     else if (e.button == UnityEngine.EventSystems.PointerEventData.InputButton.Right) OnCellRightClick(cx, cy);
                 };
                 handler.onBeginDrag = e => OnCellBeginDrag(cx, cy);
@@ -670,16 +687,39 @@ public class BuildScreen : MonoBehaviour
 
     void OnCellRightClick(int x, int y)
     {
-        // ピース所持中は右クリックで回転
+        // ピース所持中（配置前）は右クリックでプレビューを回転
         if (_selected != null)
         {
             _rotation = (_rotation + 1) % 4;
             UpdateSelectedText(); RefreshBoard();
             return;
         }
-        // 未所持は右クリックで撤去（在庫に戻す）
+        // 配置済みピースは右クリックで選択＆その場で回転
         var pl = P.GetAt(x, y);
-        if (pl != null) { var id = pl.card.id; P.RemoveAt(x, y); _main.ReturnCard(id); RefreshTray(); }
+        if (pl != null)
+        {
+            _boardSel = pl.cells[0];
+            foreach (var (card, img) in _trayButtons) img.color = TrayNormal;
+            if (P.RotatePlacementAt(x, y))
+            {
+                if (P.Placements.Count > 0) _boardSel = P.Placements[P.Placements.Count - 1].cells[0];
+            }
+            else ShowNotice("回転できません！まわりのスペースが足りません");
+        }
+        RefreshBoard(); UpdateSelectedText();
+    }
+
+    // ダブルクリックで配置済みピースを撤去（在庫に戻す）
+    void OnCellDoubleClick(int x, int y)
+    {
+        if (_addMode) return;
+        var pl = P.GetAt(x, y);
+        if (pl != null)
+        {
+            var id = pl.card.id;
+            P.RemoveAt(x, y); _main.ReturnCard(id);
+            _boardSel = null; RefreshTray();
+        }
         RefreshBoard(); UpdateSelectedText();
     }
 
@@ -700,6 +740,37 @@ public class BuildScreen : MonoBehaviour
         UpdateHoverPreview();
         PulseSynergyCells();
         SynergyHoverTip();
+        PieceHoverTip();
+    }
+
+    // 盤面のピースにカーソルを合わせると、そのカード名などをポップアップ表示（カーソル追従）
+    void PieceHoverTip()
+    {
+        if (_pieceTip == null || P == null) return;
+        // ドラッグ中・配置プレビュー中は邪魔なので隠す
+        if (_isDragging || _selected != null || _addMode)
+        {
+            if (_pieceTip.activeSelf) _pieceTip.SetActive(false);
+            return;
+        }
+        PanelModel.Placement p = null;
+        if (TryGetPointerPos(out var sp) && TryGetCellAtScreenPoint(sp, null, out var cell))
+            p = P.GetAt(cell.x, cell.y);
+
+        if (p == null || p.card == null)
+        {
+            if (_pieceTip.activeSelf) _pieceTip.SetActive(false);
+            return;
+        }
+
+        var c = p.card;
+        _pieceTipText.text = $"<color=#{ColorUtility.ToHtmlStringRGB(c.RarityColor)}>{c.displayName}</color>\n<size=14>{CardDef.KindLabel(c.Category)}／{c.Size}マス／マナ{c.ManaCost}</size>";
+        if (!_pieceTip.activeSelf) _pieceTip.SetActive(true);
+
+        // カーソルに追従（画面外にはみ出さないよう右上にオフセット）
+        if (RectTransformUtility.ScreenPointToLocalPointInRectangle(_root, sp, null, out var lp))
+            _pieceTipRt.anchoredPosition = lp + new Vector2(20f, 40f);
+        _pieceTipRt.SetAsLastSibling();
     }
 
     // シナジー中のマスをゆっくり明滅させる（発動中であることを常に可視化）
@@ -944,6 +1015,7 @@ public class BuildScreen : MonoBehaviour
     bool TryGetCellAtScreenPoint(Vector2 screenPos, Camera cam, out Vector2Int cell)
     {
         cell = default;
+        if (P == null || _gridRt == null) return false;
         if (!RectTransformUtility.ScreenPointToLocalPointInRectangle(_gridRt, screenPos, cam, out var local))
             return false;
         float unit = _cellSize + CellGap;

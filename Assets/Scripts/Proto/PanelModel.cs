@@ -251,8 +251,13 @@ public class PanelModel
     {
         var p = GetAt(x, y);
         if (p == null) return false;
+        var card = p.card;
+        var original = new List<Vector2Int>(p.cells);
 
-        var pivot = p.cells[0];
+        // 中心（重心）まわりで90度回転すると、元の位置からあまりずれない
+        int sx = 0, sy = 0;
+        foreach (var c in p.cells) { sx += c.x; sy += c.y; }
+        var pivot = new Vector2Int(Mathf.RoundToInt(sx / (float)p.cells.Count), Mathf.RoundToInt(sy / (float)p.cells.Count));
         var rotated = new List<Vector2Int>();
         foreach (var c in p.cells)
         {
@@ -260,21 +265,24 @@ public class PanelModel
             rotated.Add(pivot + new Vector2Int(rel.y, -rel.x));
         }
 
-        int minX = int.MaxValue, maxX = int.MinValue, minY = int.MaxValue, maxY = int.MinValue;
-        foreach (var c in rotated)
-        {
-            minX = Mathf.Min(minX, c.x); maxX = Mathf.Max(maxX, c.x);
-            minY = Mathf.Min(minY, c.y); maxY = Mathf.Max(maxY, c.y);
-        }
-        int dx = minX < 0 ? -minX : (maxX >= W ? W - 1 - maxX : 0);
-        int dy = minY < 0 ? -minY : (maxY >= H ? H - 1 - maxY : 0);
-        for (int i = 0; i < rotated.Count; i++) rotated[i] += new Vector2Int(dx, dy);
-
-        var card = p.card;
-        var original = new List<Vector2Int>(p.cells);
+        // 元のピースを一旦外す（自分のマスも回転先の候補にできる）
         RemoveAt(x, y);
-        if (PlaceCells(card, rotated)) return true;
-        PlaceCells(card, original);
+
+        // 近い位置から順に、収まるオフセットを探す（ウォールキック。最大4マスまでずらす）
+        const int kick = 4;
+        List<Vector2Int> bestCells = null; int best = int.MaxValue;
+        for (int oy = -kick; oy <= kick; oy++)
+            for (int ox = -kick; ox <= kick; ox++)
+            {
+                int dist = Mathf.Abs(ox) + Mathf.Abs(oy);
+                if (dist >= best) continue;
+                var cand = new List<Vector2Int>(rotated.Count);
+                foreach (var c in rotated) cand.Add(new Vector2Int(c.x + ox, c.y + oy));
+                if (CanPlaceCells(cand)) { best = dist; bestCells = cand; }
+            }
+
+        if (bestCells != null && PlaceCells(card, bestCells)) return true;
+        PlaceCells(card, original);   // どこにも収まらなければ元に戻す
         return false;
     }
 

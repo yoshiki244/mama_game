@@ -450,7 +450,7 @@ public class ProtoBattle : MonoBehaviour
 
         // 手札
         _handArea = ProtoUI.CreateRect("Hand", _root);
-        _handArea.anchoredPosition = new Vector2(0, -300);
+        _handArea.anchoredPosition = new Vector2(0, -248);   // 扇の外側カードが画面下で切れないよう高めに
         _handArea.sizeDelta = new Vector2(1500, 240);
 
         // 盤面プレビュー（キャラの左横・常時表示）：外周金枠＋不透明内側
@@ -531,7 +531,6 @@ public class ProtoBattle : MonoBehaviour
         RefreshMana();
 
         var st = new List<string>();
-        if (_block > 0) st.Add($"<color=#7FB0FF>ブロック{_block}</color>");
         if (_strength > 0) st.Add($"<color=#FF9060>筋力+{_strength}</color>");
         if (_protectPct > 0) st.Add($"<color=#90C0FF>軽減{_protectPct}%</color>");
         if (_primeBlink) st.Add("<color=#FFD040>点滅構え</color>");
@@ -562,7 +561,7 @@ public class ProtoBattle : MonoBehaviour
             int idx = i;
             float a = (i - mid) * step;                 // 角度（度）
             float rad = a * Mathf.Deg2Rad;
-            Vector2 pos = new Vector2(R * Mathf.Sin(rad), -R + R * Mathf.Cos(rad)); // 一点に集まる扇状
+            Vector2 pos = new Vector2(R * Mathf.Sin(rad), -R + R * Mathf.Cos(rad)); // 一点に集まる扇状（弧と傾きを揃える）
             var rot = Quaternion.Euler(0, 0, -a);
             bool affordable = !_inputLocked && _mana >= _hand[i].ManaCost;
             var btn = CreateCardUI(_hand[i], pos, null, affordable);
@@ -1798,48 +1797,57 @@ public class ProtoBattle : MonoBehaviour
     }
 
     // ==================== パリィ（敵の攻撃をタイミングよく弾く） ====================
-    // 縮む白リングが青いマークに重なった瞬間にクリック。ジャスト=被ダメ-75% / 成功=-30% / 失敗=0%
+    // 目標の枠に、縮んでくる大きなひし形がピッタリ重なった瞬間にクリック。ジャスト=-75% / 惜しい=-30% / 外し=0%
     IEnumerator RunParry()
     {
         _parryCutPct = 0;
         Time.timeScale = 1f;
-        var pos = _actorRt != null ? _actorRt.anchoredPosition + new Vector2(150f, 80f) : new Vector2(-180f, 100f);
-        var target = ProtoUI.CreatePanel("ParryTarget", _root, pos, new Vector2(80, 80), new Color(0.4f, 0.9f, 1f, 0.4f));
-        target.raycastTarget = false; target.transform.localRotation = Quaternion.Euler(0, 0, 45);
-        var ring = ProtoUI.CreatePanel("ParryRing", _root, pos, new Vector2(80, 80), new Color(1f, 1f, 1f, 0.9f));
-        ring.raycastTarget = false; ring.transform.localRotation = Quaternion.Euler(0, 0, 45);
-        var label = ProtoUI.CreateText("ParryLbl", _root, "パリィ！重なった瞬間にクリック！", 24, pos + new Vector2(0, 90f), new Vector2(520, 34), new Color(0.6f, 0.95f, 1f));
-        label.fontStyle = FontStyles.Bold;
+        _message.text = "パリィ！　枠にひし形がピッタリ重なった瞬間にクリック！";
+        var pos = new Vector2(0f, 40f);
+        const float baseSize = 96f;
+
+        // 目標の枠（ひし形の輪郭）：外枠シアン＋内側を暗くして「枠」に見せる
+        var frame = ProtoUI.CreatePanel("ParryFrame", _root, pos, new Vector2(baseSize, baseSize), new Color(0.45f, 0.95f, 1f, 0.95f));
+        frame.raycastTarget = false; frame.transform.localRotation = Quaternion.Euler(0, 0, 45);
+        var hole = ProtoUI.CreatePanel("ParryHole", frame.transform, Vector2.zero, new Vector2(baseSize - 16f, baseSize - 16f), new Color(0.04f, 0.06f, 0.10f, 0.7f));
+        hole.raycastTarget = false;
+
+        // 上から縮んでくる大きなひし形（半透明で枠が透ける）
+        var incoming = ProtoUI.CreatePanel("ParryIn", _root, pos, new Vector2(baseSize, baseSize), new Color(1f, 1f, 1f, 0.45f));
+        incoming.raycastTarget = false; incoming.transform.localRotation = Quaternion.Euler(0, 0, 45);
+        var inRt = (RectTransform)incoming.transform;
         yield return null;
 
-        const float dur = 0.9f;
-        float t = 0f; bool clicked = false; float clickP = 1f;
-        var rrt = (RectTransform)ring.transform;
+        const float dur = 1.15f;
+        float t = 0f; bool clicked = false; float clickScale = 3f;
         while (t < dur)
         {
             t += Time.deltaTime;
             float p = Mathf.Clamp01(t / dur);
-            rrt.localScale = Vector3.one * Mathf.Lerp(2.8f, 0.5f, p);
-            if (ClickedThisFrame()) { clicked = true; clickP = p; break; }
+            float sc = Mathf.Lerp(3f, 0.55f, p);   // 大→小
+            inRt.localScale = Vector3.one * sc;
+            bool near = Mathf.Abs(sc - 1f) <= 0.28f;   // 重なりが近いと緑に光って合図
+            incoming.color = near ? new Color(0.4f, 1f, 0.5f, 0.85f) : new Color(1f, 1f, 1f, 0.45f);
+            if (ClickedThisFrame()) { clicked = true; clickScale = sc; break; }
             yield return null;
         }
-        float ringScale = Mathf.Lerp(2.8f, 0.5f, clickP);
-        if (clicked && Mathf.Abs(ringScale - 1f) <= 0.3f)
+        float err = Mathf.Abs(clickScale - 1f);
+        if (clicked && err <= 0.12f)
         {
             _parryCutPct = 75;
-            label.text = "<color=#7FE8FF>ジャストパリィ！（被ダメ-75%）</color>";
+            _message.text = "ジャストパリィ！（被ダメ-75%）";
             if (_parryClip != null) _sfx.PlayOneShot(_parryClip);
             StartCoroutine(ScreenFlash(new Color(0.5f, 0.9f, 1f), 0.3f));
         }
-        else if (clicked)
+        else if (clicked && err <= 0.28f)
         {
             _parryCutPct = 30;
-            label.text = "パリィ！（被ダメ-30%）";
+            _message.text = "パリィ！（被ダメ-30%）";
             if (_parryClip != null) _sfx.PlayOneShot(_parryClip, 0.6f);
         }
-        else label.text = "<color=#888899>パリィ失敗……</color>";
+        else _message.text = clicked ? "タイミングが合わなかった……" : "パリィ失敗……";
         yield return new WaitForSecondsRealtime(0.5f);
-        Destroy(target.gameObject); Destroy(ring.gameObject); Destroy(label.gameObject);
+        Destroy(frame.gameObject); Destroy(incoming.gameObject);
         Time.timeScale = _main.GameSpeed;
     }
 
@@ -2170,19 +2178,23 @@ public class ProtoBattle : MonoBehaviour
 
     IEnumerator DealCard(RectTransform rt, Vector2 finalPos, float delay)
     {
+        if (rt == null) yield break;
         Quaternion targetRot = rt.localRotation;   // 扇の角度を保持
         Vector2 startPos = finalPos + new Vector2(550, -260);
         rt.anchoredPosition = startPos; rt.localScale = Vector3.one * 0.25f;
         yield return new WaitForSeconds(delay);
+        if (rt == null) yield break;   // 配り直しで破棄されていたら中断
         float t = 0f; const float dur = 0.22f;
         while (t < dur)
         {
+            if (rt == null) yield break;
             t += Time.deltaTime; float p = Mathf.SmoothStep(0, 1, t / dur);
             rt.anchoredPosition = Vector2.Lerp(startPos, finalPos, p);
             rt.localScale = Vector3.one * Mathf.Lerp(0.25f, 1f, p);
             rt.localRotation = Quaternion.Slerp(Quaternion.Euler(0, 0, -25f), targetRot, p);
             yield return null;
         }
+        if (rt == null) yield break;
         rt.anchoredPosition = finalPos; rt.localScale = Vector3.one; rt.localRotation = targetRot;
     }
 
