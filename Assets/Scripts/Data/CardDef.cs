@@ -56,6 +56,16 @@ public enum CardEffectType
     GaugeOnUse,           // 使用時にゲージストップ発動（威力倍率）
     TapOrderOnUse,        // 使用時に数字順タップ発動（威力倍率）
     SlotOnUse,            // 使用時にスロット発動（威力倍率）
+    MashOnUse,            // 使用時に連打チャレンジ発動（威力倍率）
+    RouletteOnUse,        // 使用時にルーレット発動（威力倍率）
+    TraceOnUse,           // 使用時に軌道なぞり発動（威力倍率）
+    ParryStance,          // 次の敵の攻撃にパリィチャンス（成功で被ダメ大幅軽減）
+    ChargeOnUse,          // 使用時に長押しチャージ発動（溜め量で威力倍率・溜めすぎ暴発）
+    DualGaugeOnUse,       // 使用時に2本ゲージ発動（両方止めて威力倍率）
+    CountdownOnUse,       // 使用時にカウントダウン読み発動（ジャストで威力倍率）
+    AdjacencyPower,       // 盤面でこのカードのピースに隣接するピース数×amount を威力に加算
+    FillEmptyOnUse,       // この戦闘中、抽選の空きマスを amount 減らす（通常攻撃率が下がる）
+    GambleDiscard,        // 手札からランダムに1枚捨て、そのマス数×amount を威力に加算
 }
 
 [System.Serializable]
@@ -189,6 +199,16 @@ public class CardDef : ScriptableObject
                     case CardEffectType.GaugeOnUse: lines.Add("使用時にゲージストップ（会心）が発動"); break;
                     case CardEffectType.TapOrderOnUse: lines.Add("使用時に数字順タップが発動"); break;
                     case CardEffectType.SlotOnUse: lines.Add("使用時にスロットが発動"); break;
+                    case CardEffectType.MashOnUse: lines.Add("使用時に連打チャレンジが発動"); break;
+                    case CardEffectType.RouletteOnUse: lines.Add("使用時にルーレットが発動"); break;
+                    case CardEffectType.TraceOnUse: lines.Add("使用時に軌道なぞりが発動"); break;
+                    case CardEffectType.ParryStance: lines.Add("次の敵の攻撃をパリィできる構えを取る"); break;
+                    case CardEffectType.ChargeOnUse: lines.Add("使用時にチャージ（長押し）が発動"); break;
+                    case CardEffectType.DualGaugeOnUse: lines.Add("使用時に2本ゲージ停止が発動"); break;
+                    case CardEffectType.CountdownOnUse: lines.Add("使用時にカウントダウン読みが発動"); break;
+                    case CardEffectType.AdjacencyPower: lines.Add($"盤面で隣接するピース1つにつき威力+{e.amount}"); break;
+                    case CardEffectType.FillEmptyOnUse: lines.Add("使うとこの戦闘中、通常攻撃が出にくくなる"); break;
+                    case CardEffectType.GambleDiscard: lines.Add($"手札を1枚捨て、そのマス数×{e.amount}を威力に加算"); break;
                 }
             }
         if (lines.Count == 0 && !string.IsNullOrEmpty(description)) lines.Add(description);

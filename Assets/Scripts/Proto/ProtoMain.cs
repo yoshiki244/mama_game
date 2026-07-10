@@ -43,6 +43,9 @@ public class ProtoMain : MonoBehaviour
     public EquipKind Equipped { get; private set; } = EquipKind.None; // 装備（1つだけ）
     // 生命のペンダントで最大HP+10%
     public int MaxHP => Stats == null ? 0 : Stats.MaxHP + (Equipped == EquipKind.LifePendant ? Mathf.RoundToInt(Stats.MaxHP * 0.10f) : 0);
+
+    // 難易度による開始時の最大HP（EASY〜HARD:70 / VERY HARD:60 / MASTER:50）
+    int AscensionBaseHP() => Ascension >= 4 ? 50 : Ascension >= 3 ? 60 : 70;
     public void SetEquip(EquipKind e)
     {
         int before = MaxHP;
@@ -92,6 +95,28 @@ public class ProtoMain : MonoBehaviour
 
     public List<string> OwnedCardIds { get; private set; } = new List<string>();      // 所持したことのあるカードid（種類）
     public Dictionary<string, int> CardStock { get; private set; } = new Dictionary<string, int>(); // 未配置の在庫数
+
+    // ---- 悪魔の契約（このラン中ずっと続く呪い） ----
+    public int CursedSeals { get; private set; }      // 歪みの契約：毎戦闘この数だけ歪みマスが確定発生
+    public bool PainContract { get; private set; }    // 痛みの契約：カード使用ごとにHP-1、毎ターンマナ+1
+    public bool DemonHeart { get; private set; }      // 悪魔の心臓：HPが半分以下で攻撃+30%
+    public void AddCursedSeal() => CursedSeals++;
+    public void SetPainContract() => PainContract = true;
+    public void SetDemonHeart() => DemonHeart = true;
+
+    // 盤面のランダムな通常マスを1つ呪いマスにする（血の刻印）。成功でtrue
+    public bool CurseRandomCell()
+    {
+        if (Panel == null) return false;
+        var cells = Panel.GetUnlockedCells().FindAll(c => Panel.KindAt(c.x, c.y) == CellKind.Normal);
+        if (cells.Count == 0) return false;
+        var c = cells[Random.Range(0, cells.Count)];
+        Panel.SetKind(c.x, c.y, CellKind.Curse);
+        return true;
+    }
+
+    // 挑戦状：次の戦闘を強化敵・報酬2倍で行うフラグ（マップで受諾時にON、戦闘終了で解除）
+    public bool ChallengeBattle;
 
     public Canvas Canvas { get; private set; }
     public bool BgmEnabled { get; private set; }
@@ -282,22 +307,40 @@ public class ProtoMain : MonoBehaviour
     // ---- カード成長（効果+20%・名前に＋） ----
     public Dictionary<string, int> GrowthLevels { get; private set; } = new Dictionary<string, int>();
 
+    // 鍛冶で強化できるのは 攻撃／防御／回復 のカードのみ（スキルは不可）
+    public static bool IsForgeable(CardDef c) => c != null && c.Category != CardKind.Skill;
+
+    // 防御・回復で「強化対象」とする効果種別
+    static readonly HashSet<CardEffectType> DefenseBoost = new HashSet<CardEffectType>
+    { CardEffectType.Protect, CardEffectType.Block, CardEffectType.Thorns, CardEffectType.BlockRegen,
+      CardEffectType.Reflect, CardEffectType.GuardTurns, CardEffectType.Counter };
+    static readonly HashSet<CardEffectType> HealBoost = new HashSet<CardEffectType>
+    { CardEffectType.Heal, CardEffectType.HealPercent, CardEffectType.Regen, CardEffectType.HealMissing, CardEffectType.HealOverflowBlock };
+
     // 1段階成長させる（GrowthLevelsは触らない内部処理）
+    // 攻撃＝威力、防御＝軽減/ブロック量、回復＝回復量 の「その数値だけ」を+20%（単純強化）
     void DoGrow(string id)
     {
         var card = Db != null ? Db.FindCard(id) : null;
         if (card == null) return;
+        var cat = card.Category;
         var clone = ScriptableObject.Instantiate(card);
         clone.id = id;
         clone.displayName = card.displayName + "＋";
-        clone.power = Mathf.RoundToInt(card.power * 1.2f);          // 攻撃ダメージ×1.2
+
+        // 攻撃：威力だけ+20%
+        clone.power = cat == CardKind.Attack ? Mathf.RoundToInt(card.power * 1.2f) : card.power;
+
+        // 防御／回復：該当する効果の amount だけ+20%
         if (card.effects != null)
         {
+            var boost = cat == CardKind.Heal ? HealBoost : cat == CardKind.Defense ? DefenseBoost : null;
             clone.effects = new CardEffect[card.effects.Length];
             for (int i = 0; i < card.effects.Length; i++)
             {
                 var e = card.effects[i];
-                clone.effects[i] = new CardEffect { type = e.type, amount = Mathf.RoundToInt(e.amount * 1.2f), duration = e.duration }; // 回復・軽減％なども×1.2
+                int amt = (boost != null && boost.Contains(e.type)) ? Mathf.RoundToInt(e.amount * 1.2f) : e.amount;
+                clone.effects[i] = new CardEffect { type = e.type, amount = amt, duration = e.duration };
             }
         }
         Db.OverrideCard(id, clone);
@@ -357,8 +400,9 @@ public class ProtoMain : MonoBehaviour
         // プレイヤー初期化
         Db?.ClearOverrides(); GrowthLevels.Clear();
         Stats = new PlayerStats(Cfg);
+        Stats.MaxHP = AscensionBaseHP();   // 難易度で最大HPを設定（VERY HARD/MASTERは低い）
         Equipped = EquipKind.None;
-        CurrentHP = Ascension >= 2 ? Mathf.RoundToInt(MaxHP * 0.9f) : MaxHP; // A2+：開始HP-10%
+        CurrentHP = MaxHP;   // 開始は満タン（難易度ペナルティは最大HPで表現）
         Money = 0;
         CellStock = 0;
         Panel = new PanelModel(GridDim, GridDim);
@@ -553,9 +597,12 @@ public class ProtoMain : MonoBehaviour
         NewMapSeed();
         ResetRunStats();
         Db?.ClearOverrides(); GrowthLevels.Clear();   // 成長もリセット
+        ChallengeBattle = false;
+        CursedSeals = 0; PainContract = false; DemonHeart = false;   // 契約の呪いもリセット
         Stats = new PlayerStats(Cfg);
+        Stats.MaxHP = AscensionBaseHP();   // 難易度で最大HPを設定（VERY HARD/MASTERは低い）
         Equipped = EquipKind.None;   // 装備もリセット
-        CurrentHP = Ascension >= 2 ? Mathf.RoundToInt(MaxHP * 0.9f) : MaxHP;
+        CurrentHP = MaxHP;   // 開始は満タン（難易度ペナルティは最大HPで表現）
         Wave = 1;
         Money = 0;
         CellStock = 0;

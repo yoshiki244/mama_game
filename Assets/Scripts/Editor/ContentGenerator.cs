@@ -142,12 +142,32 @@ public static class ContentGenerator
             Eff(CardEffectType.TapOrderOnUse, 0, 0)));
         cards.Add(TuneA(MakeAttack("slotken",   "スロット剣",     8,  C(0.95f,0.55f,0.75f)), 3, 100, 4, "スロット発動！絵柄が揃えば威力UP。",
             Eff(CardEffectType.SlotOnUse, 0, 0)));
+        cards.Add(TuneA(MakeAttack("rendazan",  "乱れ連打",       9,  C(1f,0.6f,0.4f)), 4, 100, 4, "連打チャレンジ発動！連打数で威力UP。",
+            Eff(CardEffectType.MashOnUse, 0, 0)));
+        cards.Add(TuneA(MakeAttack("unmeirin",  "運命の輪",       10, C(0.8f,0.6f,1f)), 4, 120, 6, "ルーレット発動！赤い印で止めれば威力UP。",
+            Eff(CardEffectType.RouletteOnUse, 0, 0)));
+        cards.Add(TuneA(MakeAttack("kensen",    "剣筋",           8,  C(0.7f,0.95f,1f)), 3, 105, 4, "軌道なぞり発動！なぞった精度で威力UP。",
+            Eff(CardEffectType.TraceOnUse, 0, 0)));
+        cards.Add(TuneA(MakeAttack("chargezan", "溜め斬り",       10, C(0.5f,0.85f,1f)), 4, 110, 5, "チャージ発動！長押しで溜めて良い所で離す（溜めすぎ暴発）。",
+            Eff(CardEffectType.ChargeOnUse, 0, 0)));
+        cards.Add(TuneA(MakeAttack("dualha",    "双極ノ刃",       11, C(0.7f,0.6f,1f)), 4, 130, 6, "2本ゲージ発動！両方を会心ゾーンで止めれば威力UP。",
+            Eff(CardEffectType.DualGaugeOnUse, 0, 0)));
+        cards.Add(TuneA(MakeAttack("hakudoken", "拍動剣",         9,  C(1f,0.7f,0.85f)), 3, 100, 4, "カウントダウン読み発動！拍を数えてジャストで威力UP。",
+            Eff(CardEffectType.CountdownOnUse, 0, 0)));
+        cards.Add(TuneA(MakeAttack("rensazan",  "連鎖斬",         10, C(0.9f,0.8f,0.5f)), 4, 90,  5, "盤面でこのピースに隣接するピース1つにつき威力+8。",
+            Eff(CardEffectType.AdjacencyPower, 8, 0)));
+        cards.Add(TuneA(MakeAttack("tobakuha",  "賭博ノ刃",       8,  C(0.85f,0.5f,0.6f)), 3, 70, 5, "手札を1枚捨て、そのマス数×6を威力に加算。",
+            Eff(CardEffectType.GambleDiscard, 6, 0)));
+        cards.Add(TuneS(MakeSkill("juten",     "充填",           6,  C(0.6f,0.7f,0.9f), "この戦闘中、通常攻撃が出にくくなる（空きマス-2）。", 3,
+            Eff(CardEffectType.FillEmptyOnUse, 2, 0)), 2));
 
         // ---- 防御系 ----
         cards.Add(TuneS(MakeSkill("teppeki",   "鉄壁",           7,  C(0.5f,0.65f,0.9f), "ブロックを20得る。", 3,
             Eff(CardEffectType.Block, 20, 0)), 2));
         cards.Add(TuneS(MakeSkill("hansha",    "反射盾",         8,  C(0.55f,0.7f,0.95f), "次の被ダメージを50%軽減し、軽減分を敵に返す。", 5,
             Eff(CardEffectType.Reflect, 50, 0)), 3));
+        cards.Add(TuneS(MakeSkill("parry",     "パリィ",         5,  C(0.55f,0.9f,1f), "次の敵の攻撃にパリィチャンス！タイミングよくクリックで被ダメージを大幅軽減。", 2,
+            Eff(CardEffectType.ParryStance, 0, 0)), 1));
         cards.Add(TuneS(MakeSkill("kaihi",     "完全回避",       6,  C(0.7f,0.8f,1f), "次の敵の攻撃を完全無効化する。", 6,
             Eff(CardEffectType.Protect, 100, 1)), 4));
         cards.Add(TuneS(MakeSkill("ibara",     "茨の鎧",         7,  C(0.45f,0.6f,0.5f), "3ターンの間、被弾時に敵へ5反撃。", 4,

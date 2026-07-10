@@ -37,6 +37,15 @@ public class PanelModel
 
     CellKind[,] _kinds;   // 特殊マスの種別
 
+    // 歪みマス：この戦闘の間だけ封印されるマス（中ボス以上の攻撃で発生。掛かったピースは出現しない）
+    public HashSet<Vector2Int> Sealed = new HashSet<Vector2Int>();
+
+    bool CoversSealed(Placement p)
+    {
+        foreach (var c in p.cells) if (Sealed.Contains(c)) return true;
+        return false;
+    }
+
     public PanelModel(int w, int h)
     {
         W = w; H = h;
@@ -313,26 +322,29 @@ public class PanelModel
     // 出現重み付きエントリ。空きマス=1票（通常攻撃）。
     // 配置カードの1ピース重み = CardWeightScale × マス数^k（k = 1 - 2×HP割合）。
     //   HP満タン(1.0)→k=-1：1/マス数（小型有利）／ HP半分→k=0：フラット ／ 瀕死(0)→k=+1：マス数比例（大型＝強カード有利）
-    public List<(CardDef card, float weight)> WeightedEntries(float hpRatio = 1f)
+    public List<(CardDef card, float weight)> WeightedEntries(float hpRatio = 1f, int emptyReduce = 0)
     {
         float k = 1f - 2f * Mathf.Clamp01(hpRatio);
         var list = new List<(CardDef, float)>();
         foreach (var p in Placements)
             if (p.cells.Count > 0)
             {
+                if (CoversSealed(p)) continue;   // 歪みマスに掛かるピースはこの戦闘中出ない
                 float w = CardWeightScale * Mathf.Pow(p.cells.Count, k);
                 if (CoversKind(p, CellKind.Curse)) w *= GameBalance.CurseWeightMult;   // 呪いマス：出現率アップ
                 list.Add((p.card, w));
             }
-        int empty = UnlockedCount() - OccupiedCount();
+        int sealedEmpty = 0;
+        foreach (var s in Sealed) if (IsValid(s.x, s.y) && _unlocked[s.x, s.y] && _grid[s.x, s.y] == null) sealedEmpty++;
+        int empty = UnlockedCount() - OccupiedCount() - sealedEmpty - Mathf.Max(0, emptyReduce);   // 圧縮カードで空きマスを減らす
         for (int i = 0; i < empty; i++) list.Add((null, 1f)); // 空きマス＝通常攻撃
         return list;
     }
 
     // 重みに従ってカードを1枚抽選（null＝通常攻撃）。母集団が空ならnull。
-    public CardDef PickWeighted(float hpRatio = 1f)
+    public CardDef PickWeighted(float hpRatio = 1f, int emptyReduce = 0)
     {
-        var entries = WeightedEntries(hpRatio);
+        var entries = WeightedEntries(hpRatio, emptyReduce);
         float total = 0f;
         foreach (var e in entries) total += e.weight;
         if (total <= 0f) return null;

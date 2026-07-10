@@ -84,7 +84,7 @@ public class ProtoBattle : MonoBehaviour
 
     AudioSource _sfx;
     AudioClip[] _hitClips;
-    AudioClip _swingClip, _coinClip, _curseClip;
+    AudioClip _swingClip, _coinClip, _curseClip, _parryClip;
 
     Image _actorImg, _slimeImg, _faceImg;
     RectTransform _actorRt, _slimeRt, _enemyInner, _playerInner, _enemyShadow;
@@ -98,6 +98,7 @@ public class ProtoBattle : MonoBehaviour
         _swingClip = ProtoAudio.CreateSwing();
         _coinClip = ProtoAudio.CreateCoinChime();
         _curseClip = ProtoAudio.CreateCurseHit();
+        _parryClip = ProtoAudio.CreateSpecialChime();
         Hide();
     }
 
@@ -105,6 +106,8 @@ public class ProtoBattle : MonoBehaviour
     {
         StopAllCoroutines();
         Time.timeScale = 1f;
+        if (_main != null && _main.Panel != null) _main.Panel.Sealed.Clear();   // 歪みマスを持ち越さない
+        HideBlessingPopup();
         _inputLocked = false;
         if (_root != null) _root.gameObject.SetActive(false);
     }
@@ -114,6 +117,20 @@ public class ProtoBattle : MonoBehaviour
     public void Begin(EnemyDef enemy)
     {
         _enemy = enemy;
+        // 中ボス以上（歪みマスを生む強敵）か判定
+        _eliteBattle = enemy != null && (enemy.id == "dragon" || enemy.id.StartsWith("boss_") || enemy.id.StartsWith("midboss_"));
+        _emptyReduce = 0;
+        if (_main != null && _main.Panel != null)
+        {
+            _main.Panel.Sealed.Clear();   // 歪みマスは戦闘ごとにリセット
+            // 歪みの契約：毎戦闘この数だけ歪みマスを確定発生
+            var seedPool = _main.Panel.GetUnlockedCells();
+            for (int i = 0; i < _main.CursedSeals && seedPool.Count > 0; i++)
+            {
+                int di = Random.Range(0, seedPool.Count);
+                _main.Panel.Sealed.Add(seedPool[di]); seedPool.RemoveAt(di);
+            }
+        }
         _root.gameObject.SetActive(true);
         _resultRoot.gameObject.SetActive(false);
         Time.timeScale = _main.GameSpeed;
@@ -148,13 +165,15 @@ public class ProtoBattle : MonoBehaviour
         _counterDmg = 0; _vulnPct = 0; _vulnTurns = 0; _ailmentAmp = 0; _nextTurnExtra = 0;
         _timeBombDmg = 0; _timeBombTurns = 0; _useCounts.Clear();
         _enemyBlock = 0; _enemyAtkUp = 0; _enemyCharged = false; _playerPoison = 0;
+        _parryStance = false;
 
         _effWave = _main.Wave + enemy.levelOffset;
         _enemyMaxHP = Mathf.RoundToInt((enemy.baseHP + 40 * (_effWave - 1)) * _main.EnemyHpMul); // アセンションでHP増
         _enemyHP = _enemyMaxHP;
+        if (_main.ChallengeBattle) { _enemyMaxHP = Mathf.RoundToInt(_enemyMaxHP * 1.3f); _enemyHP = _enemyMaxHP; }   // 挑戦状：敵HP+30%
         // グラヴィティペンダント：戦闘開始時に敵HP-5%
         if (_main.Equipped == EquipKind.GravityPendant) _enemyHP = Mathf.Max(1, Mathf.RoundToInt(_enemyMaxHP * 0.95f));
-        _enemyName.text = $"{enemy.enemyName} Lv{_effWave}";
+        _enemyName.text = $"{enemy.enemyName} Lv{_effWave}{(_main.ChallengeBattle ? "【挑戦】" : "")}";
 
         _slimeImg.sprite = enemy.BattleSprite();
         _slimeRt.sizeDelta = enemy.battleSize;
@@ -175,6 +194,7 @@ public class ProtoBattle : MonoBehaviour
         _block = _syn.block;   // シナジー：開始ブロック
         if (_main.CornersUnlocked >= 2) _block += GameBalance.CornerBlock;   // 四隅の加護Lv2：毎ターン開始ブロック
         _mana = _main.MaxMana + _manaBoostNext + _syn.mana; // シナジー：マナ
+        if (_main.PainContract) _mana += 1;   // 痛みの契約：毎ターンマナ+1
         _manaBoostNext = 0;
 
         // シナジー：毎ターン回復
@@ -208,7 +228,7 @@ public class ProtoBattle : MonoBehaviour
     // 1枚ドロー（黄金マスを覆うカードならコイン獲得）
     CardDef DrawCard()
     {
-        var c = _main.Panel.PickWeighted(HpRatio()) ?? _main.Db.normalAttack;
+        var c = _main.Panel.PickWeighted(HpRatio(), _emptyReduce) ?? _main.Db.normalAttack;
         int g = _main.Panel.MaxKindCover(c.id, CellKind.Gold);
         if (g > 0)
         {
@@ -220,34 +240,61 @@ public class ProtoBattle : MonoBehaviour
         return c;
     }
 
-    // 用語集ポップアップ（キーワードの説明）
-    GameObject _glossaryGO;
-    void ShowGlossary()
+    // ==================== ママの加護ポップアップ（ホバー） ====================
+    GameObject _blessPopup;
+    void ShowBlessingPopup()
     {
-        if (_glossaryGO != null) { Destroy(_glossaryGO); _glossaryGO = null; return; }
-        var ov = ProtoUI.CreateFullScreen("Glossary", _root);
-        _glossaryGO = ov.gameObject;
-        ov.gameObject.AddComponent<Image>().color = new Color(0, 0, 0, 0.85f);
-        ProtoUI.CreateFramedPanel("GLBox", ov, Vector2.zero, new Vector2(980, 700),
-            new Color(0.07f, 0.06f, 0.12f, 0.99f), new Color(0.85f, 0.72f, 0.4f, 0.95f));
-        var t = ProtoUI.CreateText("GLT", ov, "用語集", 32, new Vector2(0, 300), new Vector2(600, 44), ProtoUI.Gold);
-        ProtoUI.StyleTitle(t, ProtoUI.Gold, 5f);
-        string body =
-            "<color=#FF9060>やけど / 毒</color>　毎ターン敵にダメージ。重ねがけで増える\n" +
-            "<color=#C080FF>弱体化</color>　敵の攻撃力を一定ターン下げる\n" +
-            "<color=#FFD060>弱点</color>　敵の受けるダメージが一定ターン増える\n" +
-            "<color=#7FB0FF>ブロック</color>　被ダメージを肩代わり（自ターン開始で消える）\n" +
-            "<color=#90C0FF>軽減</color>　被ダメージを%カット（プロテクト=次の1発）\n" +
-            "<color=#70C0FF>麻痺 / 凍結</color>　敵が行動できない\n" +
-            "<color=#90FFB0>茨 / 反撃 / 反射</color>　被弾時に敵へダメージを返す\n" +
-            "<color=#A0E060>毒（自分）</color>　毎ターン自分がダメージ。1ずつ減衰\n" +
-            "<color=#FF7040>盤面シナジー</color>　ビルドで同じ種別のピースを隣接させると発動\n" +
-            "<color=#FFC94D>敵の予告</color>　頭上の表示が次の行動。「→数字」は軽減後の実効値\n" +
-            "<color=#F0A0FF>チャージ（敵）</color>　次の敵攻撃が1.8倍。防御か妨害で備えよう";
-        var b = ProtoUI.CreateText("GLB", ov, body, 21, new Vector2(0, -10), new Vector2(880, 520), new Color(0.94f, 0.94f, 1f), TextAlignmentOptions.Left);
-        b.lineSpacing = 16f;
-        ProtoUI.CreateGoldButton("GLClose", ov, "閉じる", 22, new Vector2(0, -300), new Vector2(240, 56),
-            new Color(0.45f, 0.3f, 0.4f, 0.98f), () => { Destroy(_glossaryGO); _glossaryGO = null; });
+        HideBlessingPopup();
+        var lines = new List<string>();
+
+        // 特殊マスの加護（盤面のピースで覆われて効いているもの）
+        int spPw = 0, spGd = 0, spCs = 0; bool spRs = false;
+        foreach (var pl in _main.Panel.Placements)
+            foreach (var cc in pl.cells)
+                switch (_main.Panel.KindAt(cc.x, cc.y))
+                {
+                    case CellKind.Power: spPw++; break;
+                    case CellKind.Gold: spGd++; break;
+                    case CellKind.Resonance: spRs = true; break;
+                    case CellKind.Curse: spCs++; break;
+                }
+        if (spPw > 0) lines.Add($"<color=#FF7340>強化マス</color>　攻撃威力 +{GameBalance.PowerPctInt * spPw}%");
+        if (spGd > 0) lines.Add($"<color=#FFD84D>黄金マス</color>　ドロー時コイン +{GameBalance.GoldCoinPerCell * spGd}");
+        if (spRs) lines.Add($"<color=#66E5FF>共鳴マス</color>　シナジー {GameBalance.ResonanceMult}倍");
+        if (spCs > 0) lines.Add($"<color=#BF66F2>呪いマス</color>　出現率{GameBalance.CurseWeightMult:0.#}倍／使用時HP-{GameBalance.CurseHpPerCell * spCs}");
+
+        // 四隅の加護
+        int corners = _main.CornersUnlocked;
+        string[] bless = { $"攻撃威力 +{GameBalance.CornerAtkPctInt}%", $"毎ターン ブロック +{GameBalance.CornerBlock}", $"毎ターン HP +{GameBalance.CornerRegen}回復", $"最大マナ +{GameBalance.CornerMana}" };
+        for (int bi = 0; bi < corners && bi < 4; bi++)
+            lines.Add($"<color=#FFE080>四隅Lv{bi + 1}</color>　{bless[bi]}");
+
+        // 盤面シナジー（この戦闘中ずっと有効）
+        if (_syn.attackPct > 0) lines.Add($"<color=#FF7040>盤面シナジー</color>　攻撃 +{_syn.attackPct}%");
+        if (_syn.block > 0) lines.Add($"<color=#7FB0FF>盤面シナジー</color>　ブロック +{_syn.block}");
+        if (_syn.regen > 0) lines.Add($"<color=#70FF90>盤面シナジー</color>　再生 +{_syn.regen}");
+        if (_syn.mana > 0) lines.Add($"<color=#C0A0FF>盤面シナジー</color>　マナ +{_syn.mana}");
+
+        string body = lines.Count > 0 ? string.Join("\n", lines) : "<color=#8a8a98>発動中の加護はありません</color>";
+        int rows = Mathf.Max(1, lines.Count);
+        float h = 62f + rows * 30f;
+
+        // 顔アイコン（-690, 400）の右下に表示
+        var pos = new Vector2(-690f + 215f + 46f, 400f - h / 2f - 50f);
+        var holder = ProtoUI.CreateRect("BlessPopup", _root);
+        holder.anchoredPosition = pos; holder.sizeDelta = new Vector2(430, h);
+        _blessPopup = holder.gameObject;
+        ProtoUI.CreateFramedPanel("BPBox", holder, Vector2.zero, new Vector2(430, h),
+            new Color(0.08f, 0.07f, 0.05f, 0.98f), new Color(0.85f, 0.72f, 0.4f, 0.95f));
+        var title = ProtoUI.CreateText("BPT", holder, "発動中の加護", 20, new Vector2(0, h / 2f - 26f), new Vector2(400, 28), ProtoUI.Gold);
+        title.raycastTarget = false;
+        var b = ProtoUI.CreateText("BPB", holder, body, 17, new Vector2(0, -14f), new Vector2(400, h - 56f), new Color(0.94f, 0.94f, 1f), TextAlignmentOptions.Top);
+        b.lineSpacing = 8f; b.raycastTarget = false;
+    }
+
+    void HideBlessingPopup()
+    {
+        if (_blessPopup != null) { Destroy(_blessPopup); _blessPopup = null; }
     }
 
     // 逃げる：ペナルティとして所持金の20%を落とす（ノーリスク離脱の防止）
@@ -352,7 +399,15 @@ public class ProtoBattle : MonoBehaviour
         faceRt.anchoredPosition = new Vector2(-690, 410);
         faceRt.sizeDelta = new Vector2(84, 84);
         _faceImg = faceRt.gameObject.AddComponent<Image>();
-        _faceImg.sprite = ProtoPixelArt.FrontMama(); _faceImg.preserveAspect = true; _faceImg.raycastTarget = false;
+        _faceImg.sprite = ProtoPixelArt.FrontMama(); _faceImg.preserveAspect = true;
+
+        // 顔アイコンにカーソルを当てると発動中の加護をポップアップ表示
+        var trig = faceRt.gameObject.AddComponent<EventTrigger>();
+        var enter = new EventTrigger.Entry { eventID = EventTriggerType.PointerEnter };
+        enter.callback.AddListener(_ => ShowBlessingPopup());
+        var exit = new EventTrigger.Entry { eventID = EventTriggerType.PointerExit };
+        exit.callback.AddListener(_ => HideBlessingPopup());
+        trig.triggers.Add(enter); trig.triggers.Add(exit);
 
         // マナ（左下・手札カードの横に配置）
         var manaBg = ProtoUI.CreateFramedPanel("ManaBadge", _root, new Vector2(-665, -298), new Vector2(164, 84), new Color(0.035f, 0.105f, 0.22f, 0.96f), new Color(0.38f, 0.78f, 1f, 0.8f));
@@ -433,9 +488,6 @@ public class ProtoBattle : MonoBehaviour
         ProtoUI.CreateButton("RetreatBtn", _root, "逃げる", 20, new Vector2(632, -374), new Vector2(212, 68),
             new Color(0.16f, 0.14f, 0.18f, 0.96f), Retreat);
 
-        // 用語集（？ボタン・敵HUDの右）
-        ProtoUI.CreateGoldButton("GlossaryBtn", _root, "？", 22, new Vector2(770, 416), new Vector2(52, 44),
-            new Color(0.3f, 0.28f, 0.5f, 0.98f), ShowGlossary);
 
         // 点滅チャレンジ
         _challengeRoot = ProtoUI.CreateFullScreen("Challenge", _root);
@@ -486,29 +538,9 @@ public class ProtoBattle : MonoBehaviour
         if (_weakTurns > 0) st.Add($"<color=#C080FF>敵弱体{_weakTurns}T</color>");
         if (_playerPoison > 0) st.Add($"<color=#A0E060>毒{_playerPoison}</color>");
         if (_guardTurns > 0) st.Add($"<color=#90C0FF>継続軽減{_guardPct}%</color>");
+        if (_parryStance) st.Add("<color=#8FE8FF>パリィ構え</color>");
         if (_thornsTurns > 0) st.Add($"<color=#90FFB0>茨{_thornsDmg}</color>");
-        int corners = _main.CornersUnlocked;
-        if (corners > 0) st.Add($"<color=#FFE080>四隅の加護Lv{corners}</color>");
-        // 特殊マスの加護（ピースで覆われて効いているもの）
-        int spPw = 0, spGd = 0, spCs = 0; bool spRs = false;
-        foreach (var pl in _main.Panel.Placements)
-            foreach (var cc in pl.cells)
-                switch (_main.Panel.KindAt(cc.x, cc.y))
-                {
-                    case CellKind.Power: spPw++; break;
-                    case CellKind.Gold: spGd++; break;
-                    case CellKind.Resonance: spRs = true; break;
-                    case CellKind.Curse: spCs++; break;
-                }
-        if (spPw > 0) st.Add($"<color=#FF7340>強化マス{spPw}</color>");
-        if (spGd > 0) st.Add($"<color=#FFD84D>黄金マス{spGd}</color>");
-        if (spRs) st.Add("<color=#66E5FF>共鳴マス</color>");
-        if (spCs > 0) st.Add($"<color=#BF66F2>呪いマス{spCs}</color>");
-        // 盤面シナジー（この戦闘中ずっと有効）
-        if (_syn.attackPct > 0) st.Add($"<color=#FF7040>盤面攻+{_syn.attackPct}%</color>");
-        if (_syn.block > 0) st.Add($"<color=#7FB0FF>盤面盾+{_syn.block}</color>");
-        if (_syn.regen > 0) st.Add($"<color=#70FF90>盤面再生+{_syn.regen}</color>");
-        if (_syn.mana > 0) st.Add($"<color=#C0A0FF>盤面マナ+{_syn.mana}</color>");
+        // 盤面の加護・挑戦状などの常設情報はMAMAの顔にカーソルを当てると表示（ここには出さない）
         _statusText.text = string.Join("  ", st);
 
         RefreshHand(dealAnimation);
@@ -686,6 +718,7 @@ public class ProtoBattle : MonoBehaviour
                 Color col;
                 if (match) col = hc;
                 else if (!panel.IsUnlocked(x, y)) col = new Color(0.04f, 0.04f, 0.06f, 0.85f);  // 未解放
+                else if (panel.Sealed.Contains(new Vector2Int(x, y))) col = new Color(0.32f, 0.12f, 0.40f, 0.95f);  // 歪みマス（この戦闘中は封印）
                 else { var pl = panel.GetAt(x, y); col = pl != null ? pl.card.CategoryColor : new Color(0.16f, 0.14f, 0.24f, 0.95f); } // ピース/空き
                 var p = ProtoUI.Bevel(ProtoUI.CreatePanel($"BC_{x}_{y}", _boardContent,
                     new Vector2(ox + x * cell, oy - y * cell), new Vector2(cell - 2, cell - 2), col));   // 立体タイル
@@ -775,6 +808,9 @@ public class ProtoBattle : MonoBehaviour
         _hand.RemoveAt(index);
         _mana -= card.ManaCost;
 
+        // 痛みの契約：カードを使うたびHP-1
+        if (_main.PainContract) { _playerHP = Mathf.Max(1, _playerHP - 1); StartCoroutine(TextPopup(new Vector2(-330f, 160f), "-1 痛", new Color(0.9f, 0.4f, 0.4f), 34)); }
+
         // 呪いマス：覆っているカードは使用時にHPを失う（HP1未満にはならない）
         int curse = _main.Panel.MaxKindCover(card.id, CellKind.Curse);
         if (curse > 0)
@@ -835,10 +871,29 @@ public class ProtoBattle : MonoBehaviour
         else if (card.HasEffect(CardEffectType.GaugeOnUse)) { yield return RunGauge(card); mult = _challengeMultiplier; }
         else if (card.HasEffect(CardEffectType.TapOrderOnUse)) { yield return RunTapOrder(card); mult = _challengeMultiplier; }
         else if (card.HasEffect(CardEffectType.SlotOnUse)) { yield return RunSlot(card); mult = _challengeMultiplier; }
+        else if (card.HasEffect(CardEffectType.MashOnUse)) { yield return RunMash(card); mult = _challengeMultiplier; }
+        else if (card.HasEffect(CardEffectType.RouletteOnUse)) { yield return RunRoulette(card); mult = _challengeMultiplier; }
+        else if (card.HasEffect(CardEffectType.TraceOnUse)) { yield return RunTrace(card); mult = _challengeMultiplier; }
+        else if (card.HasEffect(CardEffectType.ChargeOnUse)) { yield return RunCharge(card); mult = _challengeMultiplier; }
+        else if (card.HasEffect(CardEffectType.DualGaugeOnUse)) { yield return RunDualGauge(card); mult = _challengeMultiplier; }
+        else if (card.HasEffect(CardEffectType.CountdownOnUse)) { yield return RunCountdown(card); mult = _challengeMultiplier; }
         else { _message.text = $"{card.displayName}！"; yield return new WaitForSeconds(0.3f); }
 
         // ---- 威力計算（基礎＋加算系） ----
         int basePow = card.power + _main.Stats.Attack + _strength;
+        // 連鎖斬：盤面でこのカードのピースに隣接するピース数×amount を加算
+        if (card.HasEffect(CardEffectType.AdjacencyPower))
+            basePow += AdjacentPieceCount(card) * card.EffectAmount(CardEffectType.AdjacencyPower);
+        // 賭博師：手札から1枚捨て、そのマス数×amount を加算
+        if (card.HasEffect(CardEffectType.GambleDiscard) && _hand.Count > 0)
+        {
+            int di = Random.Range(0, _hand.Count);
+            var discarded = _hand[di]; _hand.RemoveAt(di);
+            basePow += discarded.Size * card.EffectAmount(CardEffectType.GambleDiscard);
+            _message.text = $"賭博！「{discarded.displayName}」を捨てて威力に変えた！";
+        }
+        // 悪魔の心臓：HPが半分以下で攻撃+30%
+        if (_main.DemonHeart && card.power > 0 && HpRatio() <= 0.5f) basePow = Mathf.RoundToInt(basePow * 1.3f);
         if (_syn.attackPct > 0 && card.power > 0) basePow = Mathf.RoundToInt(basePow * (1f + _syn.attackPct / 100f)); // 盤面シナジー
         if (_main.CornersUnlocked >= 1 && card.power > 0) basePow = Mathf.RoundToInt(basePow * (1f + GameBalance.CornerAtkPct));            // 四隅の加護Lv1：攻撃威力アップ
         int pwCells = _main.Panel.MaxKindCover(card.id, CellKind.Power);
@@ -961,6 +1016,8 @@ public class ProtoBattle : MonoBehaviour
                     break;
                 case CardEffectType.Block: _block += e.amount; break;
                 case CardEffectType.Protect: _protectPct = Mathf.Max(_protectPct, e.amount); break;
+                case CardEffectType.ParryStance: _parryStance = true; _message.text = "パリィの構え！次の敵の攻撃を弾け！"; break;
+                case CardEffectType.FillEmptyOnUse: _emptyReduce += Mathf.Max(1, e.amount); _message.text = "盤面が満ちる……通常攻撃が出にくくなった！"; break;
                 case CardEffectType.ManaBoostNextTurn: _manaBoostNext += e.amount; break;
                 case CardEffectType.Strength: _strength += e.amount; break;
                 case CardEffectType.Heal: _playerHP = Mathf.Min(_playerMaxHP, _playerHP + e.amount); break;
@@ -1198,15 +1255,23 @@ public class ProtoBattle : MonoBehaviour
             yield break;
         }
 
+        int parryCut = 0;
+        if (_parryStance)
+        {
+            _parryStance = false;
+            yield return RunParry();
+            parryCut = _parryCutPct;
+        }
         _sfx.PlayOneShot(_swingClip);
         yield return Lunge(_slimeRt, new Vector2(-150, 0));
         int sfxTier = atk.mult >= 1.5f ? 2 : atk.hits > 1 ? 0 : 1;
 
         for (int h = 0; h < atk.hits; h++)
         {
-            int raw = Mathf.RoundToInt(((Random.Range(_enemy.minAtk, _enemy.maxAtk + 1) + _enemyAtkUp) * atk.mult + 3 * (_effWave - 1)) * _main.EnemyDmgMul); // アセンション・強化で攻撃増
+            int raw = Mathf.RoundToInt(((Random.Range(_enemy.minAtk, _enemy.maxAtk + 1) + _enemyAtkUp) * atk.mult + 3 * (_effWave - 1)) * _main.EnemyDmgMul * (_main.ChallengeBattle ? 1.2f : 1f)); // アセンション・強化・挑戦状で攻撃増
             if (_enemyCharged) raw = Mathf.RoundToInt(raw * 1.8f);   // チャージ解放
             if (_weakTurns > 0) raw = Mathf.RoundToInt(raw * (1f - _weakPct / 100f));
+            if (parryCut > 0) raw = Mathf.RoundToInt(raw * (1f - parryCut / 100f));   // パリィ軽減
             int dmg = Mathf.Max(1, raw);
             if (_main.Equipped == EquipKind.GuardPendant) dmg = Mathf.Max(1, Mathf.RoundToInt(dmg * 0.95f)); // 加護のペンダント
             if (_guardTurns > 0) dmg = Mathf.Max(0, Mathf.RoundToInt(dmg * (1f - _guardPct / 100f)));        // 聖なる誓い（継続軽減）
@@ -1257,7 +1322,33 @@ public class ProtoBattle : MonoBehaviour
             }
         }
         _enemyCharged = false;   // チャージは攻撃1回で消費
+
+        // 中ボス以上：攻撃のあと盤面に歪みマスを生む（この戦闘中だけマスを封印）
+        if (_eliteBattle && _playerHP > 0 && atk.hits > 0)
+            yield return TryDistortBoard();
+
         yield return new WaitForSeconds(0.3f);
+    }
+
+    // 盤面に歪みマスを1つ生む（中ボス以上の攻撃時。ランダムな解放マスを封印。上限あり）
+    IEnumerator TryDistortBoard()
+    {
+        var panel = _main.Panel;
+        int unlocked = panel.UnlockedCount();
+        int cap = Mathf.Max(1, unlocked / 3);   // 盤面の1/3までしか歪ませない
+        if (panel.Sealed.Count >= cap) yield break;
+        if (Random.value >= 0.5f) yield break;   // 攻撃のたび50%で発生
+
+        var pool = new List<Vector2Int>();
+        foreach (var c in panel.GetUnlockedCells())
+            if (!panel.Sealed.Contains(c)) pool.Add(c);
+        if (pool.Count == 0) yield break;
+
+        panel.Sealed.Add(pool[Random.Range(0, pool.Count)]);
+        _message.text = $"{_enemy.enemyName}の力で盤面が歪んだ！マスが封じられた……";
+        StartCoroutine(ScreenFlash(new Color(0.5f, 0.15f, 0.6f), 0.28f));
+        RefreshAll();
+        yield return new WaitForSeconds(0.7f);
     }
 
     // ==================== 勝敗 ====================
@@ -1266,9 +1357,13 @@ public class ProtoBattle : MonoBehaviour
     {
         _inputLocked = true;
         _main.SetCurrentHP(_playerHP);   // 戦闘後HPを保存（次戦闘へ継続）
+        _main.Panel.Sealed.Clear();   // 歪みマスは戦闘終了で解除
 
-        // お金はランダム
+        // お金はランダム（挑戦状に勝ったら2倍）
+        bool challenged = _main.ChallengeBattle;
+        _main.ChallengeBattle = false;
         int reward = Mathf.Max(1, Mathf.RoundToInt(_enemy.moneyReward * Random.Range(0.7f, 1.5f)));
+        if (challenged) reward *= 2;
         _main.AddMoney(reward);
 
         // 獲得ピース候補
@@ -1283,7 +1378,7 @@ public class ProtoBattle : MonoBehaviour
         _rewardArea.anchoredPosition = new Vector2(0, -40);
 
         _resultText.text = $"{_enemy.enemyName}を倒した！";
-        _resultSub.text = $"お金：+{reward}￥　　獲得ピース：{(choices.Count == 0 ? "なし" : $"{choices.Count}ピース")}";
+        _resultSub.text = $"お金：+{reward}￥{(challenged ? "（挑戦状で2倍！）" : "")}　　獲得ピース：{(choices.Count == 0 ? "なし" : $"{choices.Count}ピース")}";
         _resultRoot.gameObject.SetActive(true);
         yield return BuildRewardChoices(choices);
     }
@@ -1387,6 +1482,365 @@ public class ProtoBattle : MonoBehaviour
         if (Input.GetMouseButtonDown(0)) return true;
 #endif
         return false;
+    }
+
+    bool _parryStance;   // パリィの構え（次の敵の攻撃でQTE発動）
+    int _parryCutPct;    // パリィ結果の被ダメ軽減%
+    bool _eliteBattle;   // 中ボス以上（攻撃で盤面に歪みマスを作る）
+    int _emptyReduce;    // 圧縮カード：抽選の空きマスを減らす（この戦闘中）
+
+    // ==================== ミニゲーム：連打 ====================
+    // 制限時間内にひたすらクリック！連打数で威力倍率（20連打で2倍）
+    IEnumerator RunMash(CardDef card)
+    {
+        _challengeRoot.gameObject.SetActive(true);
+        Time.timeScale = 1f;
+        foreach (Transform c in _pieceArea) Destroy(c.gameObject);
+        _challengePrompt.text = $"「{card.displayName}」発動！　連打しろ！！";
+        ProtoUI.SetGauge(_timerFill, 1f, 500f);
+
+        var counter = ProtoUI.CreateText("MashN", _pieceArea, "0", 120, new Vector2(0, 0), new Vector2(500, 140), Color.white);
+        counter.fontStyle = FontStyles.Bold;
+        yield return null;
+
+        const float dur = 3f;
+        float t = 0f; int count = 0;
+        while (t < dur)
+        {
+            t += Time.deltaTime;
+            ProtoUI.SetGauge(_timerFill, 1f - t / dur, 500f);
+            if (ClickedThisFrame())
+            {
+                count++;
+                counter.text = count.ToString();
+                counter.rectTransform.localScale = Vector3.one * 1.25f;
+                counter.color = count >= 20 ? new Color(1f, 0.5f, 0.2f) : Color.white;
+            }
+            counter.rectTransform.localScale = Vector3.Lerp(counter.rectTransform.localScale, Vector3.one, Time.deltaTime * 10f);
+            yield return null;
+        }
+        _challengeMultiplier = Mathf.Min(2f, 0.8f + count * 0.06f);
+        _challengePrompt.text = $"{count}連打！ → 威力 {Mathf.RoundToInt(_challengeMultiplier * 100)}%";
+        yield return new WaitForSeconds(0.9f);
+        Time.timeScale = _main.GameSpeed;
+        _challengeRoot.gameObject.SetActive(false);
+    }
+
+    // ==================== ミニゲーム：ルーレット ====================
+    // 回転する針を当たり印（赤）の位置で止める。ぴったり2.2倍／近く1.4倍／外れ0.9倍
+    IEnumerator RunRoulette(CardDef card)
+    {
+        _challengeRoot.gameObject.SetActive(true);
+        Time.timeScale = 1f;
+        foreach (Transform c in _pieceArea) Destroy(c.gameObject);
+        _challengePrompt.text = $"「{card.displayName}」発動！　赤い印で止めろ！";
+        ProtoUI.SetGauge(_timerFill, 1f, 500f);
+
+        const float RAD = 150f;
+        ProtoUI.CreatePanel("RouBg", _pieceArea, Vector2.zero, new Vector2(2f * RAD + 70f, 2f * RAD + 70f), new Color(0.10f, 0.10f, 0.18f, 0.98f)).raycastTarget = false;
+        float hitAngle = Random.Range(0f, 360f);
+        for (int i = 0; i < 12; i++)
+        {
+            float a = i * 30f;
+            float diff = Mathf.Abs(Mathf.DeltaAngle(a, hitAngle));
+            var col = diff <= 45f ? new Color(0.9f, 0.72f, 0.3f) : new Color(0.35f, 0.35f, 0.45f);
+            var dot = ProtoUI.CreatePanel($"RD{i}", _pieceArea,
+                new Vector2(Mathf.Sin(a * Mathf.Deg2Rad), Mathf.Cos(a * Mathf.Deg2Rad)) * RAD, new Vector2(20, 20), col);
+            dot.raycastTarget = false;
+            dot.transform.localRotation = Quaternion.Euler(0, 0, 45);
+        }
+        var hitDot = ProtoUI.CreatePanel("RHit", _pieceArea,
+            new Vector2(Mathf.Sin(hitAngle * Mathf.Deg2Rad), Mathf.Cos(hitAngle * Mathf.Deg2Rad)) * RAD, new Vector2(38, 38), new Color(1f, 0.22f, 0.16f));
+        hitDot.raycastTarget = false; hitDot.transform.localRotation = Quaternion.Euler(0, 0, 45);
+        var needle = ProtoUI.CreatePanel("RNeedle", _pieceArea, Vector2.zero, new Vector2(10, RAD), Color.white);
+        needle.raycastTarget = false;
+        var nrt = (RectTransform)needle.transform;
+        nrt.pivot = new Vector2(0.5f, 0f);
+        nrt.anchoredPosition = Vector2.zero;
+        yield return null;
+
+        float angle = 0f; const float speed = 260f; float timeout = 5f; bool stopped = false;
+        while (timeout > 0f)
+        {
+            angle = (angle + speed * Time.deltaTime) % 360f;
+            nrt.localRotation = Quaternion.Euler(0, 0, -angle);   // UIのZ回転は反時計回りなので符号を反転
+            timeout -= Time.deltaTime;
+            ProtoUI.SetGauge(_timerFill, timeout / 5f, 500f);
+            if (ClickedThisFrame()) { stopped = true; break; }
+            yield return null;
+        }
+        float dHit = Mathf.Abs(Mathf.DeltaAngle(angle, hitAngle));
+        _challengeMultiplier = !stopped ? 0.9f : dHit <= 15f ? 2.2f : dHit <= 45f ? 1.4f : 0.9f;
+        _challengePrompt.text = _challengeMultiplier >= 2f ? "ぴったり！ 大当たり！（威力220%）"
+            : _challengeMultiplier > 1f ? "おしい！でも当たり！（威力140%）" : "外れ……（威力90%）";
+        yield return new WaitForSeconds(0.9f);
+        Time.timeScale = _main.GameSpeed;
+        _challengeRoot.gameObject.SetActive(false);
+    }
+
+    // ==================== ミニゲーム：軌道なぞり ====================
+    // 光る印をカーソルで①から順になぞる。なぞれた数とスピードで威力倍率（最大1.8倍）
+    IEnumerator RunTrace(CardDef card)
+    {
+        _challengeRoot.gameObject.SetActive(true);
+        Time.timeScale = 1f;
+        foreach (Transform c in _pieceArea) Destroy(c.gameObject);
+        _challengePrompt.text = $"「{card.displayName}」発動！　①から順にカーソルでなぞれ！";
+        ProtoUI.SetGauge(_timerFill, 1f, 500f);
+
+        const int N = 5;
+        var nodes = new Image[N];
+        var labels = new TextMeshProUGUI[N];
+        const float startX = -280f; const float stepX = 560f / (N - 1);
+        for (int i = 0; i < N; i++)
+        {
+            var pos = new Vector2(startX + stepX * i, (i % 2 == 0 ? 1 : -1) * Random.Range(40f, 95f));
+            var node = ProtoUI.CreatePanel($"TN{i}", _pieceArea, pos, new Vector2(64, 64), new Color(0.25f, 0.3f, 0.5f, 0.95f));
+            node.raycastTarget = false;
+            node.transform.localRotation = Quaternion.Euler(0, 0, 45);
+            var lb = ProtoUI.CreateText($"TL{i}", _pieceArea, "①②③④⑤".Substring(i, 1), 30, pos, new Vector2(60, 40), Color.white);
+            lb.raycastTarget = false;
+            nodes[i] = node; labels[i] = lb;
+        }
+        yield return null;
+
+        const float dur = 4f;
+        float t = 0f; int reached = 0;
+        var area = (RectTransform)_pieceArea;
+        while (t < dur && reached < N)
+        {
+            t += Time.deltaTime;
+            ProtoUI.SetGauge(_timerFill, 1f - t / dur, 500f);
+            Vector2 lp;
+            if (RectTransformUtility.ScreenPointToLocalPointInRectangle(area, MouseScreenPos(), null, out lp))
+            {
+                var target = (RectTransform)nodes[reached].transform;
+                if (Vector2.Distance(lp, target.anchoredPosition) <= 46f)
+                {
+                    nodes[reached].color = new Color(0.35f, 0.95f, 0.6f);
+                    labels[reached].color = new Color(0.1f, 0.2f, 0.12f);
+                    reached++;
+                }
+            }
+            yield return null;
+        }
+        bool all = reached >= N;
+        _challengeMultiplier = all ? (t <= 2.5f ? 1.8f : 1.5f) : 0.8f + 0.14f * reached;
+        _challengePrompt.text = all
+            ? (t <= 2.5f ? "見事な剣筋！（威力180%）" : "なぞりきった！（威力150%）")
+            : $"{reached}/{N} で途切れた……（威力 {Mathf.RoundToInt(_challengeMultiplier * 100)}%）";
+        yield return new WaitForSeconds(0.9f);
+        Time.timeScale = _main.GameSpeed;
+        _challengeRoot.gameObject.SetActive(false);
+    }
+
+    // マウスのスクリーン座標（新旧Input両対応）
+    Vector2 MouseScreenPos()
+    {
+#if ENABLE_INPUT_SYSTEM
+        var ms = UnityEngine.InputSystem.Mouse.current;
+        if (ms != null) return ms.position.ReadValue();
+#endif
+#if ENABLE_LEGACY_INPUT_MANAGER
+        return (Vector2)Input.mousePosition;
+#else
+        return Vector2.zero;
+#endif
+    }
+
+    // 連鎖斬：指定カードの全ピースに隣接している「別ピース」の数（重複なし）
+    int AdjacentPieceCount(CardDef card)
+    {
+        var panel = _main.Panel;
+        var own = new HashSet<Vector2Int>();
+        foreach (var p in panel.Placements) if (p.card != null && p.card.id == card.id) foreach (var c in p.cells) own.Add(c);
+        if (own.Count == 0) return 0;
+        var seen = new HashSet<PanelModel.Placement>();
+        var dirs = new[] { new Vector2Int(1, 0), new Vector2Int(-1, 0), new Vector2Int(0, 1), new Vector2Int(0, -1) };
+        foreach (var c in own)
+            foreach (var d in dirs)
+            {
+                var np = panel.GetAt(c.x + d.x, c.y + d.y);
+                if (np != null && !(np.card != null && np.card.id == card.id)) seen.Add(np);
+            }
+        return seen.Count;
+    }
+
+    // ==================== ミニゲーム：チャージ斬り（長押し） ====================
+    // ボタンを押している間ゲージが溜まる。離した瞬間の溜め量で威力。溜めすぎ（100%到達）で暴発＝威力半減
+    IEnumerator RunCharge(CardDef card)
+    {
+        _challengeRoot.gameObject.SetActive(true);
+        Time.timeScale = 1f;
+        foreach (Transform c in _pieceArea) Destroy(c.gameObject);
+        _challengePrompt.text = $"「{card.displayName}」発動！　長押しで溜めて、良いところで離せ！（溜めすぎ注意）";
+        const float W = 640f;
+        var barBg = ProtoUI.CreatePanel("CBar", _pieceArea, Vector2.zero, new Vector2(W, 46), new Color(0.12f, 0.12f, 0.2f, 0.98f));
+        ProtoUI.CreatePanel("CZone", barBg.transform, new Vector2(W * 0.32f, 0), new Vector2(W * 0.22f, 46), new Color(0.85f, 0.65f, 0.2f, 0.85f)).raycastTarget = false;   // 会心帯
+        ProtoUI.CreatePanel("CDanger", barBg.transform, new Vector2(W * 0.46f, 0), new Vector2(W * 0.08f, 46), new Color(0.9f, 0.25f, 0.2f, 0.9f)).raycastTarget = false;   // 暴発帯
+        var fill = ProtoUI.CreatePanel("CFill", barBg.transform, new Vector2(-W / 2f, 0), new Vector2(4, 42), new Color(0.4f, 0.9f, 1f));
+        fill.raycastTarget = false; var fillRt = (RectTransform)fill.transform; fillRt.pivot = new Vector2(0f, 0.5f);
+        yield return null;
+
+        float charge = 0f; bool held = false; float timeout = 4f; bool blew = false;
+        while (timeout > 0f)
+        {
+            timeout -= Time.deltaTime;
+            bool down = MouseHeld();
+            if (down) { held = true; charge += Time.deltaTime * 0.5f; }
+            if (charge >= 1f) { charge = 1f; blew = true; break; }          // 暴発
+            if (held && !down) break;                                        // 離した
+            fillRt.sizeDelta = new Vector2(W * charge, 42);
+            fill.color = charge > 0.82f ? new Color(1f, 0.4f, 0.2f) : new Color(0.4f, 0.9f, 1f);
+            yield return null;
+        }
+        fillRt.sizeDelta = new Vector2(W * charge, 42);
+        _challengeMultiplier = blew ? 0.5f
+            : charge >= 0.64f && charge <= 0.82f ? 2f
+            : charge >= 0.45f ? 1.4f
+            : 0.8f + charge * 0.4f;
+        _challengePrompt.text = blew ? "溜めすぎて暴発！（威力50%）"
+            : _challengeMultiplier >= 2f ? "完璧なタメ！会心の一撃！（威力200%）"
+            : _challengeMultiplier > 1f ? "良いタメだ！（威力140%）" : "溜めが足りない……";
+        yield return new WaitForSeconds(0.9f);
+        Time.timeScale = _main.GameSpeed;
+        _challengeRoot.gameObject.SetActive(false);
+    }
+
+    // ==================== ミニゲーム：デュアルゲージ ====================
+    // 2本のゲージを順番に会心ゾーンで止める。両方ジャストで最大倍率
+    IEnumerator RunDualGauge(CardDef card)
+    {
+        _challengeRoot.gameObject.SetActive(true);
+        Time.timeScale = 1f;
+        foreach (Transform c in _pieceArea) Destroy(c.gameObject);
+        _challengePrompt.text = $"「{card.displayName}」発動！　2本とも会心ゾーンで止めろ！";
+        const float W = 640f;
+        float[] result = new float[2];
+        for (int g = 0; g < 2; g++)
+        {
+            foreach (Transform c in _pieceArea) Destroy(c.gameObject);
+            var barBg = ProtoUI.CreatePanel($"DBar{g}", _pieceArea, new Vector2(0, g == 0 ? 40 : -40), new Vector2(W, 40), new Color(0.12f, 0.12f, 0.2f, 0.98f));
+            ProtoUI.CreatePanel("DZone", barBg.transform, Vector2.zero, new Vector2(W * 0.16f, 40), new Color(0.9f, 0.35f, 0.25f, 0.9f)).raycastTarget = false;
+            var cursor = ProtoUI.CreatePanel("DCur", barBg.transform, Vector2.zero, new Vector2(8, 54), Color.white);
+            cursor.raycastTarget = false;
+            _challengePrompt.text = g == 0 ? "1本目！クリックで止める" : "2本目！クリックで止める";
+            yield return null;
+            float t = 0f; float speed = 1.7f + g * 0.4f; float timeout = 4f; float pos = 0f; bool stopped = false;
+            while (timeout > 0f)
+            {
+                t += Time.deltaTime * speed; pos = Mathf.PingPong(t, 1f);
+                ((RectTransform)cursor.transform).anchoredPosition = new Vector2((pos - 0.5f) * W, 0);
+                timeout -= Time.deltaTime;
+                if (ClickedThisFrame()) { stopped = true; break; }
+                yield return null;
+            }
+            float dist = Mathf.Abs(pos - 0.5f);
+            result[g] = !stopped ? 0.7f : dist <= 0.08f ? 1.4f : dist <= 0.18f ? 1.1f : 0.8f;
+            yield return new WaitForSeconds(0.2f);
+        }
+        _challengeMultiplier = result[0] * result[1];   // 両方1.4→約1.96倍
+        _challengePrompt.text = $"合成倍率 → 威力 {Mathf.RoundToInt(_challengeMultiplier * 100)}%";
+        yield return new WaitForSeconds(0.9f);
+        Time.timeScale = _main.GameSpeed;
+        _challengeRoot.gameObject.SetActive(false);
+    }
+
+    // ==================== ミニゲーム：カウントダウン読み ====================
+    // 「3・2・1」の表示が消えたあと、頭の中で数えて「今！」のタイミングでクリック
+    IEnumerator RunCountdown(CardDef card)
+    {
+        _challengeRoot.gameObject.SetActive(true);
+        Time.timeScale = 1f;
+        foreach (Transform c in _pieceArea) Destroy(c.gameObject);
+        _challengePrompt.text = $"「{card.displayName}」発動！　拍を数えて『斬！』の瞬間にクリック！";
+        var big = ProtoUI.CreateText("CDNum", _pieceArea, "", 140, Vector2.zero, new Vector2(400, 200), Color.white);
+        big.fontStyle = FontStyles.Bold;
+        yield return null;
+
+        // 3・2・1 を等間隔で表示、その後同じ間隔で「斬！」がジャスト
+        const float beat = 0.7f;
+        foreach (var n in new[] { "3", "2", "1" })
+        {
+            big.text = n; big.color = Color.white; big.rectTransform.localScale = Vector3.one * 1.3f;
+            float e = 0f; while (e < beat) { e += Time.deltaTime; big.rectTransform.localScale = Vector3.Lerp(big.rectTransform.localScale, Vector3.one, Time.deltaTime * 8f); if (ClickedThisFrame()) { } yield return null; }
+        }
+        big.text = "？"; big.color = new Color(0.5f, 0.5f, 0.6f);
+        float target = beat; float t = 0f; bool clicked = false;
+        while (t < beat * 2f)
+        {
+            t += Time.deltaTime;
+            if (ClickedThisFrame()) { clicked = true; break; }
+            yield return null;
+        }
+        float err = Mathf.Abs(t - target);
+        _challengeMultiplier = !clicked ? 0.7f : err <= 0.08f ? 2.2f : err <= 0.2f ? 1.4f : 0.9f;
+        big.text = _challengeMultiplier >= 2f ? "斬！！" : _challengeMultiplier > 1f ? "斬！" : "外し";
+        big.color = _challengeMultiplier > 1f ? new Color(1f, 0.85f, 0.4f) : new Color(0.7f, 0.7f, 0.8f);
+        _challengePrompt.text = _challengeMultiplier >= 2f ? "ジャスト！（威力220%）"
+            : _challengeMultiplier > 1f ? "惜しい！（威力140%）" : "タイミングを外した…";
+        yield return new WaitForSeconds(0.9f);
+        Time.timeScale = _main.GameSpeed;
+        _challengeRoot.gameObject.SetActive(false);
+    }
+
+    // マウス左ボタンを押している最中か（チャージ用）
+    bool MouseHeld()
+    {
+#if ENABLE_INPUT_SYSTEM
+        var ms = UnityEngine.InputSystem.Mouse.current;
+        if (ms != null && ms.leftButton.isPressed) return true;
+#endif
+#if ENABLE_LEGACY_INPUT_MANAGER
+        if (Input.GetMouseButton(0)) return true;
+#endif
+        return false;
+    }
+
+    // ==================== パリィ（敵の攻撃をタイミングよく弾く） ====================
+    // 縮む白リングが青いマークに重なった瞬間にクリック。ジャスト=被ダメ-75% / 成功=-30% / 失敗=0%
+    IEnumerator RunParry()
+    {
+        _parryCutPct = 0;
+        Time.timeScale = 1f;
+        var pos = _actorRt != null ? _actorRt.anchoredPosition + new Vector2(150f, 80f) : new Vector2(-180f, 100f);
+        var target = ProtoUI.CreatePanel("ParryTarget", _root, pos, new Vector2(80, 80), new Color(0.4f, 0.9f, 1f, 0.4f));
+        target.raycastTarget = false; target.transform.localRotation = Quaternion.Euler(0, 0, 45);
+        var ring = ProtoUI.CreatePanel("ParryRing", _root, pos, new Vector2(80, 80), new Color(1f, 1f, 1f, 0.9f));
+        ring.raycastTarget = false; ring.transform.localRotation = Quaternion.Euler(0, 0, 45);
+        var label = ProtoUI.CreateText("ParryLbl", _root, "パリィ！重なった瞬間にクリック！", 24, pos + new Vector2(0, 90f), new Vector2(520, 34), new Color(0.6f, 0.95f, 1f));
+        label.fontStyle = FontStyles.Bold;
+        yield return null;
+
+        const float dur = 0.9f;
+        float t = 0f; bool clicked = false; float clickP = 1f;
+        var rrt = (RectTransform)ring.transform;
+        while (t < dur)
+        {
+            t += Time.deltaTime;
+            float p = Mathf.Clamp01(t / dur);
+            rrt.localScale = Vector3.one * Mathf.Lerp(2.8f, 0.5f, p);
+            if (ClickedThisFrame()) { clicked = true; clickP = p; break; }
+            yield return null;
+        }
+        float ringScale = Mathf.Lerp(2.8f, 0.5f, clickP);
+        if (clicked && Mathf.Abs(ringScale - 1f) <= 0.3f)
+        {
+            _parryCutPct = 75;
+            label.text = "<color=#7FE8FF>ジャストパリィ！（被ダメ-75%）</color>";
+            if (_parryClip != null) _sfx.PlayOneShot(_parryClip);
+            StartCoroutine(ScreenFlash(new Color(0.5f, 0.9f, 1f), 0.3f));
+        }
+        else if (clicked)
+        {
+            _parryCutPct = 30;
+            label.text = "パリィ！（被ダメ-30%）";
+            if (_parryClip != null) _sfx.PlayOneShot(_parryClip, 0.6f);
+        }
+        else label.text = "<color=#888899>パリィ失敗……</color>";
+        yield return new WaitForSecondsRealtime(0.5f);
+        Destroy(target.gameObject); Destroy(ring.gameObject); Destroy(label.gameObject);
+        Time.timeScale = _main.GameSpeed;
     }
 
     // ==================== ミニゲーム：ゲージストップ ====================
