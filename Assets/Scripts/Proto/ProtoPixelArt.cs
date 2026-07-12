@@ -108,6 +108,24 @@ public static class ProtoPixelArt
         return _retFrames;
     }
 
+    // ガードのアニメコマ（mama_guard.png, mama_guard2.png ... を順に読み込む）
+    static List<Sprite> _guardFrames;
+    public static List<Sprite> GuardFrames()
+    {
+        if (_guardFrames == null)
+        {
+            _guardFrames = new List<Sprite>();
+            var first = Resources.Load<Sprite>("mama_guard");
+            if (first != null) _guardFrames.Add(first);
+            for (int i = 2; i <= 12; i++)
+            {
+                var s = Resources.Load<Sprite>("mama_guard" + i);
+                if (s != null) _guardFrames.Add(s);
+            }
+        }
+        return _guardFrames;
+    }
+
     // 高威力技のアニメコマ（mama_big.png, mama_big2.png ... を順に読み込む）
     static List<Sprite> _bigFrames;
     public static List<Sprite> BigAttackFrames()

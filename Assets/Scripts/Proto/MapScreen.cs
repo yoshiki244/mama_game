@@ -1867,7 +1867,7 @@ public class MapScreen : MonoBehaviour
         var leaveBorder = ProtoUI.CreatePanel("STLeaveBorder", rt, new Vector2(0, -245), new Vector2(292, 72), gold);
         leaveBorder.raycastTarget = false; leaveBorder.gameObject.SetActive(false);
         var leaveBtn = ProtoUI.CreateButton("STLeave", rt, "立ち去る", 20, new Vector2(0, -245), new Vector2(280, 60),
-            new Color(0.4f, 0.34f, 0.5f, 0.98f), () => choose("神聖樹をあとにした。"));
+            new Color(0.28f, 0.30f, 0.36f, 0.98f), () => choose("神聖樹をあとにした。"));
         leaveBtn.gameObject.SetActive(false);
         allButtons.Add(leaveBtn);
         revealObjs.Add(leaveBorder.gameObject); revealObjs.Add(leaveBtn.gameObject);
@@ -2015,7 +2015,7 @@ public class MapScreen : MonoBehaviour
         // 立ち去る（金枠付き・下中央）
         ProtoUI.CreatePanel("CLeaveBorder", rt, new Vector2(0, -245), new Vector2(292, 72), gold).raycastTarget = false;
         var closeBtn = ProtoUI.CreateButton("CClose", rt, "立ち去る", 22, new Vector2(0, -245), new Vector2(280, 60),
-            new Color(0.45f, 0.2f, 0.25f, 0.98f), () => choose("欲を捨て、その場を立ち去った。"));
+            new Color(0.28f, 0.30f, 0.36f, 0.98f), () => choose("欲を捨て、その場を立ち去った。"));
         allButtons.Add(closeBtn);
     }
 

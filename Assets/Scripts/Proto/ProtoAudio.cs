@@ -808,4 +808,108 @@ public static class ProtoAudio
         clip.SetData(data, 0);
         return clip;
     }
+
+    // 通常攻撃の詠唱・放出音（キラッと上昇→シュッと放つ）
+    public static AudioClip CreateMagicCast()
+    {
+        const int sampleRate = 44100; const float dur = 0.4f;
+        int total = (int)(sampleRate * dur); var data = new float[total];
+        var rng = new System.Random(21);
+        for (int i = 0; i < total; i++)
+        {
+            float p = i / (float)total; float t = (float)i / sampleRate;
+            float env = Mathf.Sin(p * Mathf.PI); env *= env;
+            float f = Mathf.Lerp(520f, 1200f, p);                        // 上昇するキラキラ
+            float tone = Mathf.Sin(2f * Mathf.PI * f * t) * 0.10f * env;
+            float shimmer = Mathf.Sin(2f * Mathf.PI * f * 2.01f * t) * 0.05f * env;
+            float air = ((float)rng.NextDouble() * 2f - 1f) * 0.06f * env;
+            data[i] = tone + shimmer + air;
+        }
+        var clip = AudioClip.Create("MagicCast", total, 1, sampleRate, false); clip.SetData(data, 0); return clip;
+    }
+
+    // 大技のタメ音（重低音＋倍音がうねりながら派手に盛り上がる。仕上げにキラめき）
+    public static AudioClip CreateBigCharge()
+    {
+        const int sampleRate = 44100; const float dur = 1.9f;
+        int total = (int)(sampleRate * dur); var data = new float[total];
+        var rng = new System.Random(33);
+        for (int i = 0; i < total; i++)
+        {
+            float p = i / (float)total; float t = (float)i / sampleRate;
+            float env = p * p * p * 0.5f + p * 0.5f;                     // 加速して大きく
+            float f = Mathf.Lerp(45f, 300f, p * p);                      // 加速上昇する唸り
+            float sub = Mathf.Sin(2f * Mathf.PI * (f * 0.5f) * t) * 0.18f * env;         // サブベース
+            float low = Mathf.Sin(2f * Mathf.PI * f * t) * 0.16f * env;
+            float harm = (Mathf.Sin(2f * Mathf.PI * f * 1.5f * t) + Mathf.Sin(2f * Mathf.PI * f * 2f * t)) * 0.06f * env;
+            float wob = Mathf.Sin(2f * Mathf.PI * (6f + p * 22f) * t) * 0.5f + 0.5f;      // 速くなるうねり
+            float shimmer = Mathf.Sin(2f * Mathf.PI * Mathf.Lerp(1400f, 3200f, p) * t) * 0.05f * (p * p);   // 仕上げのキラめき
+            float air = ((float)rng.NextDouble() * 2f - 1f) * 0.06f * env;
+            data[i] = (sub + low + harm) * (0.6f + 0.4f * wob) + shimmer + air;
+        }
+        // 末尾でプツッと切れないようフェードアウト
+        int fade = (int)(sampleRate * 0.05f);
+        for (int i = 0; i < fade; i++) data[total - 1 - i] *= i / (float)fade;
+        var clip = AudioClip.Create("BigCharge", total, 1, sampleRate, false); clip.SetData(data, 0); return clip;
+    }
+
+    // 大技の放出・着弾音（ドゴォン！と長く尾を引く大爆発。二段階の炸裂＋轟き）
+    public static AudioClip CreateBigRelease()
+    {
+        const int sampleRate = 44100; const float dur = 1.1f;
+        int total = (int)(sampleRate * dur); var data = new float[total];
+        var rng = new System.Random(44);
+        for (int i = 0; i < total; i++)
+        {
+            float p = i / (float)total; float t = (float)i / sampleRate;
+            float env = Mathf.Exp(-3.2f * p);
+            float boom = Mathf.Sin(2f * Mathf.PI * Mathf.Lerp(220f, 28f, Mathf.Sqrt(p)) * t) * 0.40f * env;   // 落ちる主爆発
+            float sub = Mathf.Sin(2f * Mathf.PI * Mathf.Lerp(90f, 22f, p) * t) * 0.22f * Mathf.Exp(-2f * p); // サブの押し
+            float crack = ((float)rng.NextDouble() * 2f - 1f) * 0.5f * Mathf.Exp(-9f * p);                    // 初撃の破裂
+            // 二段目の炸裂（少し遅れてもう一発）
+            float p2 = Mathf.Clamp01((p - 0.14f) / 0.86f);
+            float crack2 = ((float)rng.NextDouble() * 2f - 1f) * 0.32f * Mathf.Exp(-8f * p2) * (p > 0.14f ? 1f : 0f);
+            float rumble = Mathf.Sin(2f * Mathf.PI * 48f * t) * 0.14f * Mathf.Exp(-1.8f * p);                 // 長い轟き
+            data[i] = Mathf.Clamp(boom + sub + crack + crack2 + rumble, -1f, 1f);
+        }
+        int fade = (int)(sampleRate * 0.06f);
+        for (int i = 0; i < fade; i++) data[total - 1 - i] *= i / (float)fade;
+        var clip = AudioClip.Create("BigRelease", total, 1, sampleRate, false); clip.SetData(data, 0); return clip;
+    }
+
+    // ガード音（金属的な「キィン！」という防御音）
+    public static AudioClip CreateGuard()
+    {
+        const int sampleRate = 44100; const float dur = 0.35f;
+        int total = (int)(sampleRate * dur); var data = new float[total];
+        var rng = new System.Random(51);
+        for (int i = 0; i < total; i++)
+        {
+            float p = i / (float)total; float t = (float)i / sampleRate;
+            float env = Mathf.Exp(-7f * p);
+            float clang = ((float)rng.NextDouble() * 2f - 1f) * 0.35f * Mathf.Exp(-22f * p);   // 硬い当たり
+            float ring = (Mathf.Sin(2f * Mathf.PI * 1200f * t) * 0.5f + Mathf.Sin(2f * Mathf.PI * 1810f * t) * 0.3f + Mathf.Sin(2f * Mathf.PI * 2650f * t) * 0.2f) * 0.14f * env;   // 金属の余韻
+            data[i] = clang + ring;
+        }
+        var clip = AudioClip.Create("GuardSfx", total, 1, sampleRate, false); clip.SetData(data, 0); return clip;
+    }
+
+    // 回復音（やわらかな上昇アルペジオ＋澄んだ響き）
+    public static AudioClip CreateHealCast()
+    {
+        const int sampleRate = 44100; const float dur = 0.9f;
+        int total = (int)(sampleRate * dur); var data = new float[total];
+        float[] notes = { 523.25f, 659.25f, 783.99f, 1046.5f };   // C E G C（明るい）
+        for (int i = 0; i < total; i++)
+        {
+            float p = i / (float)total; float t = (float)i / sampleRate;
+            float env = Mathf.Sin(p * Mathf.PI) * 0.9f;
+            int ni = Mathf.Min(notes.Length - 1, (int)(p * notes.Length * 1.2f));
+            float f = notes[ni];
+            float tone = Mathf.Sin(2f * Mathf.PI * f * t) * 0.12f * env;
+            float bell = Mathf.Sin(2f * Mathf.PI * f * 2f * t) * 0.05f * env;
+            data[i] = tone + bell;
+        }
+        var clip = AudioClip.Create("HealCast", total, 1, sampleRate, false); clip.SetData(data, 0); return clip;
+    }
 }

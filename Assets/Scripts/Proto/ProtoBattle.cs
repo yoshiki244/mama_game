@@ -21,6 +21,7 @@ public class ProtoBattle : MonoBehaviour
     RectTransform _handArea;
     readonly List<CardDef> _pendingDrawn = new List<CardDef>();
     readonly List<RectTransform> _cardRects = new List<RectTransform>();
+    readonly List<RectTransform> _cardHits = new List<RectTransform>();   // カードの固定当たり判定ゾーン
     RectTransform _boardOverlay;   // 盤面プレビュー（キャラ左横・常時表示）
     RectTransform _boardContent;   // 盤面の動的中身（マス）
     RectTransform _detailPanel;    // カード詳細（中央・ホバー時）
@@ -85,6 +86,7 @@ public class ProtoBattle : MonoBehaviour
     AudioSource _sfx;
     AudioClip[] _hitClips;
     AudioClip _swingClip, _coinClip, _curseClip, _parryClip;
+    AudioClip _magicCastClip, _bigChargeClip, _bigReleaseClip, _healCastClip, _guardClip;
 
     Image _actorImg, _slimeImg, _faceImg;
     RectTransform _actorRt, _slimeRt, _enemyInner, _playerInner, _enemyShadow;
@@ -99,6 +101,11 @@ public class ProtoBattle : MonoBehaviour
         _coinClip = ProtoAudio.CreateCoinChime();
         _curseClip = ProtoAudio.CreateCurseHit();
         _parryClip = ProtoAudio.CreateSpecialChime();
+        _magicCastClip = ProtoAudio.CreateMagicCast();
+        _bigChargeClip = ProtoAudio.CreateBigCharge();
+        _bigReleaseClip = ProtoAudio.CreateBigRelease();
+        _healCastClip = ProtoAudio.CreateHealCast();
+        _guardClip = ProtoAudio.CreateGuard();
         Hide();
     }
 
@@ -379,6 +386,8 @@ public class ProtoBattle : MonoBehaviour
         var bgImg = bgRt.gameObject.AddComponent<Image>();
         bgImg.sprite = ProtoPixelArt.BattleBackground();
         bgImg.raycastTarget = false;
+        bgRt.sizeDelta = new Vector2(160, 160);   // 画面より少し大きく（画面シェイクで端に隙間が出ないように）
+        bgRt.anchoredPosition = Vector2.zero;
         bgRt.SetAsFirstSibling();
 
         ProtoUI.CreatePanel("BattleShade", _root, new Vector2(0, -382), new Vector2(1700, 260), new Color(0.015f, 0.018f, 0.028f, 0.45f)).raycastTarget = false;
@@ -555,6 +564,7 @@ public class ProtoBattle : MonoBehaviour
         RenderBoard(null, -1);   // 盤面は常時表示（ハイライト無し）
         foreach (Transform c in _handArea) Destroy(c.gameObject);
         _cardRects.Clear();
+        _cardHits.Clear();
         int n = _hand.Count;
         const float R = 940f;
         float step = n <= 6 ? 9f : 54f / (n - 1);   // 7枚以上は扇の全幅54°に収めて圧縮（画面はみ出し防止）
@@ -576,17 +586,26 @@ public class ProtoBattle : MonoBehaviour
 
             var card = _hand[i];
             var frame = (Image)btn.targetGraphic;
-            var hover = btn.gameObject.AddComponent<CardHover>();
+            // 見た目のカードは子要素まで含めて当たり判定を全て無効化（ホバーで動いても判定がズレないように）
+            foreach (var g in crt.GetComponentsInChildren<UnityEngine.UI.Graphic>(true)) g.raycastTarget = false;
+
+            // 固定の当たり判定ゾーン（ホバーで動かない）。見た目カードだけ上昇させる
+            var hitZone = ProtoUI.CreatePanel("CardHit", _handArea, pos, new Vector2(190, 262), new Color(0f, 0f, 0f, 0f));
+            hitZone.transform.localRotation = rot;
+            var hover = hitZone.gameObject.AddComponent<CardHover>();
             hover.Setup(crt, pos, rot, frame, frame.color,
                 onEnter: () => { if (_inputLocked) return; RenderBoard(card, idx); }, // カード詳細は表示しない
                 onExit: () => { RenderBoard(null, -1); },
                 onClick: () => { if (_inputLocked) return; if (!canAfford) { _message.text = "マナが足りないので選択できません。"; return; } TryPlayCard(idx); });
 
             made.Add(crt);
+            _cardHits.Add((RectTransform)hitZone.transform);
             if (dealAnimation) StartCoroutine(DealCard(crt, pos, i * 0.06f));
         }
         // 左のカードを前面に（左から上に重なる）
         for (int i = made.Count - 1; i >= 0; i--) made[i].SetAsLastSibling();
+        // 判定ゾーンも同じ重なり順（左を前面）にして、透明のまま最前面で当たりを取る
+        for (int i = _cardHits.Count - 1; i >= 0; i--) _cardHits[i].SetAsLastSibling();
     }
 
     // カードをクリック＝即発動
@@ -1036,41 +1055,89 @@ public class ProtoBattle : MonoBehaviour
         yield return new WaitForSeconds(0.5f);
     }
 
-    // 回復詠唱：両手を上げた回復ポーズに切り替え、癒しの光と上昇する粒子を出す
+    // 回復詠唱：大技と同じく両手を上げ（そこまで同じアニメ）→頭上で癒しの光→逆再生で待機に戻る
     IEnumerator MotionHeal(CardDef card)
     {
         Color heal = new Color(0.5f, 1f, 0.7f);      // 癒しの緑
         Color healW = new Color(0.85f, 1f, 0.9f);
-        if (_actorImg != null) _actorImg.sprite = ProtoPixelArt.HealMama();
+        var frames = ProtoPixelArt.BigAttackFrames();
+        int holdIdx = (frames != null && frames.Count > 0) ? Mathf.Min(4, frames.Count - 1) : -1;
+        Vector2 body = _actorHome;
+        Vector2 handsPos = _actorHome + new Vector2(2, 198);
 
-        // 足元から立ち上る癒しのオーラ
-        Vector2 body = _actorRt.anchoredPosition;
-        var aura = ProtoUI.CreateGlow("HealAura", _root, body, new Vector2(200, 260), heal); aura.raycastTarget = false;
+        Vector2 feet = _actorHome + new Vector2(0, -150);   // 足元
+        // 足元から立ち上る癒しのオーラ（横長・下寄り）
+        var footAura = ProtoUI.CreateGlow("HealFootAura", _root, feet + new Vector2(0, 30), new Vector2(230, 120), heal); footAura.raycastTarget = false;
+        var fart = (RectTransform)footAura.transform;
+
+        _prevActorS = 1f; _prevActorFeet = FeetIdle;
+        // ① 大技と同じ動きで両手を上げていく。癒しの粒は足元から立ち上る
+        if (holdIdx >= 0)
+        {
+            for (int i = 0; i <= holdIdx; i++)
+            {
+                if (_actorImg == null) break;
+                _actorImg.sprite = frames[i];
+                float p = holdIdx > 0 ? (float)i / holdIdx : 1f;
+                float bump = Mathf.Lerp(1f, 1.16f, p);   // 手を挙げきったところで少し大きく（足元固定）
+                float fp = 0.6f + Mathf.Sin(Time.time * 12f) * 0.1f;
+                fart.localScale = new Vector3(fp, 1f, 1f);
+                var fc = heal; fc.a = 0.5f; footAura.color = fc;
+                for (int k = 0; k < 3; k++)
+                {
+                    Vector2 f = feet + new Vector2(Random.Range(-90f, 90f), Random.Range(-20f, 30f));
+                    StartCoroutine(RisingSpark(f, f + new Vector2(Random.Range(-15f, 15f), Random.Range(240f, 360f)), Random.value < 0.5f ? heal : healW));
+                }
+                yield return EaseActorScale(BigScaleAt(i) * bump, BigFeetAt(i), 0.15f);
+            }
+            if (_actorImg != null) _actorImg.sprite = frames[holdIdx];
+        }
+        else if (_actorImg != null) _actorImg.sprite = ProtoPixelArt.HealMama();
+        float holdBase = holdIdx >= 0 ? BigScaleAt(holdIdx) * 1.16f : 1f;
+
+        // ② 頭上で癒しの光。上昇する粒＋淡いフラッシュ
+        var aura = ProtoUI.CreateGlow("HealAura", _root, handsPos, new Vector2(180, 180), heal); aura.raycastTarget = false;
         var art = (RectTransform)aura.transform;
-        StartCoroutine(ScreenFlash(heal, 0.12f));
-
+        if (_sfx != null && _healCastClip != null) _sfx.PlayOneShot(_healCastClip);   // 回復の澄んだ響き
+        StartCoroutine(ScreenFlash(heal, 0.14f));
         float t = 0f, dur = 0.9f;
         while (t < dur)
         {
             t += Time.deltaTime; float p = t / dur;
-            float pulse = 0.9f + Mathf.Sin(t * 12f) * 0.1f;
-            art.localScale = new Vector3(pulse, 1f + p * 0.15f, 1f);
-            var ca = heal; ca.a = 0.5f * (1f - p * 0.4f); aura.color = ca;
-            // 上昇する光の粒
-            for (int k = 0; k < 2; k++)
+            float pulse = 1f + Mathf.Sin(t * 12f) * 0.12f;
+            art.localScale = Vector3.one * ((0.6f + p * 1.4f) * pulse);
+            // 頭上保持中、キャラを微かに呼吸させて自然に
+            if (holdIdx >= 0) SetActorScaleFoot(holdBase * (1f + Mathf.Sin(t * 5f) * 0.015f), BigFeetAt(holdIdx));
+            var ca = heal; ca.a = 0.6f * (1f - p * 0.5f); aura.color = ca;
+            var fc2 = heal; fc2.a = 0.5f * (1f - p * 0.3f); footAura.color = fc2;
+            for (int k = 0; k < 4; k++)
             {
-                Vector2 from = body + new Vector2(Random.Range(-90f, 90f), Random.Range(-120f, -40f));
-                Vector2 to = from + new Vector2(Random.Range(-10f, 10f), Random.Range(120f, 200f));
-                StartCoroutine(RisingSpark(from, to, Random.value < 0.5f ? heal : healW));
+                Vector2 f = feet + new Vector2(Random.Range(-95f, 95f), Random.Range(-20f, 30f));
+                StartCoroutine(RisingSpark(f, f + new Vector2(Random.Range(-15f, 15f), Random.Range(260f, 380f)), Random.value < 0.5f ? heal : healW));
             }
             yield return null;
         }
         StartCoroutine(FlashSprite(_actorImg, healW));
-        StartCoroutine(ShockExpand(body + new Vector2(0, 40f), heal, 1.2f));
-        SpawnBurst(body + new Vector2(0, 40f), heal, 14, 90f);
+        StartCoroutine(ShockExpand(feet + new Vector2(0, 20f), heal, 1.3f));
+        SpawnBurst(handsPos, heal, 14, 90f);
+        SpawnBurst(feet + new Vector2(0, 20f), heal, 16, 120f);
         Destroy(aura.gameObject);
-        // 通常立ち絵へ戻す
+        Destroy(footAura.gameObject);
+
+        // ③ 逆再生でゆっくり待機モーションへ戻す。
+        // 腕の動きが連続するコマ(349→350→351)だけ戻し、合わせ手の中間コマ(341/342)は飛ばして待機へ直接
+        if (holdIdx >= 0)
+        {
+            int stopIdx = Mathf.Min(2, holdIdx);   // 腕が上がり始めるコマまで
+            for (int i = holdIdx; i >= stopIdx; i--)
+            {
+                if (_actorImg == null) break;
+                _actorImg.sprite = frames[i];
+                yield return EaseActorScale(BigScaleAt(i), BigFeetAt(i), 0.11f);
+            }
+        }
         if (_actorImg != null) _actorImg.sprite = ProtoPixelArt.MamaPhoto();
+        if (_actorRt != null) { _actorRt.localScale = Vector3.one; _actorRt.anchoredPosition = _actorHome; }
     }
 
     // 上へ舞い上がる癒しの粒
@@ -1349,6 +1416,10 @@ public class ProtoBattle : MonoBehaviour
         yield return Lunge(_slimeRt, new Vector2(-150, 0));
         int sfxTier = atk.mult >= 1.5f ? 2 : atk.hits > 1 ? 0 : 1;
 
+        // ブロック等で防御している状態なら、攻撃を受ける前にガードの構えを取る
+        bool guarding = _block > 0 || _protectPct > 0 || _guardTurns > 0;
+        if (guarding) yield return MotionGuardEnter();
+
         for (int h = 0; h < atk.hits; h++)
         {
             int raw = Mathf.RoundToInt(((Random.Range(_enemy.minAtk, _enemy.maxAtk + 1) + _enemyAtkUp) * atk.mult + 3 * (_effWave - 1)) * _main.EnemyDmgMul * (_main.ChallengeBattle ? 1.2f : 1f)); // アセンション・強化・挑戦状で攻撃増
@@ -1366,6 +1437,7 @@ public class ProtoBattle : MonoBehaviour
                 dmg -= reflected; _reflectPct = 0; // 反射は1回きり
             }
             if (_block > 0) { int absorb = Mathf.Min(_block, dmg); _block -= absorb; dmg -= absorb; }
+            if (guarding) StartCoroutine(GuardHitFx(dmg <= 0));   // ガードのエフェクト＆音
 
             if (dmg <= 0)
             {
@@ -1405,6 +1477,7 @@ public class ProtoBattle : MonoBehaviour
             }
         }
         _enemyCharged = false;   // チャージは攻撃1回で消費
+        if (guarding && _playerHP > 0) yield return MotionGuardExit();   // ガードを解いて待機へ
 
         // 中ボス以上：攻撃のあと盤面に歪みマスを生む（この戦闘中だけマスを封印）
         if (_eliteBattle && _playerHP > 0 && atk.hits > 0)
@@ -2457,6 +2530,7 @@ public class ProtoBattle : MonoBehaviour
         ort.anchoredPosition = firePos; crt.anchoredPosition = firePos;
 
         // ③ 指先で解き放つ：多重衝撃波＋放射バースト＋画面フラッシュ → 指先から敵へ極太の魔法を放つ
+        if (_sfx != null && _magicCastClip != null) _sfx.PlayOneShot(_magicCastClip);
         StartCoroutine(FlashSprite(_actorImg, colW));
         StartCoroutine(ScreenFlash(col, 0.18f));
         StartCoroutine(ShockExpand(firePos, colW, 1.5f));
@@ -2567,16 +2641,16 @@ public class ProtoBattle : MonoBehaviour
                 StartCoroutine(ConvergeSpark(around, op, Random.value < 0.5f ? col : colW));
             }
             SpawnBurst(op, col, 4, 38f);
-            yield return EaseActorScale(BigScaleAt(i) * bump, BigFeetAt(i), 0.12f);
+            yield return EaseActorScale(BigScaleAt(i) * bump, BigFeetAt(i), 0.15f);
         }
 
         // ② 頭上で長めのタメ。魔力球が渦巻いて膨張、周囲から激しく吸い込み、画面が色付く
         if (_actorImg != null) _actorImg.sprite = frames[holdIdx];
         float holdScaleS = BigScaleAt(holdIdx) * CHARGE_BUMP;
         yield return EaseActorScale(holdScaleS, BigFeetAt(holdIdx), 0.12f);   // タメへ滑らかに拡大
+        if (_sfx != null && _bigChargeClip != null) _sfx.PlayOneShot(_bigChargeClip, 0.9f);   // タメ音
         chargeFlash = ProtoUI.CreateFullScreen("BigChargeFlash", _root);
         var cfImg = chargeFlash.gameObject.AddComponent<Image>(); cfImg.raycastTarget = false;
-        Vector2 rootHome = _root.anchoredPosition;   // タメ中の画面揺れの基準
         float charge = 1.9f, t = 0f, fxAccum = 0f;
         while (t < charge)
         {
@@ -2584,7 +2658,7 @@ public class ProtoBattle : MonoBehaviour
             float pulse = 1f + Mathf.Sin(t * 24f) * 0.16f;
             // タメが進むほど画面全体を強く揺らす
             float sa = 2f + p * p * 16f;
-            _root.anchoredPosition = rootHome + new Vector2(Random.Range(-sa, sa), Random.Range(-sa, sa));
+            _root.anchoredPosition = new Vector2(Random.Range(-sa, sa), Random.Range(-sa, sa));
             // 溜まるほど本体もわずかに膨らむ（足元は固定）
             SetActorScaleFoot(holdScaleS * (1f + p * 0.06f + Mathf.Sin(t * 18f) * 0.01f), BigFeetAt(holdIdx));
             ort.anchoredPosition = handsPos; crt.anchoredPosition = handsPos;
@@ -2616,7 +2690,7 @@ public class ProtoBattle : MonoBehaviour
             }
             yield return null;
         }
-        _root.anchoredPosition = rootHome;   // 揺れをいったん基準へ戻す
+        _root.anchoredPosition = Vector2.zero;   // 揺れをいったん原点へ戻す
         StartCoroutine(ShockExpand(handsPos, colW, 1.6f));
         SpawnBurst(handsPos, col, 26, 150f);
         SpawnBurst(handsPos, colW, 14, 90f);
@@ -2636,6 +2710,7 @@ public class ProtoBattle : MonoBehaviour
         ort.anchoredPosition = firePos; crt.anchoredPosition = firePos;
 
         // ④ 特大の一撃：多重画面フラッシュ＋衝撃波＋リングウェーブ大量＋極太弾＋拡散弾
+        if (_sfx != null && _magicCastClip != null) _sfx.PlayOneShot(_magicCastClip, 1.1f);   // 発射のシュッ
         StartCoroutine(FlashSprite(_actorImg, colW));
         StartCoroutine(ScreenFlash(colW, 0.5f));
         StartCoroutine(ScreenFlash(col, 0.35f));
@@ -2653,6 +2728,8 @@ public class ProtoBattle : MonoBehaviour
         StartCoroutine(Projectile(firePos, colW, 60f, 0.42f, true));
         StartCoroutine(Projectile(firePos, col, 60f, 0.42f, true));
         yield return Projectile(firePos, col, 120f, 0.5f, false);
+        // 着弾＝敵の位置で大爆発
+        StartCoroutine(BigExplosion(_slimeRt.anchoredPosition, col));
         // 放ち切ったポーズのまま少し余韻（残り火をゆらす）。待機へは戻さず、技命中まで構えを保持
         for (int e = 0; e < 2; e++) { SpawnBurst(firePos, e % 2 == 0 ? col : colW, 4, 60f); yield return new WaitForSeconds(0.14f); }
         }
@@ -2662,12 +2739,74 @@ public class ProtoBattle : MonoBehaviour
             if (orb != null) Destroy(orb.gameObject);
             if (core != null) Destroy(core.gameObject);
             if (chargeFlash != null) Destroy(chargeFlash.gameObject);
+            if (_root != null) _root.anchoredPosition = Vector2.zero;   // 画面揺れの残りを必ず戻す
         }
     }
 
     // 大技後の戻りアニメ用スケール補正（本体高さで正規化）
     static readonly float[] _retFrameScale = { 1.128f, 1.124f, 1.084f, 1.0f };
     float RetScaleAt(int i) => (i >= 0 && i < _retFrameScale.Length) ? _retFrameScale[i] : 1f;
+
+    // ガードアニメ用のスケール・足位置補正
+    static readonly float[] _guardScale = { 1.000f, 1.084f, 1.124f, 1.128f };
+    static readonly float[] _guardFeet = { 0.9663f, 0.9655f, 0.8914f, 0.8939f };
+    float GuardScaleAt(int i) => (i >= 0 && i < _guardScale.Length) ? _guardScale[i] : 1f;
+    float GuardFeetAt(int i) => (i >= 0 && i < _guardFeet.Length) ? _guardFeet[i] : FeetIdle;
+
+    // ガード時のエフェクト＆効果音（青い盾のリングが弾ける）
+    IEnumerator GuardHitFx(bool fullBlock)
+    {
+        if (_sfx != null && _guardClip != null) _sfx.PlayOneShot(_guardClip, fullBlock ? 1f : 0.7f);
+        Vector2 pos = _actorRt != null ? _actorRt.anchoredPosition + new Vector2(20, 20) : Vector2.zero;
+        Color shield = fullBlock ? new Color(0.5f, 0.8f, 1f) : new Color(0.7f, 0.75f, 0.9f);
+        Color shieldW = Color.Lerp(shield, Color.white, 0.6f);
+        StartCoroutine(ShockExpand(pos, shieldW, 1.2f));
+        SpawnBurst(pos, shield, fullBlock ? 16 : 8, fullBlock ? 120f : 80f);
+        StartCoroutine(FlashSprite(_actorImg, shieldW));
+        // 六角形の盾フラッシュ（回転しながら弾ける）
+        var hex = ProtoUI.CreateGlow("GuardShield", _root, pos, new Vector2(150, 170), shield); hex.raycastTarget = false;
+        var hrt = (RectTransform)hex.transform; hrt.localRotation = Quaternion.Euler(0, 0, 30);
+        float t = 0f, dur = 0.32f;
+        while (t < dur)
+        {
+            t += Time.deltaTime; float p = t / dur;
+            hrt.localScale = Vector3.one * (0.7f + p * 0.6f);
+            var c = shield; c.a = 0.85f * (1f - p); hex.color = c;
+            yield return null;
+        }
+        Destroy(hex.gameObject);
+    }
+
+    // ガードの構えに入る（コマを再生して防御姿勢へ）
+    IEnumerator MotionGuardEnter()
+    {
+        var frames = ProtoPixelArt.GuardFrames();
+        if (frames == null || frames.Count == 0) yield break;
+        _prevActorS = 1f; _prevActorFeet = FeetIdle;
+        for (int i = 0; i < frames.Count; i++)
+        {
+            if (_actorImg == null) break;
+            _actorImg.sprite = frames[i]; _actorImg.color = Color.white;
+            yield return EaseActorScale(GuardScaleAt(i), GuardFeetAt(i), 0.07f);
+        }
+    }
+
+    // ガードを解いて待機へ戻す（逆再生）
+    IEnumerator MotionGuardExit()
+    {
+        var frames = ProtoPixelArt.GuardFrames();
+        if (frames != null && frames.Count > 0 && _actorImg != null)
+        {
+            for (int i = frames.Count - 1; i >= 0; i--)
+            {
+                if (_actorImg == null) break;
+                _actorImg.sprite = frames[i]; _actorImg.color = Color.white;
+                yield return EaseActorScale(GuardScaleAt(i), GuardFeetAt(i), 0.06f);
+            }
+        }
+        if (_actorImg != null) { _actorImg.sprite = ProtoPixelArt.MamaPhoto(); _actorImg.color = Color.white; }
+        if (_actorRt != null) { _actorRt.localScale = Vector3.one; _actorRt.anchoredPosition = _actorHome; }
+    }
 
     // 大技の後、放出ポーズから待機立ち絵へ滑らかに戻すリカバリー動作（専用コマ mama_ret を再生）
     IEnumerator MotionBigRecover()
@@ -2912,20 +3051,56 @@ public class ProtoBattle : MonoBehaviour
         Destroy(ring.gameObject);
     }
 
+    // 着弾時の大爆発（膨張する火球＋多重衝撃波＋飛散＋閃光＋画面揺れ）
+    IEnumerator BigExplosion(Vector2 pos, Color color)
+    {
+        if (_sfx != null && _bigReleaseClip != null) _sfx.PlayOneShot(_bigReleaseClip);   // 着弾のドォン
+        Color colW = Color.Lerp(color, Color.white, 0.75f);
+        Color hot = Color.Lerp(color, new Color(1f, 0.9f, 0.5f), 0.5f);   // 芯の白熱色
+        // 閃光と揺れ
+        StartCoroutine(ScreenFlash(colW, 0.55f));
+        StartCoroutine(ScreenShake(34f, 0.55f));
+        // 多重衝撃波
+        StartCoroutine(ShockExpand(pos, colW, 1.8f));
+        StartCoroutine(ShockExpand(pos, color, 2.6f));
+        StartCoroutine(ShockExpand(pos, color, 3.4f));
+        // 外へ広がるリング
+        for (int r = 0; r < 8; r++)
+            StartCoroutine(RingWave(pos, pos + new Vector2(Random.Range(-260f, 260f), Random.Range(-200f, 200f)), r % 2 == 0 ? color : colW));
+        // 飛散する火片
+        SpawnBurst(pos, color, 60, 300f);
+        SpawnBurst(pos, hot, 40, 210f);
+        SpawnBurst(pos, colW, 26, 140f);
+        // 膨張して消える火球（芯＋外殻）
+        var ball = ProtoUI.CreateGlow("Explosion", _root, pos, new Vector2(120, 120), color); ball.raycastTarget = false;
+        var core = ProtoUI.CreateGlow("ExplosionCore", _root, pos, new Vector2(70, 70), hot); core.raycastTarget = false;
+        var brt = (RectTransform)ball.transform; var crt = (RectTransform)core.transform;
+        float t = 0f, dur = 0.5f;
+        while (t < dur)
+        {
+            t += Time.deltaTime; float p = t / dur;
+            brt.localScale = Vector3.one * (0.4f + p * 3.2f);
+            crt.localScale = Vector3.one * (0.3f + p * 2.4f);
+            var cb = color; cb.a = 1f - p; ball.color = cb;
+            var cc = hot; cc.a = 1f - p * 1.3f; core.color = cc;
+            yield return null;
+        }
+        Destroy(ball.gameObject); Destroy(core.gameObject);
+    }
+
     // 画面全体を揺らす（大技の迫力＆モーションの粗をごまかす）
     IEnumerator ScreenShake(float amp, float duration)
     {
         if (_root == null) yield break;
-        Vector2 home = _root.anchoredPosition;
         float t = 0f;
         while (t < duration)
         {
             t += Time.deltaTime;
             float d = amp * (1f - t / duration);   // 徐々に収まる
-            _root.anchoredPosition = home + new Vector2(Random.Range(-d, d), Random.Range(-d, d));
+            _root.anchoredPosition = new Vector2(Random.Range(-d, d), Random.Range(-d, d));
             yield return null;
         }
-        _root.anchoredPosition = home;
+        _root.anchoredPosition = Vector2.zero;   // 必ず原点へ戻す（端に別背景が見えるのを防ぐ）
     }
 
     IEnumerator ScreenFlash(Color color, float maxAlpha)
