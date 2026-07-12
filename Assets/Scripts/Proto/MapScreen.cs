@@ -163,7 +163,7 @@ public class MapScreen : MonoBehaviour
         _scroll.content = _nodeLayer;
 
         _playerIcon = ProtoUI.CreateRect("PlayerIcon", _nodeLayer);
-        _playerIcon.sizeDelta = new Vector2(118, 150);
+        _playerIcon.sizeDelta = new Vector2(152, 193);
         var pimg = _playerIcon.gameObject.AddComponent<Image>();
         pimg.sprite = ProtoPixelArt.MamaMapPhoto(); pimg.preserveAspect = true; pimg.raycastTarget = false;
 

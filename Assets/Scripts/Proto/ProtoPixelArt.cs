@@ -45,6 +45,87 @@ public static class ProtoPixelArt
         return _mamaPhoto != null ? _mamaPhoto : Mama(); // 無ければ従来のドット絵にフォールバック
     }
 
+    // 攻撃ポーズの実画像（Assets/Resources/mama_attack.png）。無ければ通常立ち絵にフォールバック
+    static Sprite _mamaAttack;
+    static bool _mamaAttackLoaded;
+    public static Sprite AttackMama()
+    {
+        if (!_mamaAttackLoaded)
+        {
+            _mamaAttack = Resources.Load<Sprite>("mama_attack");
+            _mamaAttackLoaded = true;
+        }
+        return _mamaAttack != null ? _mamaAttack : MamaPhoto();
+    }
+
+    // 回復ポーズの実画像（Assets/Resources/mama_heal.png）。無ければ通常立ち絵にフォールバック
+    static Sprite _mamaHeal;
+    static bool _mamaHealLoaded;
+    public static Sprite HealMama()
+    {
+        if (!_mamaHealLoaded)
+        {
+            _mamaHeal = Resources.Load<Sprite>("mama_heal");
+            _mamaHealLoaded = true;
+        }
+        return _mamaHeal != null ? _mamaHeal : MamaPhoto();
+    }
+
+    // 攻撃アニメのコマ（mama_attack.png, mama_attack2.png, mama_attack3.png ... を順に読み込む）
+    // 1枚だけなら静止差し替え、複数枚あればパラパラ動く
+    static List<Sprite> _atkFrames;
+    public static List<Sprite> AttackFrames()
+    {
+        if (_atkFrames == null)
+        {
+            _atkFrames = new List<Sprite>();
+            var first = Resources.Load<Sprite>("mama_attack");
+            if (first != null) _atkFrames.Add(first);
+            for (int i = 2; i <= 12; i++)
+            {
+                var s = Resources.Load<Sprite>("mama_attack" + i);
+                if (s != null) _atkFrames.Add(s);
+            }
+        }
+        return _atkFrames;
+    }
+
+    // 大技後の戻りアニメコマ（mama_ret.png, mama_ret2.png ... を順に読み込む）
+    static List<Sprite> _retFrames;
+    public static List<Sprite> RecoverFrames()
+    {
+        if (_retFrames == null)
+        {
+            _retFrames = new List<Sprite>();
+            var first = Resources.Load<Sprite>("mama_ret");
+            if (first != null) _retFrames.Add(first);
+            for (int i = 2; i <= 12; i++)
+            {
+                var s = Resources.Load<Sprite>("mama_ret" + i);
+                if (s != null) _retFrames.Add(s);
+            }
+        }
+        return _retFrames;
+    }
+
+    // 高威力技のアニメコマ（mama_big.png, mama_big2.png ... を順に読み込む）
+    static List<Sprite> _bigFrames;
+    public static List<Sprite> BigAttackFrames()
+    {
+        if (_bigFrames == null)
+        {
+            _bigFrames = new List<Sprite>();
+            var first = Resources.Load<Sprite>("mama_big");
+            if (first != null) _bigFrames.Add(first);
+            for (int i = 2; i <= 12; i++)
+            {
+                var s = Resources.Load<Sprite>("mama_big" + i);
+                if (s != null) _bigFrames.Add(s);
+            }
+        }
+        return _bigFrames;
+    }
+
     // バトル背景画像（Assets/Resources/battle_bg.png）。無ければコード生成の自然背景にフォールバック
     static Sprite _battleBg;
     static bool _battleBgLoaded;

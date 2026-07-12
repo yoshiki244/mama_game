@@ -138,9 +138,13 @@ public class ProtoBattle : MonoBehaviour
 
         // キャラ立ち絵・顔・位置サイズを通常に戻す（前回の倒れ絵/被弾絵をリセット）
         _dead = false;
+        _bigCastActive = false;
+        _castActive = false;
+        ClearLingeringFx();   // 前回の大技で残った魔力エフェクトを掃除
         if (_actorImg != null) { _actorImg.sprite = ProtoPixelArt.MamaPhoto(); _actorImg.color = Color.white; }
         if (_faceImg != null) _faceImg.sprite = ProtoPixelArt.FrontMama();
         if (_actorRt != null) { _actorRt.anchoredPosition = new Vector2(-330, GroundY + 205f); _actorRt.sizeDelta = new Vector2(295, 375); _actorRt.localRotation = Quaternion.identity; _actorRt.localScale = Vector3.one; }
+        _actorHome = new Vector2(-330, GroundY + 205f);   // 立ち位置の基準（足元固定の拡大に使用）
         if (_playerInner != null) _playerInner.sizeDelta = new Vector2(295, 375);
 
         // 残っているGAME OVERオーバーレイがあれば消す
@@ -563,7 +567,8 @@ public class ProtoBattle : MonoBehaviour
             float rad = a * Mathf.Deg2Rad;
             Vector2 pos = new Vector2(R * Mathf.Sin(rad), -R + R * Mathf.Cos(rad)); // 一点に集まる扇状（弧と傾きを揃える）
             var rot = Quaternion.Euler(0, 0, -a);
-            bool affordable = !_inputLocked && _mana >= _hand[i].ManaCost;
+            bool canAfford = _mana >= _hand[i].ManaCost;
+            bool affordable = !_inputLocked && canAfford;
             var btn = CreateCardUI(_hand[i], pos, null, affordable);
             var crt = (RectTransform)btn.transform;
             crt.localRotation = rot;
@@ -575,7 +580,7 @@ public class ProtoBattle : MonoBehaviour
             hover.Setup(crt, pos, rot, frame, frame.color,
                 onEnter: () => { if (_inputLocked) return; RenderBoard(card, idx); }, // カード詳細は表示しない
                 onExit: () => { RenderBoard(null, -1); },
-                onClick: () => { if (affordable) TryPlayCard(idx); });
+                onClick: () => { if (_inputLocked) return; if (!canAfford) { _message.text = "マナが足りないので選択できません。"; return; } TryPlayCard(idx); });
 
             made.Add(crt);
             if (dealAnimation) StartCoroutine(DealCard(crt, pos, i * 0.06f));
@@ -786,6 +791,13 @@ public class ProtoBattle : MonoBehaviour
         var ft = ProtoUI.CreateText("FT", footer.transform, footText, 13, Vector2.zero, new Vector2(160, 60), ProtoUI.Gold);
         ft.enableAutoSizing = true; ft.fontSizeMin = 9; ft.fontSizeMax = 14;
 
+        // マナ不足のカードは暗いオーバーレイを重ねて「使えない」を明確化
+        if (!affordable)
+        {
+            var dim = ProtoUI.CreatePanel("Dim", frame.transform, Vector2.zero, new Vector2(190, 262), new Color(0f, 0f, 0f, 0.55f));
+            dim.raycastTarget = false;
+        }
+
         return btn;
     }
 
@@ -863,6 +875,10 @@ public class ProtoBattle : MonoBehaviour
     {
         bool blink = card.HasEffect(CardEffectType.BlinkOnUse) || _primeBlink;
         _primeBlink = false;
+
+        // 攻撃ポーズのアニメ再生開始（コマが複数あればパラパラ動く。無ければ通常立ち絵のまま）
+        if (_atkAnimCo != null) StopCoroutine(_atkAnimCo);
+        _atkAnimCo = StartCoroutine(AttackFrameLoop());
 
         // ミニゲーム（点滅／ゲージ／数字順タップ／スロット）で倍率決定
         float mult = 1f;
@@ -985,17 +1001,85 @@ public class ProtoBattle : MonoBehaviour
 
         // アタックに付随する他効果（あれば）
         ApplyCardEffects(card, attackContext: true);
+        // 攻撃アニメを止めて通常立ち絵に戻す（大技で拡大していたスケールもここで解除）
+        if (_atkAnimCo != null) { StopCoroutine(_atkAnimCo); _atkAnimCo = null; }
+        if (_bigCastActive) yield return MotionBigRecover();   // 大技は腕を下ろす動きで滑らかに戻す
+        else if (_castActive) yield return MotionCastRecover(); // 通常攻撃は逆再生で戻す
+        else if (_actorImg != null) _actorImg.sprite = ProtoPixelArt.MamaPhoto();
+        if (_actorRt != null) { _actorRt.localScale = Vector3.one; _actorRt.anchoredPosition = _actorHome; }
         yield return new WaitForSeconds(0.6f);
+    }
+
+    // 攻撃ポーズのコマを順番に再生（最後のコマで止める）。1枚だけなら実質差し替え
+    Coroutine _atkAnimCo;
+    IEnumerator AttackFrameLoop()
+    {
+        // 1コマ目（構え）を表示して保持。以降のコマ切替はモーション側（MotionCast）が制御する
+        var frames = ProtoPixelArt.AttackFrames();
+        if (frames == null || frames.Count == 0 || _actorImg == null) yield break;
+        _actorImg.sprite = frames[0];
+        yield break;
     }
 
     IEnumerator ResolveSkill(CardDef card)
     {
         _message.text = $"{card.displayName}！";
-        yield return Pulse(_actorRt, 1.1f, 0.2f);
-        StartCoroutine(FlashSprite(_actorImg, Color.Lerp(card.CategoryColor, Color.white, 0.4f)));
-        SpawnBurst(_actorRt.anchoredPosition, card.CategoryColor, 10, 90f);
+        bool isHeal = card.HasEffect(CardEffectType.Heal) || card.HasEffect(CardEffectType.HealPercent) || card.HasEffect(CardEffectType.Regen);
+        if (isHeal) { yield return MotionHeal(card); }
+        else
+        {
+            yield return Pulse(_actorRt, 1.1f, 0.2f);
+            StartCoroutine(FlashSprite(_actorImg, Color.Lerp(card.CategoryColor, Color.white, 0.4f)));
+            SpawnBurst(_actorRt.anchoredPosition, card.CategoryColor, 10, 90f);
+        }
         ApplyCardEffects(card, attackContext: false);
         yield return new WaitForSeconds(0.5f);
+    }
+
+    // 回復詠唱：両手を上げた回復ポーズに切り替え、癒しの光と上昇する粒子を出す
+    IEnumerator MotionHeal(CardDef card)
+    {
+        Color heal = new Color(0.5f, 1f, 0.7f);      // 癒しの緑
+        Color healW = new Color(0.85f, 1f, 0.9f);
+        if (_actorImg != null) _actorImg.sprite = ProtoPixelArt.HealMama();
+
+        // 足元から立ち上る癒しのオーラ
+        Vector2 body = _actorRt.anchoredPosition;
+        var aura = ProtoUI.CreateGlow("HealAura", _root, body, new Vector2(200, 260), heal); aura.raycastTarget = false;
+        var art = (RectTransform)aura.transform;
+        StartCoroutine(ScreenFlash(heal, 0.12f));
+
+        float t = 0f, dur = 0.9f;
+        while (t < dur)
+        {
+            t += Time.deltaTime; float p = t / dur;
+            float pulse = 0.9f + Mathf.Sin(t * 12f) * 0.1f;
+            art.localScale = new Vector3(pulse, 1f + p * 0.15f, 1f);
+            var ca = heal; ca.a = 0.5f * (1f - p * 0.4f); aura.color = ca;
+            // 上昇する光の粒
+            for (int k = 0; k < 2; k++)
+            {
+                Vector2 from = body + new Vector2(Random.Range(-90f, 90f), Random.Range(-120f, -40f));
+                Vector2 to = from + new Vector2(Random.Range(-10f, 10f), Random.Range(120f, 200f));
+                StartCoroutine(RisingSpark(from, to, Random.value < 0.5f ? heal : healW));
+            }
+            yield return null;
+        }
+        StartCoroutine(FlashSprite(_actorImg, healW));
+        StartCoroutine(ShockExpand(body + new Vector2(0, 40f), heal, 1.2f));
+        SpawnBurst(body + new Vector2(0, 40f), heal, 14, 90f);
+        Destroy(aura.gameObject);
+        // 通常立ち絵へ戻す
+        if (_actorImg != null) _actorImg.sprite = ProtoPixelArt.MamaPhoto();
+    }
+
+    // 上へ舞い上がる癒しの粒
+    IEnumerator RisingSpark(Vector2 from, Vector2 to, Color color)
+    {
+        var s = ProtoUI.CreatePanel("Spark", _root, from, new Vector2(9, 9), color); s.raycastTarget = false;
+        var rt = (RectTransform)s.transform; Color c = color; float t = 0f, dur = 0.6f;
+        while (t < dur) { t += Time.deltaTime; float p = t / dur; rt.anchoredPosition = Vector2.Lerp(from, to, Mathf.SmoothStep(0, 1, p)); rt.localScale = Vector3.one * (1f - p * 0.5f); c.a = 1f - p; s.color = c; yield return null; }
+        Destroy(s.gameObject);
     }
 
     void ApplyCardEffects(CardDef card, bool attackContext)
@@ -2293,15 +2377,346 @@ public class ProtoBattle : MonoBehaviour
 
     IEnumerator AttackMotionFor(CardDef card)
     {
+        // 高威力技はカード種別より優先して専用アニメ
+        if (card.power >= 30) { yield return MotionBigCast(card); yield break; }
         switch (card.id)
         {
             case "fireball": case "gouka": case "guren": yield return MotionFlare(card); break;
-            case "aquaedge": case "hyoga": case "soukyu": yield return MotionSlash(card); break;
             case "thunder": case "raijin": case "kannari": yield return MotionCyclone(card); break;
             case "sunshine": case "amaterasu": case "shingan": yield return MotionVoice(card); break;
-            case "shuen": case "kokuu": yield return MotionAsura(card); break;
-            default: yield return Lunge(_actorRt, new Vector2(150, 0)); break;
+            // 近接で殴りに行く系はやめ、その場で手から魔法を放つ演出に統一
+            default: yield return MotionCast(card); break;
         }
+    }
+
+    // その場で詠唱：構えでタメる→コマ送りで振り→手から魔法を放つ（前進しない・全コマ再生）
+    bool _castActive;   // 通常攻撃の放出ポーズを保持中（命中後に逆再生で戻す）
+
+    IEnumerator MotionCast(CardDef card)
+    {
+        _castActive = true;
+        var frames = ProtoPixelArt.AttackFrames();
+        // 魔力を練る位置（胸元で手を合わせる先頭コマの両手）と、放つ位置（腕を伸ばした指先）
+        Vector2 castPos = _actorRt.anchoredPosition + new Vector2(18, 70);
+        Vector2 firePos = _actorRt.anchoredPosition + new Vector2(110, 143);
+        Color col = card.CategoryColor;
+        Color colW = Color.Lerp(col, Color.white, 0.7f);
+
+        // ① 構え（先頭コマ）。両手の間で魔力の玉を生成し、脈動しながら膨らむ
+        if (frames != null && frames.Count > 0 && _actorImg != null) _actorImg.sprite = frames[0];
+        var orb = ProtoUI.CreateGlow("CastOrb", _root, castPos, new Vector2(60, 60), col);
+        orb.raycastTarget = false;
+        var ort = (RectTransform)orb.transform;
+        var core = ProtoUI.CreateGlow("CastCore", _root, castPos, new Vector2(26, 26), colW);
+        core.raycastTarget = false;
+        var crt = (RectTransform)core.transform;
+        float charge = 0.85f, t = 0f;
+        while (t < charge)
+        {
+            t += Time.deltaTime; float p = t / charge;
+            float pulse = 1f + Mathf.Sin(t * 30f) * 0.12f;
+            ort.localScale = Vector3.one * ((0.15f + p * 1.6f) * pulse);
+            crt.localScale = Vector3.one * ((0.1f + p * 1.3f) * pulse);
+            // 周囲の魔力が手元へ吸い込まれるように集束
+            for (int k = 0; k < 2; k++)
+            {
+                Vector2 around = castPos + new Vector2(Random.Range(-100f, 100f), Random.Range(-85f, 85f));
+                StartCoroutine(ConvergeSpark(around, castPos, Random.value < 0.5f ? col : colW));
+            }
+            // 手元で回る火花のリング（塗り四角ではなく粒で表現）
+            float ang = t * 8f;
+            for (int k = 0; k < 3; k++)
+            {
+                float a = ang + k * (Mathf.PI * 2f / 3f);
+                float rad = 34f * (0.6f + p * 0.7f);
+                SpawnBurst(castPos + new Vector2(Mathf.Cos(a) * rad, Mathf.Sin(a) * rad), colW, 1, 6f);
+            }
+            yield return null;
+        }
+        // 溜め切りの一瞬フラッシュ
+        StartCoroutine(ShockExpand(castPos, colW, 0.9f));
+        SpawnBurst(castPos, col, 10, 70f);
+
+        // ② 中割りのコマを再生（腕を伸ばす動き）。魔力の玉を手元から指先へ運び、尾を引く
+        Vector2 orbFrom = castPos;
+        if (frames != null && frames.Count > 1)
+        {
+            int steps = frames.Count - 1;
+            for (int i = 1; i < frames.Count; i++)
+            {
+                if (_actorImg == null) break;
+                _actorImg.sprite = frames[i];
+                float fp = (float)i / steps;
+                Vector2 op = Vector2.Lerp(orbFrom, firePos, Mathf.SmoothStep(0, 1, fp));
+                ort.anchoredPosition = op; crt.anchoredPosition = op;
+                SpawnBurst(op, col, 2, 26f);
+                StartCoroutine(ConvergeSpark(op + new Vector2(Random.Range(-20f,20f), Random.Range(-20f,20f)), op, colW));
+                yield return new WaitForSeconds(0.07f);
+            }
+        }
+        ort.anchoredPosition = firePos; crt.anchoredPosition = firePos;
+
+        // ③ 指先で解き放つ：多重衝撃波＋放射バースト＋画面フラッシュ → 指先から敵へ極太の魔法を放つ
+        StartCoroutine(FlashSprite(_actorImg, colW));
+        StartCoroutine(ScreenFlash(col, 0.18f));
+        StartCoroutine(ShockExpand(firePos, colW, 1.5f));
+        StartCoroutine(ShockExpand(firePos, col, 2.1f));
+        SpawnBurst(firePos, col, 22, 130f);
+        SpawnBurst(firePos, colW, 12, 80f);
+        for (int r = 0; r < 3; r++) StartCoroutine(RingWave(firePos, _slimeRt.anchoredPosition, col));
+        Destroy(orb.gameObject); Destroy(core.gameObject);
+        yield return Projectile(firePos, col, 64f, 0.42f, false);
+        yield return new WaitForSeconds(0.18f);
+    }
+
+    // 高威力技：両手を挙げ、頭上の手のところで巨大な魔力を練り上げてから放つ
+    // 各大技コマを待機立ち絵と同じ見かけの身長にそろえる補正（身長比から算出）
+    static readonly float[] _bigFrameScale = { 1.001f, 1.084f, 1.160f, 1.080f, 0.950f, 1.135f, 1.124f, 1.128f };
+    float BigScaleAt(int i) => (i >= 0 && i < _bigFrameScale.Length) ? _bigFrameScale[i] : 1f;
+
+    // 前回の技で破棄し損ねた魔力エフェクトを名前で掃除する
+    static readonly string[] _fxNames = { "BigOrb", "BigCore", "BigChargeFlash", "CastOrb", "CastCore", "CastGlow", "Projectile", "ProjCore" };
+    void ClearLingeringFx()
+    {
+        if (_root == null) return;
+        for (int i = _root.childCount - 1; i >= 0; i--)
+        {
+            var ch = _root.GetChild(i);
+            foreach (var nm in _fxNames)
+                if (ch.name == nm) { Destroy(ch.gameObject); break; }
+        }
+    }
+
+    bool _bigCastActive;   // 大技の放出ポーズを保持中（命中後にリカバリー動作で戻す）
+    Vector2 _actorHome;    // 立ち位置の基準（拡大時に足元を固定するため）
+
+    // 各コマの足位置（キャンバス下端からの割合。ポーズで異なるため個別に保持）
+    const float FeetIdle = 0.9663f;
+    static readonly float[] _bigFeet = { 0.9663f, 0.9655f, 0.9137f, 0.9589f, 0.9646f, 0.9071f, 0.8914f, 0.8939f };
+    static readonly float[] _retFeet = { 0.8939f, 0.8914f, 0.9655f, 0.9663f };
+    float BigFeetAt(int i) => (i >= 0 && i < _bigFeet.Length) ? _bigFeet[i] : FeetIdle;
+    float RetFeetAt(int i) => (i >= 0 && i < _retFeet.Length) ? _retFeet[i] : FeetIdle;
+
+    // 拡大しても、そのコマの実際の足位置が待機と同じ高さに来るよう位置補正する
+    void SetActorScaleFoot(float s, float feetFrac)
+    {
+        if (_actorRt == null) return;
+        float rth = _actorRt.sizeDelta.y;
+        _actorRt.localScale = Vector3.one * s;
+        float y = _actorHome.y + (0.5f - FeetIdle) * rth - (0.5f - feetFrac) * rth * s;
+        _actorRt.anchoredPosition = new Vector2(_actorHome.x, y);
+    }
+
+    // 直前の値から目標のスケール・足位置へ滑らかに補間（コマ間のサイズ段差＝カクつきを防ぐ）
+    float _prevActorS = 1f, _prevActorFeet = FeetIdle;
+    IEnumerator EaseActorScale(float toS, float toFeet, float dur)
+    {
+        float fromS = _prevActorS, fromF = _prevActorFeet, t = 0f;
+        while (t < dur)
+        {
+            t += Time.deltaTime; float k = Mathf.SmoothStep(0f, 1f, t / dur);
+            SetActorScaleFoot(Mathf.Lerp(fromS, toS, k), Mathf.Lerp(fromF, toFeet, k));
+            yield return null;
+        }
+        SetActorScaleFoot(toS, toFeet);
+        _prevActorS = toS; _prevActorFeet = toFeet;
+    }
+
+    IEnumerator MotionBigCast(CardDef card)
+    {
+        var frames = ProtoPixelArt.BigAttackFrames();
+        if (frames == null || frames.Count == 0) { yield return MotionCast(card); yield break; }
+        _bigCastActive = true;
+        // 頭上に挙げた両手の位置（拡大＋足元補正で手が上がる分も見込んで、手の上でためて見せる）
+        Vector2 handsPos = _actorRt.anchoredPosition + new Vector2(2, 198);
+        Color col = card.CategoryColor;
+        Color colW = Color.Lerp(col, Color.white, 0.7f);
+
+        Vector2 chestPos = _actorRt.anchoredPosition + new Vector2(2, 55);
+        Vector2 firePos = _actorRt.anchoredPosition + new Vector2(130, 80);
+        // 挙げきる（両手が頭上）コマの位置
+        int holdIdx = Mathf.Min(4, frames.Count - 1);
+
+        // 各コマを待機立ち絵と同じ見かけの大きさにそろえる。タメ中はさらに拡大（足元は固定）
+        const float RAISE_BUMP = 1.06f;    // 両手を挙げるまでは少し大きく
+        const float CHARGE_BUMP = 1.12f;   // タメ中
+        const float RELEASE_BUMP = 0.97f;  // 放出時は少し小さく
+
+        // 魔力球（頭上で育て、後半に前へ運ぶ）
+        Image orb = ProtoUI.CreateGlow("BigOrb", _root, chestPos, new Vector2(70, 70), col); orb.raycastTarget = false;
+        Image core = ProtoUI.CreateGlow("BigCore", _root, chestPos, new Vector2(30, 30), colW); core.raycastTarget = false;
+        var ort = (RectTransform)orb.transform; var crt = (RectTransform)core.transform;
+        RectTransform chargeFlash = null;
+        _prevActorS = 1f; _prevActorFeet = FeetIdle;   // 待機サイズから開始
+        try
+        {
+        // ① 両手を挙げていくコマ送り（胸元→頭上へ魔力を集める）。サイズは滑らかに補間
+        for (int i = 0; i <= holdIdx; i++)
+        {
+            if (_actorImg == null) break;
+            _actorImg.sprite = frames[i];
+            float p = (float)i / holdIdx;
+            float bump = Mathf.Lerp(1f, RAISE_BUMP, p);
+            Vector2 op = Vector2.Lerp(chestPos, handsPos, p);
+            ort.anchoredPosition = op; crt.anchoredPosition = op;
+            ort.localScale = Vector3.one * (0.6f + p * 1.5f);
+            crt.localScale = Vector3.one * (0.4f + p * 1.3f);
+            for (int k = 0; k < 4; k++)
+            {
+                Vector2 around = op + new Vector2(Random.Range(-140f, 140f), Random.Range(-110f, 130f));
+                StartCoroutine(ConvergeSpark(around, op, Random.value < 0.5f ? col : colW));
+            }
+            SpawnBurst(op, col, 4, 38f);
+            yield return EaseActorScale(BigScaleAt(i) * bump, BigFeetAt(i), 0.12f);
+        }
+
+        // ② 頭上で長めのタメ。魔力球が渦巻いて膨張、周囲から激しく吸い込み、画面が色付く
+        if (_actorImg != null) _actorImg.sprite = frames[holdIdx];
+        float holdScaleS = BigScaleAt(holdIdx) * CHARGE_BUMP;
+        yield return EaseActorScale(holdScaleS, BigFeetAt(holdIdx), 0.12f);   // タメへ滑らかに拡大
+        chargeFlash = ProtoUI.CreateFullScreen("BigChargeFlash", _root);
+        var cfImg = chargeFlash.gameObject.AddComponent<Image>(); cfImg.raycastTarget = false;
+        Vector2 rootHome = _root.anchoredPosition;   // タメ中の画面揺れの基準
+        float charge = 1.9f, t = 0f, fxAccum = 0f;
+        while (t < charge)
+        {
+            t += Time.deltaTime; float p = t / charge;
+            float pulse = 1f + Mathf.Sin(t * 24f) * 0.16f;
+            // タメが進むほど画面全体を強く揺らす
+            float sa = 2f + p * p * 16f;
+            _root.anchoredPosition = rootHome + new Vector2(Random.Range(-sa, sa), Random.Range(-sa, sa));
+            // 溜まるほど本体もわずかに膨らむ（足元は固定）
+            SetActorScaleFoot(holdScaleS * (1f + p * 0.06f + Mathf.Sin(t * 18f) * 0.01f), BigFeetAt(holdIdx));
+            ort.anchoredPosition = handsPos; crt.anchoredPosition = handsPos;
+            ort.localScale = Vector3.one * ((1.8f + p * 3.0f) * pulse);
+            crt.localScale = Vector3.one * ((1.3f + p * 2.4f) * pulse);
+            cfImg.color = new Color(col.r, col.g, col.b, 0.22f * p);   // 画面がじわ光る
+            // エフェクトは一定間隔でのみ生成（毎フレーム大量生成による処理落ち＝カクつきを防ぐ）
+            fxAccum += Time.deltaTime;
+            if (fxAccum >= 0.05f)
+            {
+                fxAccum = 0f;
+                for (int k = 0; k < 3; k++)
+                {
+                    Vector2 around = handsPos + new Vector2(Random.Range(-220f, 220f), Random.Range(-140f, 230f));
+                    StartCoroutine(ConvergeSpark(around, handsPos, Random.value < 0.5f ? col : colW));
+                }
+                float ang = t * 9f;
+                for (int k = 0; k < 4; k++)
+                {
+                    float a = ang + k * (Mathf.PI * 2f / 4f);
+                    float rad = 70f * (0.6f + p * 1.0f);
+                    SpawnBurst(handsPos + new Vector2(Mathf.Cos(a) * rad, Mathf.Sin(a) * rad), colW, 1, 8f);
+                    float a2 = -ang * 1.3f + k * (Mathf.PI * 2f / 4f);
+                    float rad2 = 40f * (0.6f + p * 0.8f);
+                    SpawnBurst(handsPos + new Vector2(Mathf.Cos(a2) * rad2, Mathf.Sin(a2) * rad2), col, 1, 6f);
+                }
+                if (Random.value < 0.35f) StartCoroutine(ShockExpand(handsPos, colW, 0.8f + p * 1.2f));
+                if (Random.value < 0.3f) StartCoroutine(RingWave(handsPos + new Vector2(Random.Range(-40f,40f), Random.Range(-40f,40f)), handsPos, colW));
+            }
+            yield return null;
+        }
+        _root.anchoredPosition = rootHome;   // 揺れをいったん基準へ戻す
+        StartCoroutine(ShockExpand(handsPos, colW, 1.6f));
+        SpawnBurst(handsPos, col, 26, 150f);
+        SpawnBurst(handsPos, colW, 14, 90f);
+        _prevActorS = holdScaleS;   // タメ終わりのサイズから放出へ補間
+
+        // ③ 残りのコマで両手を前へ突き出し、魔力球を前方へ運ぶ。サイズは滑らかに補間
+        for (int i = holdIdx + 1; i < frames.Count; i++)
+        {
+            if (_actorImg == null) break;
+            _actorImg.sprite = frames[i];
+            float p = (float)(i - holdIdx) / (frames.Count - holdIdx);
+            Vector2 op = Vector2.Lerp(handsPos, firePos, p);
+            ort.anchoredPosition = op; crt.anchoredPosition = op;
+            SpawnBurst(op, col, 5, 44f);
+            yield return EaseActorScale(BigScaleAt(i) * RELEASE_BUMP, BigFeetAt(i), 0.06f);
+        }
+        ort.anchoredPosition = firePos; crt.anchoredPosition = firePos;
+
+        // ④ 特大の一撃：多重画面フラッシュ＋衝撃波＋リングウェーブ大量＋極太弾＋拡散弾
+        StartCoroutine(FlashSprite(_actorImg, colW));
+        StartCoroutine(ScreenFlash(colW, 0.5f));
+        StartCoroutine(ScreenFlash(col, 0.35f));
+        StartCoroutine(ScreenShake(30f, 0.6f));   // 画面全体を揺らして迫力＋モーションの粗を隠す
+        StartCoroutine(Shake(_actorRt, 16f, 0.4f));
+        StartCoroutine(ShockExpand(firePos, colW, 1.4f));
+        StartCoroutine(ShockExpand(firePos, col, 1.9f));
+        StartCoroutine(ShockExpand(firePos, col, 2.4f));
+        SpawnBurst(firePos, col, 64, 260f);
+        SpawnBurst(firePos, colW, 34, 150f);
+        for (int r = 0; r < 10; r++) StartCoroutine(RingWave(firePos, _slimeRt.anchoredPosition, r % 2 == 0 ? col : colW));
+        if (chargeFlash != null) { Destroy(chargeFlash.gameObject); chargeFlash = null; }
+        Destroy(orb.gameObject); Destroy(core.gameObject); orb = null; core = null;
+        // 極太の本命弾＋前後に散る追撃弾
+        StartCoroutine(Projectile(firePos, colW, 60f, 0.42f, true));
+        StartCoroutine(Projectile(firePos, col, 60f, 0.42f, true));
+        yield return Projectile(firePos, col, 120f, 0.5f, false);
+        // 放ち切ったポーズのまま少し余韻（残り火をゆらす）。待機へは戻さず、技命中まで構えを保持
+        for (int e = 0; e < 2; e++) { SpawnBurst(firePos, e % 2 == 0 ? col : colW, 4, 60f); yield return new WaitForSeconds(0.14f); }
+        }
+        finally
+        {
+            // 途中で戦闘が終わってコルーチンが停止されても、魔力エフェクトを必ず片付ける
+            if (orb != null) Destroy(orb.gameObject);
+            if (core != null) Destroy(core.gameObject);
+            if (chargeFlash != null) Destroy(chargeFlash.gameObject);
+        }
+    }
+
+    // 大技後の戻りアニメ用スケール補正（本体高さで正規化）
+    static readonly float[] _retFrameScale = { 1.128f, 1.124f, 1.084f, 1.0f };
+    float RetScaleAt(int i) => (i >= 0 && i < _retFrameScale.Length) ? _retFrameScale[i] : 1f;
+
+    // 大技の後、放出ポーズから待機立ち絵へ滑らかに戻すリカバリー動作（専用コマ mama_ret を再生）
+    IEnumerator MotionBigRecover()
+    {
+        if (_actorImg != null) _actorImg.color = Color.white;   // 発光ティントを解除して色を待機と揃える
+        var frames = ProtoPixelArt.RecoverFrames();
+        if (frames != null && frames.Count > 0 && _actorImg != null)
+        {
+            for (int i = 0; i < frames.Count; i++)
+            {
+                if (_actorImg == null) break;
+                _actorImg.sprite = frames[i];
+                _actorImg.color = Color.white;
+                yield return EaseActorScale(RetScaleAt(i), RetFeetAt(i), 0.07f);
+            }
+        }
+        // 仕上げ：待機立ち絵へ、拡大を等倍・立ち位置を基準に戻す
+        if (_actorImg != null) { _actorImg.sprite = ProtoPixelArt.MamaPhoto(); _actorImg.color = Color.white; }
+        if (_actorRt != null) { _actorRt.localScale = Vector3.one; _actorRt.anchoredPosition = _actorHome; }
+        _bigCastActive = false;
+    }
+
+    // 通常攻撃の後、放出ポーズから待機立ち絵へ逆再生で戻す
+    IEnumerator MotionCastRecover()
+    {
+        if (_actorImg != null) _actorImg.color = Color.white;
+        var frames = ProtoPixelArt.AttackFrames();
+        if (frames != null && frames.Count > 0 && _actorImg != null)
+        {
+            // 指先を伸ばした放出コマ→胸元の構えコマ へ逆順に再生
+            for (int i = frames.Count - 1; i >= 0; i--)
+            {
+                if (_actorImg == null) break;
+                _actorImg.sprite = frames[i];
+                _actorImg.color = Color.white;
+                yield return new WaitForSeconds(0.05f);
+            }
+        }
+        if (_actorImg != null) { _actorImg.sprite = ProtoPixelArt.MamaPhoto(); _actorImg.color = Color.white; }
+        _castActive = false;
+    }
+
+    // 一点へ吸い込まれる魔力の粒
+    IEnumerator ConvergeSpark(Vector2 from, Vector2 to, Color color)
+    {
+        var s = ProtoUI.CreatePanel("Spark", _root, from, new Vector2(10, 10), color); s.raycastTarget = false;
+        var rt = (RectTransform)s.transform; Color c = color; float t = 0f, dur = 0.28f;
+        while (t < dur) { t += Time.deltaTime; float p = t / dur; rt.anchoredPosition = Vector2.Lerp(from, to, p * p); rt.localScale = Vector3.one * (1f - p * 0.6f); c.a = 1f - p; s.color = c; yield return null; }
+        Destroy(s.gameObject);
     }
 
     IEnumerator MotionFlare(CardDef card) { StartCoroutine(FlashSprite(_actorImg, new Color(1f, 0.85f, 0.55f))); yield return Pulse(_actorRt, 1.1f, 0.22f); yield return Projectile(card.CategoryColor, 38f, 0.32f, false); }
@@ -2369,11 +2784,29 @@ public class ProtoBattle : MonoBehaviour
 
     IEnumerator Projectile(Color color, float size, float duration, bool wobble)
     {
-        Vector2 from = _actorRt.anchoredPosition + new Vector2(130, 50); Vector2 to = _slimeRt.anchoredPosition;
-        var proj = ProtoUI.CreatePanel("Projectile", _root, from, new Vector2(size, size), color); proj.raycastTarget = false;
-        var rt = (RectTransform)proj.transform; float t = 0f;
-        while (t < duration) { t += Time.deltaTime; float p = t / duration; Vector2 pos = Vector2.Lerp(from, to, p); if (wobble) pos.y += Mathf.Sin(p * 18f) * 30f; rt.anchoredPosition = pos; rt.Rotate(0, 0, 720f * Time.deltaTime); yield return null; }
-        Destroy(proj.gameObject);
+        yield return Projectile(_actorRt.anchoredPosition + new Vector2(130, 50), color, size, duration, wobble);
+    }
+
+    IEnumerator Projectile(Vector2 from, Color color, float size, float duration, bool wobble)
+    {
+        Vector2 to = _slimeRt.anchoredPosition;
+        // 発光する外殻＋白い芯の二重弾
+        var proj = ProtoUI.CreateGlow("Projectile", _root, from, new Vector2(size, size), color); proj.raycastTarget = false;
+        var coreImg = ProtoUI.CreateGlow("ProjCore", _root, from, new Vector2(size * 0.5f, size * 0.5f), Color.Lerp(color, Color.white, 0.75f)); coreImg.raycastTarget = false;
+        var rt = (RectTransform)proj.transform; var crt = (RectTransform)coreImg.transform; float t = 0f;
+        while (t < duration)
+        {
+            t += Time.deltaTime; float p = t / duration; Vector2 pos = Vector2.Lerp(from, to, p);
+            if (wobble) pos.y += Mathf.Sin(p * 18f) * 30f;
+            rt.anchoredPosition = pos; crt.anchoredPosition = pos;
+            rt.Rotate(0, 0, 720f * Time.deltaTime);
+            float pulse = 1f + Mathf.Sin(t * 40f) * 0.15f; rt.localScale = Vector3.one * pulse;
+            // 尾を引く火花
+            SpawnBurst(pos, color, 2, 30f);
+            if (Random.value < 0.6f) StartCoroutine(ConvergeSpark(pos + new Vector2(Random.Range(-24f, 24f), Random.Range(-24f, 24f)), pos, color));
+            yield return null;
+        }
+        Destroy(proj.gameObject); Destroy(coreImg.gameObject);
     }
 
     void SpawnSlashLine(Vector2 pos, Color color)
@@ -2477,6 +2910,22 @@ public class ProtoBattle : MonoBehaviour
         ring.transform.localRotation = Quaternion.Euler(0, 0, 45); var rt = (RectTransform)ring.transform; Color c = color; float t = 0f; const float dur = 0.32f;
         while (t < dur) { t += Time.deltaTime; float p = t / dur; rt.localScale = Vector3.one * Mathf.Lerp(0.4f, 3.2f * scale, Mathf.Sqrt(p)); c.a = 0.7f * (1f - p); ring.color = c; yield return null; }
         Destroy(ring.gameObject);
+    }
+
+    // 画面全体を揺らす（大技の迫力＆モーションの粗をごまかす）
+    IEnumerator ScreenShake(float amp, float duration)
+    {
+        if (_root == null) yield break;
+        Vector2 home = _root.anchoredPosition;
+        float t = 0f;
+        while (t < duration)
+        {
+            t += Time.deltaTime;
+            float d = amp * (1f - t / duration);   // 徐々に収まる
+            _root.anchoredPosition = home + new Vector2(Random.Range(-d, d), Random.Range(-d, d));
+            yield return null;
+        }
+        _root.anchoredPosition = home;
     }
 
     IEnumerator ScreenFlash(Color color, float maxAlpha)

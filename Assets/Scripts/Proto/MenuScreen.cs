@@ -160,12 +160,12 @@ public class MenuScreen : MonoBehaviour
         _statusContent.sizeDelta = new Vector2(700, 560);
 
         var charRt = ProtoUI.CreateRect("Chara", _statusContent);
-        charRt.anchoredPosition = new Vector2(-220, 0);
-        charRt.sizeDelta = new Vector2(190, 280);
+        charRt.anchoredPosition = new Vector2(-210, -20);
+        charRt.sizeDelta = new Vector2(300, 440);
         var img = charRt.gameObject.AddComponent<Image>();
         img.sprite = ProtoPixelArt.MamaMapPhoto(); img.preserveAspect = true;
 
-        var name = ProtoUI.CreateText("Name", _statusContent, "MAMA", 30, new Vector2(-220, 215), new Vector2(250, 40));
+        var name = ProtoUI.CreateText("Name", _statusContent, "MAMA", 30, new Vector2(-210, 232), new Vector2(280, 40));
         ProtoUI.StyleTitle(name, new Color(0.96f, 0.93f, 1f));
 
         // 各ステータスを枠で囲って並べる領域
