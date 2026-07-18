@@ -106,6 +106,80 @@ public class PanelModel
                 if (_kinds[x, y] != CellKind.Normal) { xs.Add(x); ys.Add(y); ks.Add((int)_kinds[x, y]); }
     }
 
+    // ---- 形状シナジー ----
+    // 行コンプリート：解放マスが3つ以上あり、その行の解放マスがすべてピースで埋まっている行の本数
+    public int CompletedRows()
+    {
+        int n = 0;
+        for (int y = 0; y < H; y++)
+        {
+            int unlocked = 0; bool full = true;
+            for (int x = 0; x < W; x++)
+            {
+                if (!_unlocked[x, y]) continue;
+                unlocked++;
+                if (_grid[x, y] == null) { full = false; break; }
+            }
+            if (full && unlocked >= 3) n++;
+        }
+        return n;
+    }
+
+    // 列コンプリート：同条件を列で数える
+    public int CompletedCols()
+    {
+        int n = 0;
+        for (int x = 0; x < W; x++)
+        {
+            int unlocked = 0; bool full = true;
+            for (int y = 0; y < H; y++)
+            {
+                if (!_unlocked[x, y]) continue;
+                unlocked++;
+                if (_grid[x, y] == null) { full = false; break; }
+            }
+            if (full && unlocked >= 3) n++;
+        }
+        return n;
+    }
+
+    // コア判定：そのピースの上下左右の隣接マス（解放済み）がすべて他のピースで埋まっており、
+    // かつ他ピースとの接触マスが3つ以上ある（＝しっかり囲まれている）
+    public bool IsCorePlacement(Placement p)
+    {
+        if (p == null) return false;
+        int touching = 0;
+        var dirs = new[] { new Vector2Int(1, 0), new Vector2Int(-1, 0), new Vector2Int(0, 1), new Vector2Int(0, -1) };
+        var seen = new HashSet<Vector2Int>();
+        foreach (var c in p.cells)
+            foreach (var d in dirs)
+            {
+                var n = c + d;
+                if (p.cells.Contains(n) || !seen.Add(n)) continue;   // 自分自身・重複はスキップ
+                if (!IsUnlocked(n.x, n.y)) continue;                  // 盤面外・未解放は「壁」扱いでOK
+                var other = _grid[n.x, n.y];
+                if (other == null || other == p) return false;        // 露出あり→コアではない
+                touching++;
+            }
+        return touching >= 3;
+    }
+
+    // 指定カードのいずれかの配置がコア化しているか
+    public bool IsCoreCard(string cardId)
+    {
+        foreach (var p in Placements)
+            if (p.card != null && p.card.id == cardId && IsCorePlacement(p)) return true;
+        return false;
+    }
+
+    // コア化しているピースの数（表示用）
+    public int CoreCount()
+    {
+        int n = 0;
+        foreach (var p in Placements) if (IsCorePlacement(p)) n++;
+        return n;
+    }
+
     // 中央に cols×rows マス（横cols×縦rows）を初期解放
     public void UnlockInitial(int cols, int rows)
     {
@@ -347,6 +421,32 @@ public class PanelModel
         int empty = UnlockedCount() - OccupiedCount() - sealedEmpty - Mathf.Max(0, emptyReduce);   // 圧縮カードで空きマスを減らす
         for (int i = 0; i < empty; i++) list.Add((null, 1f)); // 空きマス＝通常攻撃
         return list;
+    }
+
+    // 指定カードの出現率（0〜100%）。現在のHP割合・空きマス圧縮を反映
+    public float CardAppearRate(string cardId, float hpRatio = 1f, int emptyReduce = 0)
+    {
+        var entries = WeightedEntries(hpRatio, emptyReduce);
+        float total = 0f, mine = 0f;
+        foreach (var e in entries)
+        {
+            total += e.weight;
+            if (e.card != null && e.card.id == cardId) mine += e.weight;
+        }
+        return total > 0f ? mine / total * 100f : 0f;
+    }
+
+    // 通常攻撃（空きマス）の出現率（0〜100%）
+    public float EmptyAppearRate(float hpRatio = 1f, int emptyReduce = 0)
+    {
+        var entries = WeightedEntries(hpRatio, emptyReduce);
+        float total = 0f, mine = 0f;
+        foreach (var e in entries)
+        {
+            total += e.weight;
+            if (e.card == null) mine += e.weight;
+        }
+        return total > 0f ? mine / total * 100f : 0f;
     }
 
     // 重みに従ってカードを1枚抽選（null＝通常攻撃）。母集団が空ならnull。

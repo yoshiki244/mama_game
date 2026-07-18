@@ -136,23 +136,21 @@ public static class ContentGenerator
             Eff(CardEffectType.SelfDamage, 40, 0)));
 
         // ミニゲーム連動攻撃
-        cards.Add(TuneA(MakeAttack("kaishin",   "会心の一撃",     9,  C(1f,0.75f,0.3f)), 4, 110, 3, "ゲージストップ発動！会心ゾーンで威力UP。",
+        cards.Add(TuneA(MakeAttack("kaishin",   "会心の一撃",     9,  C(1f,0.75f,0.3f)), 4, 110, 3, "ゲージストップ発動！ジャストで威力UP＋敵を麻痺。",
             Eff(CardEffectType.GaugeOnUse, 0, 0)));
         cards.Add(TuneA(MakeAttack("keisanzan", "計算斬",         10, C(0.7f,0.9f,0.85f)), 4, 130, 5, "数字を小さい順にタップ！正答率で威力UP。",
             Eff(CardEffectType.TapOrderOnUse, 0, 0)));
-        cards.Add(TuneA(MakeAttack("slotken",   "スロット剣",     8,  C(0.95f,0.55f,0.75f)), 3, 100, 4, "スロット発動！絵柄が揃えば威力UP。",
+        cards.Add(TuneA(MakeAttack("slotken",   "スロット剣",     8,  C(0.95f,0.55f,0.75f)), 3, 100, 4, "スロット発動！揃えば威力UP＋コイン獲得（777で大金）。",
             Eff(CardEffectType.SlotOnUse, 0, 0)));
-        cards.Add(TuneA(MakeAttack("rendazan",  "乱れ連打",       9,  C(1f,0.6f,0.4f)), 4, 100, 4, "連打チャレンジ発動！連打数で威力UP。",
+        cards.Add(TuneA(MakeAttack("rendazan",  "乱れ連打",       9,  C(1f,0.6f,0.4f)), 4, 100, 4, "連打チャレンジ発動！大成功でオーバードライブ+1。",
             Eff(CardEffectType.MashOnUse, 0, 0)));
-        cards.Add(TuneA(MakeAttack("unmeirin",  "運命の輪",       10, C(0.8f,0.6f,1f)), 4, 120, 6, "ルーレット発動！赤い印で止めれば威力UP。",
+        cards.Add(TuneA(MakeAttack("unmeirin",  "運命の輪",       10, C(0.8f,0.6f,1f)), 4, 120, 6, "ルーレット発動！200%を引けば次ターン手札+1。",
             Eff(CardEffectType.RouletteOnUse, 0, 0)));
         cards.Add(TuneA(MakeAttack("kensen",    "剣筋",           8,  C(0.7f,0.95f,1f)), 3, 105, 4, "軌道なぞり発動！なぞった精度で威力UP。",
             Eff(CardEffectType.TraceOnUse, 0, 0)));
-        cards.Add(TuneA(MakeAttack("chargezan", "溜め斬り",       10, C(0.5f,0.85f,1f)), 4, 110, 5, "チャージ発動！長押しで溜めて良い所で離す（溜めすぎ暴発）。",
+        cards.Add(TuneA(MakeAttack("chargezan", "溜め斬り",       10, C(0.5f,0.85f,1f)), 4, 110, 5, "チャージ発動！完璧なタメで威力UP＋やけど3付与。",
             Eff(CardEffectType.ChargeOnUse, 0, 0)));
-        cards.Add(TuneA(MakeAttack("dualha",    "双極ノ刃",       11, C(0.7f,0.6f,1f)), 4, 130, 6, "2本ゲージ発動！両方を会心ゾーンで止めれば威力UP。",
-            Eff(CardEffectType.DualGaugeOnUse, 0, 0)));
-        cards.Add(TuneA(MakeAttack("hakudoken", "拍動剣",         9,  C(1f,0.7f,0.85f)), 3, 100, 4, "カウントダウン読み発動！拍を数えてジャストで威力UP。",
+        cards.Add(TuneA(MakeAttack("hakudoken", "拍動剣",         9,  C(1f,0.7f,0.85f)), 3, 100, 4, "カウントダウン読み発動！ジャストでパリィの構えを得る。",
             Eff(CardEffectType.CountdownOnUse, 0, 0)));
         cards.Add(TuneA(MakeAttack("rensazan",  "連鎖斬",         10, C(0.9f,0.8f,0.5f)), 4, 90,  5, "盤面でこのピースに隣接するピース1つにつき威力+8。",
             Eff(CardEffectType.AdjacencyPower, 8, 0)));

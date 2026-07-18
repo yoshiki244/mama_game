@@ -104,6 +104,14 @@ public class ProtoMain : MonoBehaviour
     public void SetPainContract() => PainContract = true;
     public void SetDemonHeart() => DemonHeart = true;
 
+    // ---- 大型契約（ビルドの方向性ごと変える取引） ----
+    public bool SoulVessel { get; private set; }      // 魂の器：最大HP半減・毎ターン手札+2
+    public bool Gluttony { get; private set; }        // 暴食の契約：最大マナ+2・毎ターン開始HP-3
+    public bool Berserk { get; private set; }         // 破壊神の腕：攻撃威力1.5倍・被ダメージ+25%
+    public void SetSoulVessel() => SoulVessel = true;
+    public void SetGluttony() => Gluttony = true;
+    public void SetBerserk() => Berserk = true;
+
     // 盤面のランダムな通常マスを1つ呪いマスにする（血の刻印）。成功でtrue
     public bool CurseRandomCell()
     {
@@ -114,9 +122,6 @@ public class ProtoMain : MonoBehaviour
         Panel.SetKind(c.x, c.y, CellKind.Curse);
         return true;
     }
-
-    // 挑戦状：次の戦闘を強化敵・報酬2倍で行うフラグ（マップで受諾時にON、戦闘終了で解除）
-    public bool ChallengeBattle;
 
     public Canvas Canvas { get; private set; }
     public bool BgmEnabled { get; private set; }
@@ -261,9 +266,10 @@ public class ProtoMain : MonoBehaviour
 
     public void SetWave(int wave) => Wave = wave;
 
-    // ---- 盤面の隣接シナジー ----
-    // 同じ種別のピースが隣接するほどボーナス。攻撃=威力% / 防御=開始ブロック / 回復=毎ターン回復 / スキル=毎ターンマナ
-    public struct Synergy { public int attackPct, block, regen, mana, atkC, defC, healC, skillC; }
+    // ---- 盤面の隣接シナジー＋形状シナジー ----
+    // 隣接：同じ種別のピースが隣接するほどボーナス。攻撃=威力% / 防御=開始ブロック / 回復=毎ターン回復 / スキル=毎ターンマナ
+    // 形状：行コンプリート=毎ターン手札+1（最大+2）／列コンプリート=毎ターンブロック+4／コア（完全包囲）=そのカードの威力+50%
+    public struct Synergy { public int attackPct, block, regen, mana, atkC, defC, healC, skillC, draw, rows, cols, cores; }
 
     public Synergy ComputeSynergy()
     {
@@ -280,10 +286,20 @@ public class ProtoMain : MonoBehaviour
                 CountEdge(a, x, y, x + 1, y, ref s);
                 CountEdge(a, x, y, x, y + 1, ref s);
             }
-        s.attackPct = Mathf.Min(s.atkC * 4, 60);
-        s.block = s.defC * 3;
-        s.regen = s.healC * 2;
-        s.mana = s.skillC / 2;
+        // 共鳴のペンダント：隣接シナジーを1.5倍で数える
+        float adjMult = Equipped == EquipKind.EchoPendant ? 1.5f : 1f;
+        s.attackPct = Mathf.Min(Mathf.RoundToInt(s.atkC * 4 * adjMult), 60);
+        s.block = Mathf.RoundToInt(s.defC * 3 * adjMult);
+        s.regen = Mathf.RoundToInt(s.healC * 2 * adjMult);
+        s.mana = Mathf.RoundToInt(s.skillC / 2f * adjMult);
+
+        // 形状シナジー（構築のペンダントで行/列の効果2倍）
+        int shapeMult = Equipped == EquipKind.ArchitectPendant ? 2 : 1;
+        s.rows = Panel.CompletedRows();
+        s.cols = Panel.CompletedCols();
+        s.cores = Panel.CoreCount();
+        s.draw = Mathf.Min(s.rows * shapeMult, 2 * shapeMult);             // 行コンプリート：毎ターン手札+1（最大+2、構築で+2/最大+4）
+        s.block += s.cols * GameBalance.ColCompleteBlock * shapeMult;      // 列コンプリート：毎ターンブロック
         return s;
     }
 
@@ -597,8 +613,8 @@ public class ProtoMain : MonoBehaviour
         NewMapSeed();
         ResetRunStats();
         Db?.ClearOverrides(); GrowthLevels.Clear();   // 成長もリセット
-        ChallengeBattle = false;
         CursedSeals = 0; PainContract = false; DemonHeart = false;   // 契約の呪いもリセット
+        SoulVessel = false; Gluttony = false; Berserk = false;       // 大型契約もリセット
         Stats = new PlayerStats(Cfg);
         Stats.MaxHP = AscensionBaseHP();   // 難易度で最大HPを設定（VERY HARD/MASTERは低い）
         Equipped = EquipKind.None;   // 装備もリセット

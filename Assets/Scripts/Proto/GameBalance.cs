@@ -24,7 +24,17 @@ public static class GameBalance
     public const int CornerRegen = 2;             // Lv3：毎ターン HP +2回復
     public const int CornerMana = 1;              // Lv4：最大マナ +1
 
+    // ---- 形状シナジー ----
+    public const int ColCompleteBlock = 4;        // 列コンプリート：毎ターン ブロック +4/列
+    public const float CorePowerMult = 1.5f;      // コア（完全包囲）：そのカードの威力 1.5倍
+
+    // ---- オーバードライブ（同ターン連続攻撃で威力が乗算的に上昇） ----
+    public const float OverdrivePerStack = 0.25f; // 攻撃1発ごとに +25%（同ターン内で累積）
+    public const int OverdriveMaxStack = 6;       // 最大6スタック（+150%）
+
     // 表示用（%表記）
     public static int PowerPctInt => (int)(PowerPctPerCell * 100f);
     public static int CornerAtkPctInt => (int)(CornerAtkPct * 100f);
+    public static int CorePowerPctInt => (int)((CorePowerMult - 1f) * 100f);
+    public static int OverdrivePctInt => (int)(OverdrivePerStack * 100f);
 }

@@ -184,7 +184,7 @@ public class BuildScreen : MonoBehaviour
 
         // ピース一覧（右・スクロール）
         _trayTitle = ProtoUI.CreateText("TrayTitle", _root, "所持カード（クリックで選択）", 22,
-            new Vector2(150, 318), new Vector2(420, 30));
+            new Vector2(150, 322), new Vector2(420, 58));
         // ソート/絞り込みボタン（タイトル右）
         ProtoUI.CreatePanel("SortBtnBorder", _root, new Vector2(379, 318), new Vector2(54, 46), new Color(0.85f, 0.72f, 0.4f, 0.95f)).raycastTarget = false;
         var sortBtn = ProtoUI.CreateButton("SortBtn", _root, "", 18, new Vector2(379, 318), new Vector2(46, 38), new Color(0.2f, 0.2f, 0.3f, 0.98f), OpenSortPanel);
@@ -500,7 +500,7 @@ public class BuildScreen : MonoBehaviour
             int hidden = allOwned.Count - owned.Count;
             if (hidden > 0)
             {
-                _trayTitle.text = $"所持カード {allOwned.Count}種（絞り込み中・{hidden}枚 非表示）";
+                _trayTitle.text = $"所持カード {allOwned.Count}種\n（絞り込み中・{hidden}枚 非表示）";
                 _trayTitle.color = new Color(1f, 0.75f, 0.4f);
             }
             else
@@ -671,6 +671,7 @@ public class BuildScreen : MonoBehaviour
         if (_selected != null)
         {
             if (_main.OwnedCount(_selected.id) <= 0) { RefreshBoard(); ShowNotice("このカードの在庫がありません"); return; }
+            int prevRows = P.CompletedRows(), prevCols = P.CompletedCols(), prevCores = P.CoreCount();
             if (P.Place(_selected, new Vector2Int(x, y), _rotation))
             {
                 _main.ConsumeCard(_selected.id);                       // 配置で在庫消費
@@ -679,6 +680,7 @@ public class BuildScreen : MonoBehaviour
                 UpdateSelectedText(); RefreshBoard();
                 PlaySynergyFx(P.GetAt(x, y));                          // 隣接シナジーが生まれたら光る
                 PlaySpecialFx(P.GetAt(x, y));                          // 特殊マスを覆ったら音＋発光
+                NotifyShapeSynergy(prevRows, prevCols, prevCores);     // 形状シナジーが生まれたら通知
             }
             else { RefreshBoard(); ShowNotice("ここには置けません！スペースが足りません"); } // 通知を上書きしない
         }
@@ -1037,6 +1039,25 @@ public class BuildScreen : MonoBehaviour
     {
         _selectedText.text = $"<color=#FF7070>{msg}</color>";
         yield return new WaitForSeconds(1.5f);
+        _noticeCo = null; UpdateSelectedText();
+    }
+
+    // 形状シナジー（行・列コンプリート／コア）が新しく生まれたら金色の通知で祝う
+    void NotifyShapeSynergy(int prevRows, int prevCols, int prevCores)
+    {
+        int rows = P.CompletedRows(), cols = P.CompletedCols(), cores = P.CoreCount();
+        string msg = null;
+        if (rows > prevRows) msg = $"行コンプリート！　毎ターン手札 +1（現在 行×{rows}）";
+        else if (cols > prevCols) msg = $"列コンプリート！　毎ターンブロック +{GameBalance.ColCompleteBlock}（現在 列×{cols}）";
+        else if (cores > prevCores) msg = $"コア誕生！　囲まれたカードの威力 +{GameBalance.CorePowerPctInt}%";
+        if (msg == null) return;
+        if (_noticeCo != null) StopCoroutine(_noticeCo);
+        _noticeCo = StartCoroutine(ShapeNoticeRoutine(msg));
+    }
+    IEnumerator ShapeNoticeRoutine(string msg)
+    {
+        _selectedText.text = $"<color=#FFD86A>{msg}</color>";
+        yield return new WaitForSeconds(2.2f);
         _noticeCo = null; UpdateSelectedText();
     }
 

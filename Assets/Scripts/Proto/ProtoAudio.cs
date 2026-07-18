@@ -828,7 +828,7 @@ public static class ProtoAudio
         var clip = AudioClip.Create("MagicCast", total, 1, sampleRate, false); clip.SetData(data, 0); return clip;
     }
 
-    // 大技のタメ音（重低音＋倍音がうねりながら派手に盛り上がる。仕上げにキラめき）
+    // 大技のタメ音（歪んだ重低音の唸り＋加速トレモロ＋上昇スクリーチ＋バチバチ放電。激しく盛り上がる）
     public static AudioClip CreateBigCharge()
     {
         const int sampleRate = 44100; const float dur = 1.9f;
@@ -837,17 +837,23 @@ public static class ProtoAudio
         for (int i = 0; i < total; i++)
         {
             float p = i / (float)total; float t = (float)i / sampleRate;
-            float env = p * p * p * 0.5f + p * 0.5f;                     // 加速して大きく
-            float f = Mathf.Lerp(45f, 300f, p * p);                      // 加速上昇する唸り
-            float sub = Mathf.Sin(2f * Mathf.PI * (f * 0.5f) * t) * 0.18f * env;         // サブベース
-            float low = Mathf.Sin(2f * Mathf.PI * f * t) * 0.16f * env;
-            float harm = (Mathf.Sin(2f * Mathf.PI * f * 1.5f * t) + Mathf.Sin(2f * Mathf.PI * f * 2f * t)) * 0.06f * env;
-            float wob = Mathf.Sin(2f * Mathf.PI * (6f + p * 22f) * t) * 0.5f + 0.5f;      // 速くなるうねり
-            float shimmer = Mathf.Sin(2f * Mathf.PI * Mathf.Lerp(1400f, 3200f, p) * t) * 0.05f * (p * p);   // 仕上げのキラめき
-            float air = ((float)rng.NextDouble() * 2f - 1f) * 0.06f * env;
-            data[i] = (sub + low + harm) * (0.6f + 0.4f * wob) + shimmer + air;
+            float env = p * p * p * 0.6f + p * 0.4f;                       // 加速して大きく
+            float f = Mathf.Lerp(45f, 340f, p * p);                        // 加速上昇する唸り
+            float sub = Mathf.Sin(2f * Mathf.PI * (f * 0.5f) * t) * 0.20f * env;
+            float low = Mathf.Sin(2f * Mathf.PI * f * t);
+            // 歪ませてグォォという迫力に（ソフトクリップ）
+            float growl = Mathf.Clamp(low * (1.6f + 2.5f * p), -1f, 1f) * 0.22f * env;
+            float harm = (Mathf.Sin(2f * Mathf.PI * f * 1.5f * t) + Mathf.Sin(2f * Mathf.PI * f * 2f * t) + Mathf.Sin(2f * Mathf.PI * f * 3f * t)) * 0.05f * env;
+            // 上昇するスクリーチ（金切り声のように張り詰める）
+            float screech = Mathf.Sin(2f * Mathf.PI * Mathf.Lerp(600f, 3400f, p * p) * t) * 0.06f * (p * p);
+            // 加速する激しいトレモロ
+            float trem = Mathf.Sin(2f * Mathf.PI * (8f + p * p * 45f) * t) * 0.5f + 0.5f;
+            // 溜まるほど増えるバチバチ放電
+            float sparkGate = ((float)rng.NextDouble() < (0.02f + p * 0.10f)) ? 1f : 0f;
+            float spark = ((float)rng.NextDouble() * 2f - 1f) * 0.35f * sparkGate * (0.3f + p);
+            float air = ((float)rng.NextDouble() * 2f - 1f) * 0.05f * env;
+            data[i] = Mathf.Clamp((sub + growl + harm) * (0.45f + 0.55f * trem) + screech + spark + air, -1f, 1f);
         }
-        // 末尾でプツッと切れないようフェードアウト
         int fade = (int)(sampleRate * 0.05f);
         for (int i = 0; i < fade; i++) data[total - 1 - i] *= i / (float)fade;
         var clip = AudioClip.Create("BigCharge", total, 1, sampleRate, false); clip.SetData(data, 0); return clip;
@@ -875,6 +881,92 @@ public static class ProtoAudio
         int fade = (int)(sampleRate * 0.06f);
         for (int i = 0; i < fade; i++) data[total - 1 - i] *= i / (float)fade;
         var clip = AudioClip.Create("BigRelease", total, 1, sampleRate, false); clip.SetData(data, 0); return clip;
+    }
+
+    // リーチ警報（パチンコ風「ウィンウィン」と迫り上がるサイレン）
+    public static AudioClip CreateReachAlarm()
+    {
+        const int sampleRate = 44100; const float dur = 0.9f;
+        int total = (int)(sampleRate * dur); var data = new float[total];
+        for (int i = 0; i < total; i++)
+        {
+            float p = i / (float)total; float t = (float)i / sampleRate;
+            float env = Mathf.Sin(p * Mathf.PI); env = Mathf.Sqrt(env);
+            // うねるサイレン（2音間を往復しながら全体が上昇）
+            float wob = Mathf.Sin(2f * Mathf.PI * 7f * t) * 0.5f + 0.5f;
+            float f = Mathf.Lerp(620f, 980f, p) + wob * 180f;
+            float tone = Mathf.Sin(2f * Mathf.PI * f * t) * 0.16f * env;
+            float harm = Mathf.Sin(2f * Mathf.PI * f * 2f * t) * 0.05f * env;
+            data[i] = tone + harm;
+        }
+        var clip = AudioClip.Create("ReachAlarm", total, 1, sampleRate, false); clip.SetData(data, 0); return clip;
+    }
+
+    // 鼓動（ドクン…ドクン…という低い2拍。リーチ中の緊張感）
+    public static AudioClip CreateHeartbeat()
+    {
+        const int sampleRate = 44100; const float dur = 0.55f;
+        int total = (int)(sampleRate * dur); var data = new float[total];
+        for (int i = 0; i < total; i++)
+        {
+            float t = (float)i / sampleRate;
+            // 1拍目（強）と2拍目（弱）
+            float e1 = Mathf.Exp(-18f * Mathf.Max(0f, t));
+            float e2 = t > 0.22f ? Mathf.Exp(-18f * (t - 0.22f)) * 0.6f : 0f;
+            float f = 55f;
+            data[i] = (Mathf.Sin(2f * Mathf.PI * f * t) * e1 + Mathf.Sin(2f * Mathf.PI * f * (t - 0.22f)) * e2) * 0.4f;
+        }
+        var clip = AudioClip.Create("Heartbeat", total, 1, sampleRate, false); clip.SetData(data, 0); return clip;
+    }
+
+    // 大当たりファンファーレ（駆け上がるアルペジオ＋キラキラ倍音。昇天感）
+    public static AudioClip CreateJackpotFanfare()
+    {
+        const int sampleRate = 44100; const float dur = 1.5f;
+        int total = (int)(sampleRate * dur); var data = new float[total];
+        // C-E-G-C-E-G-C と駆け上がる
+        float[] notes = { 523.25f, 659.25f, 783.99f, 1046.5f, 1318.5f, 1568.0f, 2093.0f };
+        float step = dur / (notes.Length + 2);   // 最後の音を長めに
+        for (int i = 0; i < total; i++)
+        {
+            float t = (float)i / sampleRate;
+            int ni = Mathf.Min(notes.Length - 1, (int)(t / step));
+            float lt = t - ni * step;                      // 音内の経過
+            bool last = ni == notes.Length - 1;
+            float env = Mathf.Exp(-(last ? 2.2f : 9f) * lt) * (last ? 1.2f : 1f);
+            float f = notes[ni];
+            float tone = Mathf.Sin(2f * Mathf.PI * f * t) * 0.16f * env;
+            float oct = Mathf.Sin(2f * Mathf.PI * f * 2f * t) * 0.07f * env;
+            float spark = Mathf.Sin(2f * Mathf.PI * f * 3f * t) * 0.04f * env;
+            data[i] = Mathf.Clamp(tone + oct + spark, -1f, 1f);
+        }
+        int fade = (int)(sampleRate * 0.08f);
+        for (int i = 0; i < fade; i++) data[total - 1 - i] *= i / (float)fade;
+        var clip = AudioClip.Create("JackpotFanfare", total, 1, sampleRate, false); clip.SetData(data, 0); return clip;
+    }
+
+    // コインシャワー（チャリンチャリンと降り注ぐ高音の連鎖）
+    public static AudioClip CreateCoinShower()
+    {
+        const int sampleRate = 44100; const float dur = 1.4f;
+        int total = (int)(sampleRate * dur); var data = new float[total];
+        var rng = new System.Random(77);
+        // ランダムなタイミングで12枚のコイン音を重ねる
+        for (int c = 0; c < 12; c++)
+        {
+            float start = (float)rng.NextDouble() * (dur - 0.25f);
+            float f = 1900f + (float)rng.NextDouble() * 1400f;
+            int s0 = (int)(start * sampleRate);
+            int len = (int)(0.22f * sampleRate);
+            for (int i = 0; i < len && s0 + i < total; i++)
+            {
+                float t = (float)i / sampleRate;
+                float env = Mathf.Exp(-14f * t);
+                data[s0 + i] += (Mathf.Sin(2f * Mathf.PI * f * t) * 0.7f + Mathf.Sin(2f * Mathf.PI * f * 1.5f * t) * 0.3f) * 0.09f * env;
+            }
+        }
+        for (int i = 0; i < total; i++) data[i] = Mathf.Clamp(data[i], -1f, 1f);
+        var clip = AudioClip.Create("CoinShower", total, 1, sampleRate, false); clip.SetData(data, 0); return clip;
     }
 
     // ガード音（金属的な「キィン！」という防御音）

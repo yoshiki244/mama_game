@@ -744,7 +744,6 @@ public class MapScreen : MonoBehaviour
         {
             case TileType.Enemy:
                 _engaged = n;
-                if (Random.value < 0.25f) { _moving = false; ShowChallengeOffer(n); break; }   // たまに挑戦状が届く
                 _main.StartBattle(n.enemy);
                 break;
             case TileType.MidBoss:
@@ -1044,10 +1043,15 @@ public class MapScreen : MonoBehaviour
         tabArrow = ProtoUI.CreatePanel("TabArrow", rt, new Vector2(arrowX, 200), new Vector2(30, 30), new Color(1f, 0.85f, 0.4f));
         tabArrow.sprite = LeftTriangleSprite(); tabArrow.raycastTarget = false;
 
-        // カード入手デバッグは左上
+        // カード入手デバッグは画面左下（上部のヘッダー/セリフと重ならないように）
         if (debugFree)
-            ProtoUI.CreateGoldButton("DbgPick", rt, "カードを選んで入手(デバッグ)", 16, new Vector2(-620, 410), new Vector2(300, 48),
+        {
+            ProtoUI.CreateGoldButton("DbgPick", rt, "カードを選んで入手(デバッグ)", 16, new Vector2(-620, -300), new Vector2(300, 48),
                 new Color(0.5f, 0.3f, 0.15f, 0.98f), () => { if (!closing) ShowDebugCardPicker(say); });
+            // 全カードを3枚ずつ一括入手
+            ProtoUI.CreateGoldButton("DbgAll", rt, "全カード3枚ずつ入手(デバッグ)", 16, new Vector2(-620, -354), new Vector2(300, 48),
+                new Color(0.5f, 0.3f, 0.15f, 0.98f), () => { if (!closing) DebugGrantAllCards(say); });
+        }
 
         // 店を出る（画面下・中央）
         var closeBtn = ProtoUI.CreateGoldButton("Close", rt, "店を出る", 22, new Vector2(0, -350), btnSize, btnBase, null);
@@ -1343,6 +1347,20 @@ public class MapScreen : MonoBehaviour
         CloseShop(node);   // cleared化＋オートセーブ込み
     }
 
+    // デバッグ：実装されている全カードを3枚ずつ一括入手
+    void DebugGrantAllCards(System.Action<string> say)
+    {
+        if (_main.Db == null) return;
+        int kinds = 0;
+        foreach (var c in _main.Db.cards)
+        {
+            if (c == null) continue;
+            for (int k = 0; k < 3; k++) _main.AddCard(c.id);
+            kinds++;
+        }
+        say?.Invoke($"デバッグ：全{kinds}種のカードを3枚ずつ入手した！");
+    }
+
     // デバッグ：全カードから選んで無料入手するピッカー（何枚でも取れる）
     GameObject _dbgPickGO;
     void ShowDebugCardPicker(System.Action<string> say)
@@ -1410,27 +1428,6 @@ public class MapScreen : MonoBehaviour
 
         ProtoUI.CreateGoldButton("DPClose", ov, "閉じる", 22, new Vector2(0, -400), new Vector2(240, 56),
             new Color(0.45f, 0.3f, 0.4f, 0.98f), () => { Destroy(_dbgPickGO); _dbgPickGO = null; });
-    }
-
-    // ==================== 挑戦状（戦闘前のリスク選択） ====================
-    // 通常戦闘の前にたまに届く。受けると敵強化（HP+30%・攻撃+20%）、勝てば報酬2倍
-    void ShowChallengeOffer(Node n)
-    {
-        var ov = ProtoUI.CreateFullScreen("ChallengeOffer", _root);
-        ov.gameObject.AddComponent<Image>().color = new Color(0, 0, 0, 0.8f);
-        ProtoUI.CreateFramedPanel("CBox", ov, Vector2.zero, new Vector2(660, 380),
-            new Color(0.10f, 0.06f, 0.06f, 0.98f), new Color(0.9f, 0.4f, 0.3f, 0.9f));
-        var t = ProtoUI.CreateText("CT", ov, "挑戦状が届いた！", 32, new Vector2(0, 120), new Vector2(600, 44), new Color(1f, 0.6f, 0.4f));
-        ProtoUI.StyleTitle(t, new Color(1f, 0.6f, 0.4f), 5f);
-        ProtoUI.CreateText("CD", ov,
-            "「我こそはと思うなら受けてみよ」\n\n敵が強化される（HP+30%・攻撃+20%）が、\n勝利すれば報酬のお金が2倍になる！",
-            20, new Vector2(0, 15), new Vector2(580, 130), Color.white);
-        ProtoUI.CreateGoldButton("CYes", ov, "受けて立つ！", 22, new Vector2(-145, -125), new Vector2(250, 64),
-            new Color(0.55f, 0.25f, 0.2f, 0.98f),
-            () => { Destroy(ov.gameObject); _main.ChallengeBattle = true; _main.StartBattle(n.enemy); });
-        ProtoUI.CreateGoldButton("CNo", ov, "断る", 22, new Vector2(145, -125), new Vector2(250, 64),
-            new Color(0.3f, 0.3f, 0.4f, 0.98f),
-            () => { Destroy(ov.gameObject); _main.StartBattle(n.enemy); });
     }
 
     // ==================== カード合成（鍛冶）ピッカー ====================
@@ -1997,6 +1994,25 @@ public class MapScreen : MonoBehaviour
         {
             _main.SetEquip(EquipKind.None); _main.AddMoney(150);
             choose("魂の質入れ…装備を悪魔に預けた。お金+150");
+        }));
+
+        // ---- 大型契約（ビルドの方向性ごと変える取引。1つずつしか結べない） ----
+        opts.Add(("<color=#FF9060>【大契約】魂の器</color>\n最大HP半減・毎ターン手札+2", !_main.SoulVessel, () =>
+        {
+            if (_main.Stats != null) _main.Stats.MaxHP = Mathf.Max(10, _main.Stats.MaxHP / 2);
+            _main.SetCurrentHP(Mathf.Min(_main.CurrentHP, _main.MaxHP));
+            _main.SetSoulVessel();
+            choose("魂の器…器は小さく、しかし流れ込む力は倍に。");
+        }));
+        opts.Add(("<color=#FF9060>【大契約】暴食の契約</color>\n最大マナ+2・毎ターン開始HP-3", !_main.Gluttony, () =>
+        {
+            _main.SetGluttony();
+            choose("暴食の契約…尽きぬ魔力が、命を喰らい始める。");
+        }));
+        opts.Add(("<color=#FF9060>【大契約】破壊神の腕</color>\n攻撃威力1.5倍・被ダメージ+25%", !_main.Berserk, () =>
+        {
+            _main.SetBerserk();
+            choose("破壊神の腕…守りを捨てた者だけが振るえる力。");
         }));
 
         // 条件を満たすものだけシャッフルして4つ提示

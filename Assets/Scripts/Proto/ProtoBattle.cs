@@ -21,7 +21,6 @@ public class ProtoBattle : MonoBehaviour
     RectTransform _handArea;
     readonly List<CardDef> _pendingDrawn = new List<CardDef>();
     readonly List<RectTransform> _cardRects = new List<RectTransform>();
-    readonly List<RectTransform> _cardHits = new List<RectTransform>();   // カードの固定当たり判定ゾーン
     RectTransform _boardOverlay;   // 盤面プレビュー（キャラ左横・常時表示）
     RectTransform _boardContent;   // 盤面の動的中身（マス）
     RectTransform _detailPanel;    // カード詳細（中央・ホバー時）
@@ -51,6 +50,12 @@ public class ProtoBattle : MonoBehaviour
 
     // 戦闘中の一時ステータス
     int _block;          // 被ダメージを肩代わり（自ターン開始でリセット）
+    int _overdrive;      // オーバードライブ：同ターン内に攻撃するたび+1（次の攻撃が+25%/スタック）
+    readonly bool[] _slotStopReq = new bool[3];  // 各リールのSTOP要求（独立）
+
+    // オーバードライブの1スタックあたり上昇量（連撃のペンダントで+10%）
+    float OdPerStack => GameBalance.OverdrivePerStack + (_main.Equipped == EquipKind.ComboPendant ? 0.10f : 0f);
+    int OdPctInt => Mathf.RoundToInt(OdPerStack * 100f);
     int _strength;       // 攻撃力上昇（戦闘中持続）
     int _protectPct;     // 次の被弾を%軽減（1回）
     int _weakPct, _weakTurns; // 敵の攻撃力低下
@@ -87,6 +92,7 @@ public class ProtoBattle : MonoBehaviour
     AudioClip[] _hitClips;
     AudioClip _swingClip, _coinClip, _curseClip, _parryClip;
     AudioClip _magicCastClip, _bigChargeClip, _bigReleaseClip, _healCastClip, _guardClip;
+    AudioClip _reachClip, _heartbeatClip, _fanfareClip, _coinShowerClip;
 
     Image _actorImg, _slimeImg, _faceImg;
     RectTransform _actorRt, _slimeRt, _enemyInner, _playerInner, _enemyShadow;
@@ -106,6 +112,10 @@ public class ProtoBattle : MonoBehaviour
         _bigReleaseClip = ProtoAudio.CreateBigRelease();
         _healCastClip = ProtoAudio.CreateHealCast();
         _guardClip = ProtoAudio.CreateGuard();
+        _reachClip = ProtoAudio.CreateReachAlarm();
+        _heartbeatClip = ProtoAudio.CreateHeartbeat();
+        _fanfareClip = ProtoAudio.CreateJackpotFanfare();
+        _coinShowerClip = ProtoAudio.CreateCoinShower();
         Hide();
     }
 
@@ -115,6 +125,7 @@ public class ProtoBattle : MonoBehaviour
         Time.timeScale = 1f;
         if (_main != null && _main.Panel != null) _main.Panel.Sealed.Clear();   // 歪みマスを持ち越さない
         HideBlessingPopup();
+        ReleaseCardTextures();   // 焼き込みカード画像を解放
         _inputLocked = false;
         if (_root != null) _root.gameObject.SetActive(false);
     }
@@ -173,7 +184,7 @@ public class ProtoBattle : MonoBehaviour
         _manaBoostNext = 0; _primeBlink = false;
         _stunTurns = 0; _regenAmt = 0; _regenTurns = 0; _thornsDmg = 0; _thornsTurns = 0;
         _blockRegenAmt = 0; _blockRegenTurns = 0; _reflectPct = 0; _guardPct = 0; _guardTurns = 0;
-        _counterDmg = 0; _vulnPct = 0; _vulnTurns = 0; _ailmentAmp = 0; _nextTurnExtra = 0;
+        _counterDmg = 0; _vulnPct = 0; _vulnTurns = 0; _ailmentAmp = 0; _nextTurnExtra = 0; _overdrive = 0;
         _timeBombDmg = 0; _timeBombTurns = 0; _useCounts.Clear();
         _enemyBlock = 0; _enemyAtkUp = 0; _enemyCharged = false; _playerPoison = 0;
         _parryStance = false;
@@ -181,10 +192,9 @@ public class ProtoBattle : MonoBehaviour
         _effWave = _main.Wave + enemy.levelOffset;
         _enemyMaxHP = Mathf.RoundToInt((enemy.baseHP + 40 * (_effWave - 1)) * _main.EnemyHpMul); // アセンションでHP増
         _enemyHP = _enemyMaxHP;
-        if (_main.ChallengeBattle) { _enemyMaxHP = Mathf.RoundToInt(_enemyMaxHP * 1.3f); _enemyHP = _enemyMaxHP; }   // 挑戦状：敵HP+30%
         // グラヴィティペンダント：戦闘開始時に敵HP-5%
         if (_main.Equipped == EquipKind.GravityPendant) _enemyHP = Mathf.Max(1, Mathf.RoundToInt(_enemyMaxHP * 0.95f));
-        _enemyName.text = $"{enemy.enemyName} Lv{_effWave}{(_main.ChallengeBattle ? "【挑戦】" : "")}";
+        _enemyName.text = $"{enemy.enemyName} Lv{_effWave}";
 
         _slimeImg.sprite = enemy.BattleSprite();
         _slimeRt.sizeDelta = enemy.battleSize;
@@ -206,7 +216,15 @@ public class ProtoBattle : MonoBehaviour
         if (_main.CornersUnlocked >= 2) _block += GameBalance.CornerBlock;   // 四隅の加護Lv2：毎ターン開始ブロック
         _mana = _main.MaxMana + _manaBoostNext + _syn.mana; // シナジー：マナ
         if (_main.PainContract) _mana += 1;   // 痛みの契約：毎ターンマナ+1
+        if (_main.Gluttony) _mana += 2;       // 暴食の契約：最大マナ+2
         _manaBoostNext = 0;
+
+        // 暴食の契約：毎ターン開始時にHP-3（命は尽きない＝最低1）
+        if (_main.Gluttony && !firstTurn)
+        {
+            _playerHP = Mathf.Max(1, _playerHP - 3);
+            StartCoroutine(TextPopup(new Vector2(-330f, 160f), "-3 暴食", new Color(0.9f, 0.4f, 0.5f), 30));
+        }
 
         // シナジー：毎ターン回復
         if (_syn.regen > 0) _playerHP = Mathf.Min(_playerMaxHP, _playerHP + _syn.regen);
@@ -225,13 +243,62 @@ public class ProtoBattle : MonoBehaviour
         if (_regenTurns > 0) { _playerHP = Mathf.Min(_playerMaxHP, _playerHP + _regenAmt); _regenTurns--; }
         if (_blockRegenTurns > 0) { _block += _blockRegenAmt; _blockRegenTurns--; }
 
-        // 毎ターン、盤面構成の確率（出現率）に従って手札を配り直す（次ターン追加分を加算）
-        DealHand(_nextTurnExtra);
+        // 毎ターン、盤面構成の確率（出現率）に従って手札を配り直す（次ターン追加分＋行コンプリート＋魂の器を加算）
+        DealHand(_nextTurnExtra + _syn.draw + (_main.SoulVessel ? 2 : 0));
         _nextTurnExtra = 0;
+        _overdrive = 0;   // オーバードライブは自ターン開始でリセット
 
         _inputLocked = false;
         RefreshAll(dealAnimation: true);
+        StartCoroutine(DealSourceRipple());   // 配られたカードの出どころピースを盤面上で順に光らせる
         _message.text = firstTurn ? "戦闘開始！カードを選ぼう！" : "あなたのターン！";
+    }
+
+    // 手札が配られるのに合わせて、ミニ盤面上の「そのカードを生んだピース」を順にキラッと光らせる
+    // （盤面ビルド＝出現率、という因果を言葉なしで伝える演出）
+    IEnumerator DealSourceRipple()
+    {
+        if (_boardContent == null) yield break;
+        var panel = _main.Panel;
+        int W = panel.W, H = panel.H;
+        float area = 220f;
+        float cell = Mathf.Min(area / W, area / H);
+        float ox = -(W - 1) * cell / 2f, oy = (H - 1) * cell / 2f;
+
+        var counted = new Dictionary<CardDef, int>();   // 同名カードの何枚目か
+        for (int i = 0; i < _hand.Count; i++)
+        {
+            var card = _hand[i];
+            int rank = counted.TryGetValue(card, out var r) ? r : 0;
+            counted[card] = rank + 1;
+            yield return new WaitForSeconds(0.12f);   // カードが配られるテンポに合わせて順番に
+            if (_boardContent == null) yield break;
+
+            var matches = panel.Placements.Where(pp => pp.card == card).ToList();
+            if (matches.Count == 0) continue;   // 通常攻撃（空きマス）はスキップ
+            var cells = matches[rank % matches.Count].cells;
+            foreach (var c in cells)
+            {
+                var flash = ProtoUI.CreatePanel("SrcFlash", _boardContent,
+                    new Vector2(ox + c.x * cell, oy - c.y * cell), new Vector2(cell - 2, cell - 2),
+                    Color.Lerp(card.CategoryColor, Color.white, 0.75f));
+                flash.raycastTarget = false;
+                StartCoroutine(SrcFlashFade(flash));
+            }
+        }
+    }
+
+    IEnumerator SrcFlashFade(Image img)
+    {
+        float t = 0f, dur = 0.5f; Color c0 = img.color;
+        while (t < dur && img != null)
+        {
+            t += Time.deltaTime; float p = t / dur;
+            var c = c0; c.a = 0.95f * (1f - p * p); img.color = c;
+            img.transform.localScale = Vector3.one * (1f + p * 0.25f);
+            yield return null;
+        }
+        if (img != null) Destroy(img.gameObject);
     }
 
     float HpRatio() => _playerMaxHP > 0 ? Mathf.Clamp01(_playerHP / (float)_playerMaxHP) : 1f;
@@ -282,9 +349,24 @@ public class ProtoBattle : MonoBehaviour
 
         // 盤面シナジー（この戦闘中ずっと有効）
         if (_syn.attackPct > 0) lines.Add($"<color=#FF7040>盤面シナジー</color>　攻撃 +{_syn.attackPct}%");
-        if (_syn.block > 0) lines.Add($"<color=#7FB0FF>盤面シナジー</color>　ブロック +{_syn.block}");
+        int shapeMult = _main.Equipped == EquipKind.ArchitectPendant ? 2 : 1;
+        int adjBlock = _syn.block - _syn.cols * GameBalance.ColCompleteBlock * shapeMult;   // 隣接分のみ（列コンプリートは別行で表示）
+        if (adjBlock > 0) lines.Add($"<color=#7FB0FF>盤面シナジー</color>　ブロック +{adjBlock}");
         if (_syn.regen > 0) lines.Add($"<color=#70FF90>盤面シナジー</color>　再生 +{_syn.regen}");
         if (_syn.mana > 0) lines.Add($"<color=#C0A0FF>盤面シナジー</color>　マナ +{_syn.mana}");
+
+        // 形状シナジー（盤面の形そのものから生まれる加護）
+        if (_syn.draw > 0) lines.Add($"<color=#FFAA55>行コンプリート×{_syn.rows}</color>　毎ターン手札 +{_syn.draw}");
+        if (_syn.cols > 0) lines.Add($"<color=#7FD0FF>列コンプリート×{_syn.cols}</color>　毎ターンブロック +{_syn.cols * GameBalance.ColCompleteBlock * shapeMult}");
+        if (_syn.cores > 0) lines.Add($"<color=#66E5FF>コア×{_syn.cores}</color>　囲まれたカードの威力 +{GameBalance.CorePowerPctInt}%");
+        if (_overdrive >= 1) lines.Add($"<color=#FF6040>オーバードライブ×{_overdrive}</color>　次の攻撃 +{OdPctInt * _overdrive}%");
+
+        // 契約（悪魔との取引）
+        if (_main.PainContract) lines.Add("<color=#E06080>痛みの契約</color>　使用毎HP-1／毎ターンマナ+1");
+        if (_main.DemonHeart) lines.Add("<color=#E06080>悪魔の心臓</color>　瀕死で攻撃+30%");
+        if (_main.SoulVessel) lines.Add("<color=#FF9060>魂の器</color>　最大HP半減／毎ターン手札+2");
+        if (_main.Gluttony) lines.Add("<color=#FF9060>暴食の契約</color>　マナ+2／毎ターンHP-3");
+        if (_main.Berserk) lines.Add("<color=#FF9060>破壊神の腕</color>　攻撃1.5倍／被ダメ+25%");
 
         string body = lines.Count > 0 ? string.Join("\n", lines) : "<color=#8a8a98>発動中の加護はありません</color>";
         int rows = Mathf.Max(1, lines.Count);
@@ -463,7 +545,7 @@ public class ProtoBattle : MonoBehaviour
 
         // 手札
         _handArea = ProtoUI.CreateRect("Hand", _root);
-        _handArea.anchoredPosition = new Vector2(0, -248);   // 扇の外側カードが画面下で切れないよう高めに
+        _handArea.anchoredPosition = new Vector2(0, -230);   // 扇の外側カードが画面下で切れないよう高めに
         _handArea.sizeDelta = new Vector2(1500, 240);
 
         // 盤面プレビュー（キャラの左横・常時表示）：外周金枠＋不透明内側
@@ -502,10 +584,25 @@ public class ProtoBattle : MonoBehaviour
             new Color(0.16f, 0.14f, 0.18f, 0.96f), Retreat);
 
 
-        // 点滅チャレンジ
+        // 点滅チャレンジ（高級ステージ演出付き）
         _challengeRoot = ProtoUI.CreateFullScreen("Challenge", _root);
-        _challengeRoot.gameObject.AddComponent<Image>().color = new Color(0, 0, 0, 0.75f);
-        _challengePrompt = ProtoUI.CreateText("CPrompt", _challengeRoot, "", 30, new Vector2(0, 260), new Vector2(1000, 50));
+        _challengeRoot.gameObject.AddComponent<Image>().color = new Color(0.02f, 0.02f, 0.05f, 0.82f);
+        // 中央を照らすアンビエント光（集中線的な焦点）
+        ProtoUI.CreateGlow("CStageGlow", _challengeRoot, new Vector2(0, 20), new Vector2(1200, 900), new Color(0.25f, 0.3f, 0.55f, 0.22f)).raycastTarget = false;
+        // 枠付きステージ台
+        ProtoUI.CreateGlow("CStageHalo", _challengeRoot, new Vector2(0, 20), new Vector2(880, 560), new Color(0.5f, 0.42f, 0.2f, 0.18f)).raycastTarget = false;
+        ProtoUI.CreateFramedPanel("CStage", _challengeRoot, new Vector2(0, 20), new Vector2(820, 500),
+            new Color(0.05f, 0.06f, 0.10f, 0.92f), new Color(0.85f, 0.72f, 0.4f, 0.9f)).raycastTarget = false;
+        // 四隅の金アクセント
+        Vector2[] corners = { new Vector2(-400, 260), new Vector2(400, 260), new Vector2(-400, -230), new Vector2(400, -230) };
+        foreach (var cp in corners)
+        {
+            ProtoUI.CreatePanel("CCornerH", _challengeRoot, cp, new Vector2(44, 5), new Color(0.95f, 0.8f, 0.4f, 0.9f)).raycastTarget = false;
+            ProtoUI.CreatePanel("CCornerV", _challengeRoot, cp, new Vector2(5, 44), new Color(0.95f, 0.8f, 0.4f, 0.9f)).raycastTarget = false;
+        }
+        _challengePrompt = ProtoUI.CreateText("CPrompt", _challengeRoot, "", 26, new Vector2(0, 212), new Vector2(740, 72));
+        _challengePrompt.fontStyle = FontStyles.Bold; _challengePrompt.outlineWidth = 0.2f; _challengePrompt.outlineColor = new Color32(8, 6, 20, 255);
+        _challengePrompt.textWrappingMode = TMPro.TextWrappingModes.Normal;
         _pieceArea = ProtoUI.CreateRect("PieceArea", _challengeRoot);
         _pieceArea.anchoredPosition = new Vector2(0, 30);
         ProtoUI.CreateGauge("Timer", _challengeRoot, new Vector2(0, -290), new Vector2(500, 14),
@@ -552,10 +649,79 @@ public class ProtoBattle : MonoBehaviour
         if (_guardTurns > 0) st.Add($"<color=#90C0FF>継続軽減{_guardPct}%</color>");
         if (_parryStance) st.Add("<color=#8FE8FF>パリィ構え</color>");
         if (_thornsTurns > 0) st.Add($"<color=#90FFB0>茨{_thornsDmg}</color>");
-        // 盤面の加護・挑戦状などの常設情報はMAMAの顔にカーソルを当てると表示（ここには出さない）
+        // 盤面の加護などの常設情報はMAMAの顔にカーソルを当てると表示（ここには出さない）
         _statusText.text = string.Join("  ", st);
 
         RefreshHand(dealAnimation);
+    }
+
+    // ==================== カードのRenderTexture焼き込み ====================
+    // 入れ子＋角丸スプライトの合成カードは回転すると描画が歪む。
+    // そこで一度「1枚の平らな画像」に焼いて、その画像だけを傾ける（平面の回転は歪まない）。
+    const int BakeLayer = 30;
+    const int BakeW = 400, BakeH = 552;          // 焼き込み解像度（表示190x262の約2倍＝くっきり）
+    const float BakeUnitW = 200f, BakeUnitH = 276f;   // 焼き込みキャンバスの論理サイズ（カード＋余白）
+    Camera _bakeCam; RectTransform _bakeRoot;
+    readonly List<RenderTexture> _cardTextures = new List<RenderTexture>();
+
+    void EnsureBaker()
+    {
+        if (_bakeCam != null) return;
+        // 遠くに置いたワールド空間キャンバス＋専用カメラ（本編カメラとは独立）
+        var cg = new GameObject("CardBakeCanvas", typeof(RectTransform));
+        cg.transform.position = new Vector3(8000f, 8000f, 0f);
+        cg.layer = BakeLayer;
+        var canvas = cg.AddComponent<Canvas>();
+        canvas.renderMode = RenderMode.WorldSpace;
+        _bakeRoot = (RectTransform)cg.transform;
+        _bakeRoot.sizeDelta = new Vector2(BakeUnitW, BakeUnitH);
+        _bakeRoot.localScale = Vector3.one;
+
+        var camGo = new GameObject("CardBakeCam");
+        camGo.transform.position = new Vector3(8000f, 8000f, -100f);
+        _bakeCam = camGo.AddComponent<Camera>();
+        _bakeCam.orthographic = true;
+        _bakeCam.orthographicSize = BakeUnitH / 2f;
+        _bakeCam.cullingMask = 1 << BakeLayer;
+        _bakeCam.clearFlags = CameraClearFlags.SolidColor;
+        _bakeCam.backgroundColor = new Color(0f, 0f, 0f, 0f);
+        _bakeCam.nearClipPlane = 1f; _bakeCam.farClipPlane = 300f;
+        _bakeCam.enabled = false;   // 手動レンダリングのみ
+        canvas.worldCamera = _bakeCam;
+    }
+
+    static void SetLayerRecursive(GameObject go, int layer)
+    {
+        go.layer = layer;
+        foreach (Transform c in go.transform) SetLayerRecursive(c.gameObject, layer);
+    }
+
+    // カードを1枚の画像に焼いて返す
+    RenderTexture BakeCard(CardDef card, bool affordable)
+    {
+        EnsureBaker();
+        foreach (Transform c in _bakeRoot) Destroy(c.gameObject);   // 前のカードを掃除
+        var btn = CreateCardUI(card, Vector2.zero, null, affordable);
+        var crt = (RectTransform)btn.transform;
+        crt.SetParent(_bakeRoot, false);
+        crt.anchoredPosition = Vector2.zero; crt.localRotation = Quaternion.identity; crt.localScale = Vector3.one;
+        SetLayerRecursive(crt.gameObject, BakeLayer);
+        Canvas.ForceUpdateCanvases();
+
+        var rt = new RenderTexture(BakeW, BakeH, 24, RenderTextureFormat.ARGB32);   // 深度24bit（URPのカメラ出力に必須）
+        rt.Create();
+        _bakeCam.targetTexture = rt;
+        _bakeCam.Render();
+        _bakeCam.targetTexture = null;
+        Destroy(btn.gameObject);
+        _cardTextures.Add(rt);
+        return rt;
+    }
+
+    void ReleaseCardTextures()
+    {
+        foreach (var t in _cardTextures) if (t != null) { t.Release(); Destroy(t); }
+        _cardTextures.Clear();
     }
 
     void RefreshHand(bool dealAnimation = false)
@@ -564,48 +730,61 @@ public class ProtoBattle : MonoBehaviour
         RenderBoard(null, -1);   // 盤面は常時表示（ハイライト無し）
         foreach (Transform c in _handArea) Destroy(c.gameObject);
         _cardRects.Clear();
-        _cardHits.Clear();
+        ReleaseCardTextures();   // 前ターンの焼き込み画像を解放
         int n = _hand.Count;
-        const float R = 940f;
-        float step = n <= 6 ? 9f : 54f / (n - 1);   // 7枚以上は扇の全幅54°に収めて圧縮（画面はみ出し防止）
         float mid = (n - 1) / 2f;
-        var made = new List<RectTransform>();
+        // 扇形：等間隔の横位置＋放物線アーチ（端が下がる）＋線形の傾き。カードは焼き込んだ平面画像なので傾けても崩れない
+        float spacing = n > 1 ? Mathf.Min(88f, 500f / (n - 1)) : 0f;    // 横間隔
+        float tiltPer = n > 1 ? Mathf.Min(6f, 36f / (n - 1)) : 0f;      // 1枚あたりの傾き（手で持った扇形）
+        const float ArchDepth = 46f;                                    // 端の下がり量
+        Vector2 cardSize = new Vector2(BakeUnitW, BakeUnitH);           // 表示サイズ（焼き込みの論理サイズと同じ比率）
+
+        var cards = new List<RectTransform>();
+        var hoverLayer = ProtoUI.CreateRect("HandHoverLayer", _handArea);
+        hoverLayer.anchoredPosition = Vector2.zero; hoverLayer.sizeDelta = _handArea.sizeDelta;
         for (int i = 0; i < n; i++)
         {
             int idx = i;
-            float a = (i - mid) * step;                 // 角度（度）
-            float rad = a * Mathf.Deg2Rad;
-            Vector2 pos = new Vector2(R * Mathf.Sin(rad), -R + R * Mathf.Cos(rad)); // 一点に集まる扇状（弧と傾きを揃える）
-            var rot = Quaternion.Euler(0, 0, -a);
+            float d = i - mid;
+            float norm = mid > 0 ? d / mid : 0f;
+            Vector2 pos = new Vector2(d * spacing, -ArchDepth * norm * norm);
+            var rot = Quaternion.Euler(0, 0, -tiltPer * d);
+
             bool canAfford = _mana >= _hand[i].ManaCost;
             bool affordable = !_inputLocked && canAfford;
-            var btn = CreateCardUI(_hand[i], pos, null, affordable);
-            var crt = (RectTransform)btn.transform;
-            crt.localRotation = rot;
-            _cardRects.Add(crt);
-
             var card = _hand[i];
-            var frame = (Image)btn.targetGraphic;
-            // 見た目のカードは子要素まで含めて当たり判定を全て無効化（ホバーで動いても判定がズレないように）
-            foreach (var g in crt.GetComponentsInChildren<UnityEngine.UI.Graphic>(true)) g.raycastTarget = false;
 
-            // 固定の当たり判定ゾーン（ホバーで動かない）。見た目カードだけ上昇させる
-            var hitZone = ProtoUI.CreatePanel("CardHit", _handArea, pos, new Vector2(190, 262), new Color(0f, 0f, 0f, 0f));
-            hitZone.transform.localRotation = rot;
-            var hover = hitZone.gameObject.AddComponent<CardHover>();
-            hover.Setup(crt, pos, rot, frame, frame.color,
-                onEnter: () => { if (_inputLocked) return; RenderBoard(card, idx); }, // カード詳細は表示しない
+            // カードを1枚の平面画像に焼く → RawImageで表示（平面なので傾けても歪まない）
+            var tex = BakeCard(card, affordable);
+            var rawGo = new GameObject("Card", typeof(RectTransform), typeof(RawImage));
+            var crt = (RectTransform)rawGo.transform;
+            crt.SetParent(_handArea, false);
+            crt.anchoredPosition = pos; crt.sizeDelta = cardSize; crt.localRotation = rot;
+            var raw = rawGo.GetComponent<RawImage>();
+            raw.texture = tex; raw.raycastTarget = false;
+            _cardRects.Add(crt);
+            cards.Add(crt);
+
+            // 固定の当たり判定ゾーン（別オブジェクト・ホバーで動かさない）
+            var hit = ProtoUI.CreatePanel("CardHit", _handArea, pos, cardSize, new Color(0f, 0f, 0f, 0f));
+            var hitRt = (RectTransform)hit.transform;
+            hitRt.localRotation = rot;
+            var hover = hit.gameObject.AddComponent<CardHover>();
+            hover.Setup(crt, _handArea, hoverLayer, pos, rot, raw, Color.white,
+                onEnter: () => { if (_inputLocked) return; RenderBoard(card, idx); },
                 onExit: () => { RenderBoard(null, -1); },
                 onClick: () => { if (_inputLocked) return; if (!canAfford) { _message.text = "マナが足りないので選択できません。"; return; } TryPlayCard(idx); });
 
-            made.Add(crt);
-            _cardHits.Add((RectTransform)hitZone.transform);
             if (dealAnimation) StartCoroutine(DealCard(crt, pos, i * 0.06f));
         }
-        // 左のカードを前面に（左から上に重なる）
-        for (int i = made.Count - 1; i >= 0; i--) made[i].SetAsLastSibling();
-        // 判定ゾーンも同じ重なり順（左を前面）にして、透明のまま最前面で当たりを取る
-        for (int i = _cardHits.Count - 1; i >= 0; i--) _cardHits[i].SetAsLastSibling();
+        // 見た目：左のカードを前面に。判定ゾーンはその上（透明）
+        for (int i = cards.Count - 1; i >= 0; i--) cards[i].SetAsLastSibling();
+        for (int i = _handArea.childCount - 1; i >= 0; i--)
+        {
+            var ch = _handArea.GetChild(i);
+            if (ch.name == "CardHit") ch.SetAsLastSibling();
+        }
+        hoverLayer.SetAsLastSibling();
     }
 
     // カードをクリック＝即発動
@@ -842,7 +1021,8 @@ public class ProtoBattle : MonoBehaviour
         if (_main.PainContract) { _playerHP = Mathf.Max(1, _playerHP - 1); StartCoroutine(TextPopup(new Vector2(-330f, 160f), "-1 痛", new Color(0.9f, 0.4f, 0.4f), 34)); }
 
         // 呪いマス：覆っているカードは使用時にHPを失う（HP1未満にはならない）
-        int curse = _main.Panel.MaxKindCover(card.id, CellKind.Curse);
+        // 禁忌のペンダント：代償を無効化（出現率3倍の恩恵だけ受ける）
+        int curse = _main.Equipped == EquipKind.TabooPendant ? 0 : _main.Panel.MaxKindCover(card.id, CellKind.Curse);
         if (curse > 0)
         {
             int cost = GameBalance.CurseHpPerCell * curse;
@@ -890,6 +1070,61 @@ public class ProtoBattle : MonoBehaviour
         return false;
     }
 
+    // ミニゲームごとの大成功ボーナス。倍率が高いほど・種類ごとに違うご褒美が出る
+    IEnumerator ApplyMinigameBonus(CardDef card, float mult)
+    {
+        Vector2 pop = new Vector2(0, 120f);
+
+        // スロット：揃い具合に応じてコイン獲得（ジャックポットは大金）
+        if (card.HasEffect(CardEffectType.SlotOnUse) && mult >= 1.2f)
+        {
+            int coin = mult >= 2.5f ? 50 : mult >= 1.8f ? 25 : 10;
+            _main.AddMoney(coin);
+            if (_sfx != null && _coinClip != null) _sfx.PlayOneShot(_coinClip);
+            StartCoroutine(TextPopup(pop, $"+{coin}コイン！", new Color(1f, 0.85f, 0.3f), mult >= 2.5f ? 46 : 36));
+            yield return new WaitForSeconds(0.35f);
+        }
+        // ルーレット：200%を引いたら運が開けて次ターン手札+1
+        else if (card.HasEffect(CardEffectType.RouletteOnUse) && mult >= 2f)
+        {
+            _nextTurnExtra += 1;
+            StartCoroutine(TextPopup(pop, "運命が開けた！次ターン手札+1", new Color(0.85f, 0.6f, 1f), 34));
+            yield return new WaitForSeconds(0.35f);
+        }
+        // ゲージ（会心の一撃）：ジャストで急所＝敵1ターン麻痺
+        else if (card.HasEffect(CardEffectType.GaugeOnUse) && mult >= 2f)
+        {
+            _stunTurns = Mathf.Max(_stunTurns, 1);
+            StartCoroutine(TextPopup(pop, "急所を突いた！敵は麻痺！", new Color(1f, 0.95f, 0.5f), 34));
+            yield return new WaitForSeconds(0.35f);
+        }
+        // チャージ（溜め斬り）：完璧なタメで刃が熱を帯びる＝やけど+3
+        else if (card.HasEffect(CardEffectType.ChargeOnUse) && mult >= 2f)
+        {
+            _burn += 3;
+            StartCoroutine(TextPopup(pop, "刃が燃え上がる！やけど+3", new Color(1f, 0.5f, 0.25f), 34));
+            yield return new WaitForSeconds(0.35f);
+        }
+        // カウントダウン（拍動剣）：ジャストでリズムに乗る＝パリィの構え
+        else if (card.HasEffect(CardEffectType.CountdownOnUse) && mult >= 2f)
+        {
+            _parryStance = true;
+            StartCoroutine(TextPopup(pop, "リズムに乗った！パリィの構え！", new Color(0.5f, 0.9f, 1f), 34));
+            yield return new WaitForSeconds(0.35f);
+        }
+        // 2本ゲージ・連打：大成功で勢いが乗る＝オーバードライブ+1
+        else if ((card.HasEffect(CardEffectType.DualGaugeOnUse) && mult >= 1.9f)
+              || (card.HasEffect(CardEffectType.MashOnUse) && mult >= 1.8f))
+        {
+            if (_overdrive < GameBalance.OverdriveMaxStack)
+            {
+                _overdrive++;
+                StartCoroutine(TextPopup(pop, $"勢いが乗る！オーバードライブ+1", new Color(1f, 0.55f, 0.25f), 34));
+                yield return new WaitForSeconds(0.35f);
+            }
+        }
+    }
+
     IEnumerator ResolveAttack(CardDef card)
     {
         bool blink = card.HasEffect(CardEffectType.BlinkOnUse) || _primeBlink;
@@ -913,6 +1148,9 @@ public class ProtoBattle : MonoBehaviour
         else if (card.HasEffect(CardEffectType.CountdownOnUse)) { yield return RunCountdown(card); mult = _challengeMultiplier; }
         else { _message.text = $"{card.displayName}！"; yield return new WaitForSeconds(0.3f); }
 
+        // ミニゲームごとの大成功ボーナス（種類で違うご褒美＝どのミニゲームを厚くするかのビルド選択）
+        yield return ApplyMinigameBonus(card, mult);
+
         // ---- 威力計算（基礎＋加算系） ----
         int basePow = card.power + _main.Stats.Attack + _strength;
         // 連鎖斬：盤面でこのカードのピースに隣接するピース数×amount を加算
@@ -928,10 +1166,22 @@ public class ProtoBattle : MonoBehaviour
         }
         // 悪魔の心臓：HPが半分以下で攻撃+30%
         if (_main.DemonHeart && card.power > 0 && HpRatio() <= 0.5f) basePow = Mathf.RoundToInt(basePow * 1.3f);
+        // 破壊神の腕：すべての攻撃威力1.5倍
+        if (_main.Berserk && card.power > 0) basePow = Mathf.RoundToInt(basePow * 1.5f);
         if (_syn.attackPct > 0 && card.power > 0) basePow = Mathf.RoundToInt(basePow * (1f + _syn.attackPct / 100f)); // 盤面シナジー
         if (_main.CornersUnlocked >= 1 && card.power > 0) basePow = Mathf.RoundToInt(basePow * (1f + GameBalance.CornerAtkPct));            // 四隅の加護Lv1：攻撃威力アップ
         int pwCells = _main.Panel.MaxKindCover(card.id, CellKind.Power);
         if (pwCells > 0 && card.power > 0) basePow = Mathf.RoundToInt(basePow * (1f + GameBalance.PowerPctPerCell * pwCells));               // 強化マス：威力アップ/マス
+        // コア（完全包囲）：盤面で他ピースに囲まれたカードは威力1.5倍
+        bool isCore = card.power > 0 && _main.Panel.IsCoreCard(card.id);
+        if (isCore)
+        {
+            basePow = Mathf.RoundToInt(basePow * GameBalance.CorePowerMult);
+            StartCoroutine(TextPopup(new Vector2(-330f, 300f), "コア発動！", new Color(0.55f, 0.9f, 1f), 30));
+        }
+        // オーバードライブ：同ターン内の攻撃1発ごとに +25%（連撃のペンダントで+35%。乗算的に膨らむ）
+        if (_overdrive > 0 && card.power > 0)
+            basePow = Mathf.RoundToInt(basePow * (1f + OdPerStack * _overdrive));
         if (card.HasEffect(CardEffectType.GrowingPower))
         {
             int used = _useCounts.TryGetValue(card.id, out var u) ? u : 0;
@@ -991,6 +1241,19 @@ public class ProtoBattle : MonoBehaviour
                 RefreshAll();
                 if (_enemyHP <= 0) break;
                 if (hits > 1) yield return new WaitForSeconds(0.18f);
+            }
+        }
+
+        // オーバードライブ：攻撃するたびスタック＋。次の攻撃が威力アップ（連撃ビルドの爆発力）
+        if (card.power > 0 && !fizzle && _overdrive < GameBalance.OverdriveMaxStack)
+        {
+            _overdrive++;
+            if (_overdrive >= 2)   // 2連撃目から見せる（毎回出すとうるさい）
+            {
+                var odCol = Color.Lerp(new Color(1f, 0.8f, 0.3f), new Color(1f, 0.3f, 0.2f), (_overdrive - 2) / 4f);
+                StartCoroutine(TextPopup(new Vector2(-330f, 330f), $"オーバードライブ ×{_overdrive}（次+{OdPctInt * _overdrive}%）", odCol, 28 + _overdrive * 2));
+                SpawnBurst(_actorRt.anchoredPosition + new Vector2(0, 60f), odCol, 6 + _overdrive * 2, 70f + _overdrive * 12f);
+                if (_overdrive >= 4) StartCoroutine(ScreenFlash(odCol, 0.12f));   // 高スタックで画面が燃え始める
             }
         }
 
@@ -1422,10 +1685,11 @@ public class ProtoBattle : MonoBehaviour
 
         for (int h = 0; h < atk.hits; h++)
         {
-            int raw = Mathf.RoundToInt(((Random.Range(_enemy.minAtk, _enemy.maxAtk + 1) + _enemyAtkUp) * atk.mult + 3 * (_effWave - 1)) * _main.EnemyDmgMul * (_main.ChallengeBattle ? 1.2f : 1f)); // アセンション・強化・挑戦状で攻撃増
+            int raw = Mathf.RoundToInt(((Random.Range(_enemy.minAtk, _enemy.maxAtk + 1) + _enemyAtkUp) * atk.mult + 3 * (_effWave - 1)) * _main.EnemyDmgMul); // アセンション・強化で攻撃増
             if (_enemyCharged) raw = Mathf.RoundToInt(raw * 1.8f);   // チャージ解放
             if (_weakTurns > 0) raw = Mathf.RoundToInt(raw * (1f - _weakPct / 100f));
             if (parryCut > 0) raw = Mathf.RoundToInt(raw * (1f - parryCut / 100f));   // パリィ軽減
+            if (_main.Berserk) raw = Mathf.RoundToInt(raw * 1.25f);   // 破壊神の腕：被ダメージ+25%
             int dmg = Mathf.Max(1, raw);
             if (_main.Equipped == EquipKind.GuardPendant) dmg = Mathf.Max(1, Mathf.RoundToInt(dmg * 0.95f)); // 加護のペンダント
             if (_guardTurns > 0) dmg = Mathf.Max(0, Mathf.RoundToInt(dmg * (1f - _guardPct / 100f)));        // 聖なる誓い（継続軽減）
@@ -1515,11 +1779,8 @@ public class ProtoBattle : MonoBehaviour
         _main.SetCurrentHP(_playerHP);   // 戦闘後HPを保存（次戦闘へ継続）
         _main.Panel.Sealed.Clear();   // 歪みマスは戦闘終了で解除
 
-        // お金はランダム（挑戦状に勝ったら2倍）
-        bool challenged = _main.ChallengeBattle;
-        _main.ChallengeBattle = false;
+        // お金はランダム
         int reward = Mathf.Max(1, Mathf.RoundToInt(_enemy.moneyReward * Random.Range(0.7f, 1.5f)));
-        if (challenged) reward *= 2;
         _main.AddMoney(reward);
 
         // 獲得ピース候補
@@ -1534,7 +1795,7 @@ public class ProtoBattle : MonoBehaviour
         _rewardArea.anchoredPosition = new Vector2(0, -40);
 
         _resultText.text = $"{_enemy.enemyName}を倒した！";
-        _resultSub.text = $"お金：+{reward}￥{(challenged ? "（挑戦状で2倍！）" : "")}　　獲得ピース：{(choices.Count == 0 ? "なし" : $"{choices.Count}ピース")}";
+        _resultSub.text = $"お金：+{reward}￥　　獲得ピース：{(choices.Count == 0 ? "なし" : $"{choices.Count}ピース")}";
         _resultRoot.gameObject.SetActive(true);
         yield return BuildRewardChoices(choices);
     }
@@ -1683,55 +1944,208 @@ public class ProtoBattle : MonoBehaviour
     }
 
     // ==================== ミニゲーム：ルーレット ====================
-    // 回転する針を当たり印（赤）の位置で止める。ぴったり2.2倍／近く1.4倍／外れ0.9倍
+    // 盤面を回るボールを当たりポケット（赤）で止める。ぴったり2.2倍／近く1.4倍／外れ0.9倍
     IEnumerator RunRoulette(CardDef card)
     {
         _challengeRoot.gameObject.SetActive(true);
         Time.timeScale = 1f;
         foreach (Transform c in _pieceArea) Destroy(c.gameObject);
-        _challengePrompt.text = $"「{card.displayName}」発動！　赤い印で止めろ！";
+        _challengePrompt.text = $"「{card.displayName}」発動！　高い倍率のマスで止めろ！";
         ProtoUI.SetGauge(_timerFill, 1f, 500f);
 
         const float RAD = 150f;
-        ProtoUI.CreatePanel("RouBg", _pieceArea, Vector2.zero, new Vector2(2f * RAD + 70f, 2f * RAD + 70f), new Color(0.10f, 0.10f, 0.18f, 0.98f)).raycastTarget = false;
-        float hitAngle = Random.Range(0f, 360f);
-        for (int i = 0; i < 12; i++)
+        Vector2 Dir(float deg) => new Vector2(Mathf.Sin(deg * Mathf.Deg2Rad), Mathf.Cos(deg * Mathf.Deg2Rad));
+
+        // 16マスの倍率配分：200×1・150×2・120×3・100×5・50×5（高倍率が散らばるよう配置）
+        float[] mults = { 1.0f, 0.5f, 1.2f, 1.0f, 0.5f, 1.5f, 1.0f, 0.5f, 1.2f, 1.0f, 0.5f, 2.0f, 1.0f, 0.5f, 1.2f, 1.5f };
+        int SLOTS = mults.Length;
+        float STEP = 360f / SLOTS;
+        Color MultColor(float m) => m >= 2f ? new Color(1f, 0.82f, 0.25f)      // 200%＝金
+                                  : m >= 1.5f ? new Color(0.85f, 0.35f, 0.95f) // 150%＝紫
+                                  : m >= 1.2f ? new Color(0.35f, 0.6f, 1f)      // 120%＝青
+                                  : m >= 1.0f ? new Color(0.35f, 0.8f, 0.45f)   // 100%＝緑
+                                  : new Color(0.5f, 0.16f, 0.18f);              // 50%＝暗赤
+
+        // 外周のソフト光
+        ProtoUI.CreateGlow("RouRing", _pieceArea, Vector2.zero, new Vector2(2f * RAD + 110f, 2f * RAD + 110f), new Color(0.5f, 0.42f, 0.2f, 0.3f)).raycastTarget = false;
+
+        // 手続き生成したホイール画像（色分けセグメント＋境界線＋リム）を1枚で表示
+        float wheelRadius = RAD + 30f;
+        var wheelTex = BuildWheelTexture(mults, MultColor, 360);
+        var wheelGo = new GameObject("RouWheel", typeof(RectTransform), typeof(RawImage));
+        var wrt = (RectTransform)wheelGo.transform;
+        wrt.SetParent(_pieceArea, false); wrt.anchoredPosition = Vector2.zero; wrt.sizeDelta = new Vector2(2f * wheelRadius, 2f * wheelRadius);
+        var wraw = wheelGo.GetComponent<RawImage>(); wraw.texture = wheelTex; wraw.raycastTarget = false;
+
+        // 各マスの倍率テキスト＋200%マスの脈動グロー
+        for (int i = 0; i < SLOTS; i++)
         {
-            float a = i * 30f;
-            float diff = Mathf.Abs(Mathf.DeltaAngle(a, hitAngle));
-            var col = diff <= 45f ? new Color(0.9f, 0.72f, 0.3f) : new Color(0.35f, 0.35f, 0.45f);
-            var dot = ProtoUI.CreatePanel($"RD{i}", _pieceArea,
-                new Vector2(Mathf.Sin(a * Mathf.Deg2Rad), Mathf.Cos(a * Mathf.Deg2Rad)) * RAD, new Vector2(20, 20), col);
-            dot.raycastTarget = false;
-            dot.transform.localRotation = Quaternion.Euler(0, 0, 45);
+            float a = i * STEP;
+            Vector2 lp = Dir(a) * (RAD + 52f);   // 盤の外側（リムのすぐ外）＝盤と被らず読める
+            if (mults[i] >= 2f) StartCoroutine(PocketPulse((RectTransform)ProtoUI.CreateGlow("RPGlow", _pieceArea, Dir(a) * RAD, new Vector2(66, 66), new Color(1f, 0.9f, 0.35f, 0.55f)).transform));
+            var lbl = ProtoUI.CreateText($"RM{i}", _pieceArea, $"{Mathf.RoundToInt(mults[i] * 100)}", 26, lp, new Vector2(56, 32), Color.white);
+            lbl.fontStyle = FontStyles.Bold; lbl.raycastTarget = false;
+            lbl.outlineWidth = 0.25f; lbl.outlineColor = new Color32(0, 0, 0, 230);
         }
-        var hitDot = ProtoUI.CreatePanel("RHit", _pieceArea,
-            new Vector2(Mathf.Sin(hitAngle * Mathf.Deg2Rad), Mathf.Cos(hitAngle * Mathf.Deg2Rad)) * RAD, new Vector2(38, 38), new Color(1f, 0.22f, 0.16f));
-        hitDot.raycastTarget = false; hitDot.transform.localRotation = Quaternion.Euler(0, 0, 45);
-        var needle = ProtoUI.CreatePanel("RNeedle", _pieceArea, Vector2.zero, new Vector2(10, RAD), Color.white);
-        needle.raycastTarget = false;
-        var nrt = (RectTransform)needle.transform;
-        nrt.pivot = new Vector2(0.5f, 0f);
-        nrt.anchoredPosition = Vector2.zero;
+
+        // 中央ハブ
+        var hub = ProtoUI.CreatePanel("RouHub", _pieceArea, Vector2.zero, new Vector2(34, 34), new Color(0.82f, 0.68f, 0.34f, 1f));
+        hub.raycastTarget = false; hub.transform.localRotation = Quaternion.Euler(0, 0, 45);
+        var hub2 = ProtoUI.CreatePanel("RouHub2", _pieceArea, Vector2.zero, new Vector2(16, 16), new Color(0.12f, 0.11f, 0.09f, 1f));
+        hub2.raycastTarget = false; hub2.transform.localRotation = Quaternion.Euler(0, 0, 45);
+
+        // 針：根元が太く先端が細い三角形（中心から外周へ。円内に収める）
+        float needleLen = RAD - 6f;
+        var needleGo = new GameObject("RNeedle", typeof(RectTransform), typeof(Image));
+        var srt = (RectTransform)needleGo.transform;
+        srt.SetParent(_pieceArea, false); srt.pivot = new Vector2(0.5f, 0f); srt.anchoredPosition = Vector2.zero;
+        srt.sizeDelta = new Vector2(34, needleLen);
+        var nImg = needleGo.GetComponent<Image>(); nImg.sprite = NeedleSprite(); nImg.type = Image.Type.Simple; nImg.raycastTarget = false;
+        // 根元の飾り（金の丸）
+        ProtoUI.CreatePanel("RNeedleHub", _pieceArea, Vector2.zero, new Vector2(26, 26), new Color(0.85f, 0.7f, 0.35f, 1f)).transform.localRotation = Quaternion.Euler(0, 0, 45);
+        // ボール（外周の白い玉。これが指すマスが結果）
+        var ball = ProtoUI.CreateGlow("RBall", _pieceArea, Dir(0) * (RAD - 4f), new Vector2(30, 30), Color.white);
+        ball.raycastTarget = false;
+        var ballCore = ProtoUI.CreatePanel("RBallCore", ball.transform, Vector2.zero, new Vector2(13, 13), Color.white);
+        ballCore.raycastTarget = false; ballCore.transform.localRotation = Quaternion.Euler(0, 0, 45);
+        var ballRt = (RectTransform)ball.transform;
+        float ballR = RAD - 4f;   // ボールの周回半径（リムの内側）
         yield return null;
 
-        float angle = 0f; const float speed = 260f; float timeout = 5f; bool stopped = false;
+        float angle = 0f; float speed = 300f; float timeout = 5f; bool stopped = false; float trailAcc = 0f;
         while (timeout > 0f)
         {
             angle = (angle + speed * Time.deltaTime) % 360f;
-            nrt.localRotation = Quaternion.Euler(0, 0, -angle);   // UIのZ回転は反時計回りなので符号を反転
+            srt.localRotation = Quaternion.Euler(0, 0, -angle);
+            ballRt.anchoredPosition = Dir(angle) * ballR;
+            trailAcc += Time.deltaTime;
+            if (trailAcc >= 0.02f) { trailAcc = 0f; StartCoroutine(BallTrail(_pieceArea, Dir(angle) * ballR)); }
             timeout -= Time.deltaTime;
             ProtoUI.SetGauge(_timerFill, timeout / 5f, 500f);
             if (ClickedThisFrame()) { stopped = true; break; }
             yield return null;
         }
-        float dHit = Mathf.Abs(Mathf.DeltaAngle(angle, hitAngle));
-        _challengeMultiplier = !stopped ? 0.9f : dHit <= 15f ? 2.2f : dHit <= 45f ? 1.4f : 0.9f;
-        _challengePrompt.text = _challengeMultiplier >= 2f ? "ぴったり！ 大当たり！（威力220%）"
-            : _challengeMultiplier > 1f ? "おしい！でも当たり！（威力140%）" : "外れ……（威力90%）";
-        yield return new WaitForSeconds(0.9f);
+        // 最寄りマスへコトッと吸い込む
+        int slot = Mathf.RoundToInt(angle / STEP) % SLOTS;
+        if (stopped)
+        {
+            float snapTo = slot * STEP;
+            float t2 = 0f;
+            while (t2 < 0.25f)
+            {
+                t2 += Time.deltaTime; float p = Mathf.SmoothStep(0, 1, t2 / 0.25f);
+                float ang = Mathf.LerpAngle(angle, snapTo, p);
+                srt.localRotation = Quaternion.Euler(0, 0, -ang);
+                ballRt.anchoredPosition = Dir(ang) * ballR;
+                yield return null;
+            }
+            angle = snapTo;
+        }
+        _challengeMultiplier = stopped ? mults[slot] : 0.5f;   // 止められなければ最低（50%）
+        int pct = Mathf.RoundToInt(_challengeMultiplier * 100);
+        yield return MinigameResultFx(_challengeMultiplier, _pieceArea.anchoredPosition + Dir(angle) * ballR);
+        _challengePrompt.text = _challengeMultiplier >= 2f ? $"ジャックポット！ 威力{pct}%！！"
+            : _challengeMultiplier >= 1.2f ? $"当たり！ 威力{pct}%！"
+            : _challengeMultiplier >= 1.0f ? $"威力{pct}%"
+            : $"ハズレ… 威力{pct}%";
+        yield return new WaitForSeconds(0.8f);
         Time.timeScale = _main.GameSpeed;
         _challengeRoot.gameObject.SetActive(false);
+        Destroy(wheelTex);   // 生成したホイール画像を破棄
+    }
+
+    // 根元が太く先端が細い三角形の針スプライト（下がベース＝pivot、上が先端）
+    Sprite _needleSprite;
+    Sprite NeedleSprite()
+    {
+        if (_needleSprite != null) return _needleSprite;
+        int w = 40, h = 220;
+        var tex = new Texture2D(w, h, TextureFormat.RGBA32, false) { filterMode = FilterMode.Bilinear, wrapMode = TextureWrapMode.Clamp };
+        var px = new Color[w * h];
+        var fill = new Color(0.96f, 0.83f, 0.42f, 1f);
+        var edge = new Color(0.5f, 0.36f, 0.14f, 1f);
+        var hi = new Color(1f, 0.95f, 0.7f, 1f);
+        float cx = w / 2f;
+        for (int y = 0; y < h; y++)
+        {
+            float t = y / (float)(h - 1);
+            float half = Mathf.Lerp(w / 2f - 1.5f, 0.6f, t * t * 0.6f + t * 0.4f);   // 根元太→先細
+            for (int x = 0; x < w; x++)
+            {
+                float d = Mathf.Abs(x + 0.5f - cx);
+                Color c;
+                if (d > half) c = new Color(0, 0, 0, 0);
+                else if (d > half - 2.2f) c = edge;             // 縁
+                else if (d < 3f) c = Color.Lerp(fill, hi, 0.6f); // 中央ハイライト
+                else c = fill;
+                px[y * w + x] = c;
+            }
+        }
+        tex.SetPixels(px); tex.Apply();
+        _needleSprite = Sprite.Create(tex, new Rect(0, 0, w, h), new Vector2(0.5f, 0f), 100f);
+        return _needleSprite;
+    }
+
+    // ルーレット盤を手続き生成（色分けセグメント＋黒い境界線＋外周リム）。1枚の画像として表示する
+    Texture2D BuildWheelTexture(float[] mults, System.Func<float, Color> colorOf, int size)
+    {
+        var tex = new Texture2D(size, size, TextureFormat.RGBA32, false) { filterMode = FilterMode.Bilinear, wrapMode = TextureWrapMode.Clamp };
+        float cx = size / 2f, cy = size / 2f;
+        float radius = size / 2f - 3f;
+        float rimW = size * 0.05f;
+        int slots = mults.Length; float step = 360f / slots;
+        float lineHalf = size * 0.005f + 1.2f;
+        var clear = new Color(0, 0, 0, 0);
+        var rimCol = new Color(0.30f, 0.17f, 0.10f, 1f);   // 焦げ茶のリム
+        var rimEdge = new Color(0.55f, 0.42f, 0.2f, 1f);   // 金の細縁
+        var lineCol = new Color(0.03f, 0.03f, 0.05f, 1f);
+        var px = new Color[size * size];
+        for (int y = 0; y < size; y++)
+            for (int x = 0; x < size; x++)
+            {
+                float dx = x - cx, dy = y - cy;
+                float r = Mathf.Sqrt(dx * dx + dy * dy);
+                Color c;
+                if (r > radius) c = clear;
+                else if (r > radius - 2f) c = rimEdge;
+                else if (r > radius - rimW) c = rimCol;
+                else
+                {
+                    float deg = Mathf.Atan2(dx, dy) * Mathf.Rad2Deg; if (deg < 0) deg += 360f;
+                    int slot = Mathf.RoundToInt(deg / step) % slots;
+                    c = colorOf(mults[slot]);
+                    // 境界線（隣のマスとの境目）
+                    float bnd = (Mathf.Round(deg / step - 0.5f) + 0.5f) * step;
+                    float dPix = Mathf.Abs(Mathf.DeltaAngle(deg, bnd)) * Mathf.Deg2Rad * r;
+                    if (dPix < lineHalf) c = lineCol;
+                    // 内周の細いリング線
+                    if (Mathf.Abs(r - (radius - rimW)) < 1.5f) c = lineCol;
+                }
+                px[y * size + x] = c;
+            }
+        tex.SetPixels(px); tex.Apply();
+        return tex;
+    }
+
+    // ボールの光の尾
+    IEnumerator BallTrail(Transform parent, Vector2 pos)
+    {
+        var g = ProtoUI.CreateGlow("BallTrail", parent, pos, new Vector2(22, 22), new Color(1f, 1f, 0.9f, 0.6f)); g.raycastTarget = false;
+        float t = 0f, dur = 0.25f; Color c = g.color;
+        while (t < dur && g != null) { t += Time.deltaTime; float p = t / dur; c.a = 0.6f * (1f - p); g.color = c; ((RectTransform)g.transform).localScale = Vector3.one * (1f - p * 0.5f); yield return null; }
+        if (g != null) Destroy(g.gameObject);
+    }
+
+    // 当たりポケットの発光をゆっくり脈打たせる
+    IEnumerator PocketPulse(RectTransform rt)
+    {
+        float t = 0f;
+        while (rt != null)
+        {
+            t += Time.deltaTime;
+            rt.localScale = Vector3.one * (1f + Mathf.Sin(t * 6f) * 0.18f);
+            yield return null;
+        }
     }
 
     // ==================== ミニゲーム：軌道なぞり ====================
@@ -1741,53 +2155,163 @@ public class ProtoBattle : MonoBehaviour
         _challengeRoot.gameObject.SetActive(true);
         Time.timeScale = 1f;
         foreach (Transform c in _pieceArea) Destroy(c.gameObject);
-        _challengePrompt.text = $"「{card.displayName}」発動！　①から順にカーソルでなぞれ！";
+        _challengePrompt.text = $"「{card.displayName}」発動！　①から順に、線から外れずになぞれ！";
         ProtoUI.SetGauge(_timerFill, 1f, 500f);
 
-        const int N = 5;
+        // 複雑な剣型を毎回ランダムに生成（折り返し・交差する軌道＝難しい）
+        var pts = TracePattern();
+        int N = pts.Length;
+
+        // ガイド軌道（ノード間を結ぶ点線＝なぞる線が見える）
+        var trailLayer = ProtoUI.CreateRect("TraceGuide", _pieceArea); trailLayer.anchoredPosition = Vector2.zero;
+        for (int i = 0; i < N - 1; i++)
+        {
+            Vector2 a = pts[i], b = pts[i + 1];
+            int dots = Mathf.CeilToInt(Vector2.Distance(a, b) / 22f);
+            for (int k = 1; k < dots; k++)
+            {
+                var gp = Vector2.Lerp(a, b, k / (float)dots);
+                var d = ProtoUI.CreatePanel("TGuide", trailLayer, gp, new Vector2(7, 7), new Color(0.5f, 0.55f, 0.75f, 0.55f));
+                d.raycastTarget = false; d.transform.localRotation = Quaternion.Euler(0, 0, 45);
+            }
+        }
+
         var nodes = new Image[N];
         var labels = new TextMeshProUGUI[N];
-        const float startX = -280f; const float stepX = 560f / (N - 1);
+        string circ = "①②③④⑤⑥⑦⑧⑨⑩⑪⑫";
         for (int i = 0; i < N; i++)
         {
-            var pos = new Vector2(startX + stepX * i, (i % 2 == 0 ? 1 : -1) * Random.Range(40f, 95f));
-            var node = ProtoUI.CreatePanel($"TN{i}", _pieceArea, pos, new Vector2(64, 64), new Color(0.25f, 0.3f, 0.5f, 0.95f));
-            node.raycastTarget = false;
-            node.transform.localRotation = Quaternion.Euler(0, 0, 45);
-            var lb = ProtoUI.CreateText($"TL{i}", _pieceArea, "①②③④⑤".Substring(i, 1), 30, pos, new Vector2(60, 40), Color.white);
+            ProtoUI.CreateGlow($"TNG{i}", _pieceArea, pts[i], new Vector2(74, 74), new Color(0.3f, 0.4f, 0.8f, 0.5f)).raycastTarget = false;
+            var node = ProtoUI.CreatePanel($"TN{i}", _pieceArea, pts[i], new Vector2(58, 58), new Color(0.22f, 0.28f, 0.5f, 0.98f));
+            node.raycastTarget = false; node.transform.localRotation = Quaternion.Euler(0, 0, 45);
+            var lb = ProtoUI.CreateText($"TL{i}", _pieceArea, circ.Substring(i, 1), 30, pts[i], new Vector2(56, 40), Color.white);
             lb.raycastTarget = false;
             nodes[i] = node; labels[i] = lb;
         }
+        // カーソル位置の光る剣先
+        var tip = ProtoUI.CreateGlow("TraceTip", _pieceArea, Vector2.zero, new Vector2(34, 34), new Color(0.7f, 0.95f, 1f, 0.9f)); tip.raycastTarget = false;
         yield return null;
 
-        const float dur = 4f;
-        float t = 0f; int reached = 0;
+        float dur = 2.8f + N * 0.42f;   // ノード数に応じた制限時間
+        float fastT = dur * 0.62f;      // これ以内で完走なら神速
+        float t = 0f; int reached = 0; bool brokeOff = false; float trailAcc = 0f; float onPathGrace = 0f;
+        const float TOL = 32f;        // ノード到達判定（狭め＝難しい）
+        const float PATH_TOL = 38f;   // 線からの許容外れ幅（超えたら失敗＝難しい）
         var area = (RectTransform)_pieceArea;
-        while (t < dur && reached < N)
+        while (t < dur && reached < N && !brokeOff)
         {
             t += Time.deltaTime;
             ProtoUI.SetGauge(_timerFill, 1f - t / dur, 500f);
             Vector2 lp;
             if (RectTransformUtility.ScreenPointToLocalPointInRectangle(area, MouseScreenPos(), null, out lp))
             {
-                var target = (RectTransform)nodes[reached].transform;
-                if (Vector2.Distance(lp, target.anchoredPosition) <= 46f)
+                tip.rectTransform.anchoredPosition = lp;
+                // 自分の描いた軌跡を残す（水色の光の粒）
+                trailAcc += Time.deltaTime;
+                if (trailAcc >= 0.016f) { trailAcc = 0f; StartCoroutine(TraceStroke(trailLayer, lp)); }
+
+                var target = ((RectTransform)nodes[reached].transform).anchoredPosition;
+                // 次ノードに到達
+                if (Vector2.Distance(lp, target) <= TOL)
                 {
                     nodes[reached].color = new Color(0.35f, 0.95f, 0.6f);
                     labels[reached].color = new Color(0.1f, 0.2f, 0.12f);
+                    StartCoroutine(ShockExpand(_pieceArea.anchoredPosition + target, new Color(0.5f, 1f, 0.7f), 0.8f));
+                    SpawnBurst(_pieceArea.anchoredPosition + target, new Color(0.5f, 1f, 0.7f), 8, 60f);
+                    _sfx?.PlayOneShot(_swingClip, 0.5f);
                     reached++;
+                }
+                // 線から大きく外れたら失敗（現ノード→次ノードの線分からの距離で判定）
+                else if (reached > 0)
+                {
+                    float dl = DistToSegment(lp, ((RectTransform)nodes[reached - 1].transform).anchoredPosition, target);
+                    if (dl > PATH_TOL) { onPathGrace += Time.deltaTime; if (onPathGrace > 0.12f) brokeOff = true; }
+                    else onPathGrace = 0f;
                 }
             }
             yield return null;
         }
         bool all = reached >= N;
-        _challengeMultiplier = all ? (t <= 2.5f ? 1.8f : 1.5f) : 0.8f + 0.14f * reached;
-        _challengePrompt.text = all
-            ? (t <= 2.5f ? "見事な剣筋！（威力180%）" : "なぞりきった！（威力150%）")
+        _challengeMultiplier = brokeOff ? 0.7f
+            : all ? (t <= fastT ? 2.0f : 1.6f)
+            : 0.8f + (0.7f / N) * reached;
+        Vector2 fxAt = _pieceArea.anchoredPosition + (reached > 0 ? ((RectTransform)nodes[Mathf.Min(reached, N - 1)].transform).anchoredPosition : Vector2.zero);
+        yield return MinigameResultFx(_challengeMultiplier, fxAt);
+        _challengePrompt.text = brokeOff ? "線から外れた……（威力70%）"
+            : all ? (t <= fastT ? "神速の剣筋！（威力200%）" : "なぞりきった！（威力160%）")
             : $"{reached}/{N} で途切れた……（威力 {Mathf.RoundToInt(_challengeMultiplier * 100)}%）";
-        yield return new WaitForSeconds(0.9f);
+        yield return new WaitForSeconds(0.7f);
         Time.timeScale = _main.GameSpeed;
         _challengeRoot.gameObject.SetActive(false);
+    }
+
+    // なぞった軌跡（フェードする光の粒）
+    IEnumerator TraceStroke(Transform parent, Vector2 pos)
+    {
+        var g = ProtoUI.CreateGlow("Stroke", parent, pos, new Vector2(20, 20), new Color(0.55f, 0.9f, 1f, 0.9f)); g.raycastTarget = false;
+        float t = 0f, dur = 0.6f; Color c = g.color;
+        while (t < dur && g != null) { t += Time.deltaTime; float p = t / dur; c.a = 0.9f * (1f - p); g.color = c; yield return null; }
+        if (g != null) Destroy(g.gameObject);
+    }
+
+    // 剣型パターンを毎回ランダム生成（正規化(-1..1)で作り、プレイエリアに合わせて拡大）
+    Vector2[] TracePattern()
+    {
+        const float RX = 300f, RY = 122f; var C = new Vector2(0, 8f);
+        Vector2 Map(float nx, float ny) => C + new Vector2(nx * RX, ny * RY);
+        System.Func<float, Vector2> Pol = deg => { float r = deg * Mathf.Deg2Rad; return new Vector2(Mathf.Cos(r), Mathf.Sin(r)); };
+
+        int kind = Random.Range(0, 4);
+        var list = new System.Collections.Generic.List<Vector2>();
+        float rot = Random.Range(0f, 360f);   // 全体を回して毎回違う向きに
+
+        switch (kind)
+        {
+            case 0: // 五芒星（一筆書きで線が交差する）
+            {
+                for (int k = 0; k <= 5; k++) { int idx = (k * 2) % 5; var d = Pol(rot + 90f + 72f * idx); list.Add(Map(d.x, d.y)); }
+                break;
+            }
+            case 1: // 渦巻き（外→内へ巻き込む）
+            {
+                int n = 9;
+                for (int k = 0; k < n; k++) { float ang = rot + k * 150f; float rr = 1f - 0.085f * k; var d = Pol(ang); list.Add(Map(d.x * rr, d.y * rr)); }
+                break;
+            }
+            case 2: // 稲妻の折り返し（右へ往路→左へ復路。x が反転して交差）
+            {
+                int top = 5;
+                for (int k = 0; k < top; k++) { float x = -1f + 2f * k / (top - 1); float y = (k % 2 == 0 ? 0.95f : 0.15f); list.Add(Map(x, y)); }
+                int bot = 4;
+                for (int k = 0; k < bot; k++) { float x = 0.7f - 1.7f * k / (bot - 1); float y = (k % 2 == 0 ? -0.2f : -0.95f); list.Add(Map(x, y)); }
+                break;
+            }
+            default: // 砂時計／蝶（上辺→対角→下辺→対角＝×字に交差）
+            {
+                float[,] hg = { { -1f, 0.9f }, { 1f, 0.9f }, { -1f, -0.9f }, { 1f, -0.9f }, { -0.35f, 0f }, { 0.55f, 0.6f }, { -0.55f, -0.6f }, { 0.9f, -0.1f } };
+                for (int k = 0; k < hg.GetLength(0); k++)
+                {
+                    float x = hg[k, 0], y = hg[k, 1];
+                    float rr = rot * Mathf.Deg2Rad;   // 回転行列で全体を回す
+                    float rx = x * Mathf.Cos(rr) - y * Mathf.Sin(rr);
+                    float ry = x * Mathf.Sin(rr) + y * Mathf.Cos(rr);
+                    list.Add(Map(rx * 0.98f, ry * 0.98f));
+                }
+                break;
+            }
+        }
+        // 画面外に出ないようクランプ
+        for (int i = 0; i < list.Count; i++)
+            list[i] = new Vector2(Mathf.Clamp(list[i].x, -320f, 320f), Mathf.Clamp(list[i].y, -132f, 140f));
+        return list.ToArray();
+    }
+
+    // 点から線分への距離
+    static float DistToSegment(Vector2 p, Vector2 a, Vector2 b)
+    {
+        Vector2 ab = b - a; float len2 = ab.sqrMagnitude;
+        float u = len2 < 1e-4f ? 0f : Mathf.Clamp01(Vector2.Dot(p - a, ab) / len2);
+        return Vector2.Distance(p, a + ab * u);
     }
 
     // マウスのスクリーン座標（新旧Input両対応）
@@ -1830,15 +2354,30 @@ public class ProtoBattle : MonoBehaviour
         Time.timeScale = 1f;
         foreach (Transform c in _pieceArea) Destroy(c.gameObject);
         _challengePrompt.text = $"「{card.displayName}」発動！　長押しで溜めて、良いところで離せ！（溜めすぎ注意）";
+        ProtoUI.SetGauge(_timerFill, 1f, 500f);
         const float W = 640f;
         var barBg = ProtoUI.CreatePanel("CBar", _pieceArea, Vector2.zero, new Vector2(W, 46), new Color(0.12f, 0.12f, 0.2f, 0.98f));
-        ProtoUI.CreatePanel("CZone", barBg.transform, new Vector2(W * 0.32f, 0), new Vector2(W * 0.22f, 46), new Color(0.85f, 0.65f, 0.2f, 0.85f)).raycastTarget = false;   // 会心帯
+        ProtoUI.CreatePanel("CZone", barBg.transform, new Vector2(W * (0.32f - 0.11f * (MgZone - 1f)), 0), new Vector2(W * 0.22f * MgZone, 46), new Color(0.85f, 0.65f, 0.2f, 0.85f)).raycastTarget = false;   // 会心帯（達人で拡大）
         ProtoUI.CreatePanel("CDanger", barBg.transform, new Vector2(W * 0.46f, 0), new Vector2(W * 0.08f, 46), new Color(0.9f, 0.25f, 0.2f, 0.9f)).raycastTarget = false;   // 暴発帯
         var fill = ProtoUI.CreatePanel("CFill", barBg.transform, new Vector2(-W / 2f, 0), new Vector2(4, 42), new Color(0.4f, 0.9f, 1f));
         fill.raycastTarget = false; var fillRt = (RectTransform)fill.transform; fillRt.pivot = new Vector2(0f, 0.5f);
+
+        // ▽マーカー：会心帯の中心を指し、狙う場所を示す
+        float critX = W * (0.32f - 0.11f * (MgZone - 1f));
+        var mark = ProtoUI.CreateText("CMark", _pieceArea, "▽", 44, new Vector2(critX, 52f), new Vector2(60, 60), new Color(1f, 0.9f, 0.4f));
+        mark.fontStyle = FontStyles.Bold; mark.raycastTarget = false;
+        var markLbl = ProtoUI.CreateText("CMarkL", _pieceArea, "ここで離せ", 20, new Vector2(critX, 84f), new Vector2(160, 30), new Color(1f, 0.85f, 0.5f));
+        markLbl.raycastTarget = false;
         yield return null;
 
+        // ==== 溜めの魔力オーブ（バーの少し上で膨らむ） ====
+        var orbPos = new Vector2(0, 120f);
+        var orbHalo = ProtoUI.CreateGlow("COrbHalo", _pieceArea, orbPos, new Vector2(40, 40), new Color(0.4f, 0.8f, 1f, 0.5f)); orbHalo.raycastTarget = false;
+        var orb = ProtoUI.CreateGlow("COrb", _pieceArea, orbPos, new Vector2(24, 24), new Color(0.7f, 0.95f, 1f, 0.95f)); orb.raycastTarget = false;
+        var orbRt = orb.rectTransform; var haloRt = orbHalo.rectTransform;
+
         float charge = 0f; bool held = false; float timeout = 4f; bool blew = false;
+        float sparkAcc = 0f; float pulseT = 0f; bool warned = false;
         while (timeout > 0f)
         {
             timeout -= Time.deltaTime;
@@ -1847,20 +2386,104 @@ public class ProtoBattle : MonoBehaviour
             if (charge >= 1f) { charge = 1f; blew = true; break; }          // 暴発
             if (held && !down) break;                                        // 離した
             fillRt.sizeDelta = new Vector2(W * charge, 42);
-            fill.color = charge > 0.82f ? new Color(1f, 0.4f, 0.2f) : new Color(0.4f, 0.9f, 1f);
+
+            bool hot = charge > 0.82f;
+            fill.color = hot ? new Color(1f, 0.4f, 0.2f) : new Color(0.4f, 0.9f, 1f);
+            ProtoUI.SetGauge(_timerFill, Mathf.Clamp01(timeout / 4f), 500f);   // 制限時間バーを更新
+
+            // オーブが溜めに応じて膨張＋鼓動、色は青→白→赤へ
+            pulseT += Time.deltaTime * (6f + charge * 14f);
+            float pulse = 1f + Mathf.Sin(pulseT) * 0.12f * (0.4f + charge);
+            float size = (24f + charge * 120f) * pulse;
+            orbRt.sizeDelta = new Vector2(size, size);
+            haloRt.sizeDelta = new Vector2(size * 2.1f, size * 2.1f);
+            Color oc = hot ? Color.Lerp(new Color(1f, 0.55f, 0.2f), new Color(1f, 0.2f, 0.15f), (charge - 0.82f) / 0.18f)
+                           : Color.Lerp(new Color(0.6f, 0.9f, 1f), new Color(1f, 0.95f, 0.7f), charge);
+            orb.color = oc; orbHalo.color = new Color(oc.r, oc.g, oc.b, 0.45f);
+
+            // 溜めるほど魔力の火花が舞い散る
+            if (held)
+            {
+                sparkAcc += Time.deltaTime;
+                if (sparkAcc >= Mathf.Lerp(0.14f, 0.03f, charge))
+                {
+                    sparkAcc = 0f;
+                    float ang = Random.Range(0f, Mathf.PI * 2f); float r = size * 0.9f;
+                    StartCoroutine(ChargeSpark(orbPos + new Vector2(Mathf.Cos(ang), Mathf.Sin(ang)) * r, orbPos, oc));
+                }
+            }
+            // 溜めが強いほど画面が震える
+            if (charge > 0.5f && Random.value < (charge - 0.5f) * 0.5f)
+                StartCoroutine(ScreenShake(charge * 4f, 0.06f));
+            // 暴発直前の警告
+            if (hot && !warned) { warned = true; StartCoroutine(ScreenFlash(new Color(1f, 0.3f, 0.1f), 0.2f)); }
+            if (!hot) warned = false;
             yield return null;
         }
         fillRt.sizeDelta = new Vector2(W * charge, 42);
         _challengeMultiplier = blew ? 0.5f
-            : charge >= 0.64f && charge <= 0.82f ? 2f
-            : charge >= 0.45f ? 1.4f
+            : charge >= 0.82f - 0.18f * MgZone && charge <= 0.82f ? 2f    // 会心帯（達人で下限が広がる）
+            : charge >= 0.45f - 0.18f * (MgZone - 1f) ? 1.4f
             : 0.8f + charge * 0.4f;
+
+        // ==== 解放演出 ====
+        if (blew)
+        {
+            orb.color = new Color(1f, 0.3f, 0.15f);
+            StartCoroutine(ShockExpand(orbPos, new Color(1f, 0.35f, 0.15f), 2.6f));
+            SpawnBurst(orbPos, new Color(1f, 0.4f, 0.2f), 20, 130f);
+            StartCoroutine(ScreenShake(16f, 0.4f));
+            StartCoroutine(ScreenFlash(new Color(1f, 0.35f, 0.1f), 0.6f));
+        }
+        else
+        {
+            var col = _challengeMultiplier >= 2f ? new Color(1f, 0.9f, 0.4f) : new Color(0.5f, 0.9f, 1f);
+            int power = _challengeMultiplier >= 2f ? 3 : 1;
+            for (int r = 0; r < power; r++) StartCoroutine(ShockExpand(orbPos, col, 1.6f + r * 0.9f));
+            SpawnBurst(orbPos, col, _challengeMultiplier >= 2f ? 24 : 12, 140f);
+        }
+        // オーブ消滅
+        StartCoroutine(FadeAway(orb.gameObject, 0.4f));
+        StartCoroutine(FadeAway(orbHalo.gameObject, 0.4f));
+
+        yield return MinigameResultFx(_challengeMultiplier, orbPos);
         _challengePrompt.text = blew ? "溜めすぎて暴発！（威力50%）"
             : _challengeMultiplier >= 2f ? "完璧なタメ！会心の一撃！（威力200%）"
             : _challengeMultiplier > 1f ? "良いタメだ！（威力140%）" : "溜めが足りない……";
-        yield return new WaitForSeconds(0.9f);
+        yield return new WaitForSeconds(0.7f);
         Time.timeScale = _main.GameSpeed;
         _challengeRoot.gameObject.SetActive(false);
+    }
+
+    // 溜め中に中心へ吸い込まれる火花
+    IEnumerator ChargeSpark(Vector2 from, Vector2 to, Color col)
+    {
+        var g = ProtoUI.CreateGlow("CSpark", _pieceArea, from, new Vector2(14, 14), col); g.raycastTarget = false;
+        float t = 0f, dur = 0.35f; var rt = g.rectTransform; Color c = col;
+        while (t < dur && g != null)
+        {
+            t += Time.deltaTime; float p = t / dur;
+            rt.anchoredPosition = Vector2.Lerp(from, to, p * p);
+            c.a = 1f - p; g.color = c;
+            rt.sizeDelta = Vector2.one * (14f * (1f - p * 0.5f));
+            yield return null;
+        }
+        if (g != null) Destroy(g.gameObject);
+    }
+
+    // 汎用フェードアウト消滅
+    IEnumerator FadeAway(GameObject go, float dur)
+    {
+        var img = go.GetComponent<Image>(); if (img == null) { Destroy(go); yield break; }
+        float t = 0f; Color c = img.color; var rt = (RectTransform)go.transform; Vector2 s0 = rt.sizeDelta;
+        while (t < dur && go != null)
+        {
+            t += Time.deltaTime; float p = t / dur;
+            c.a = (1f - p) * 0.95f; img.color = c;
+            rt.sizeDelta = s0 * (1f + p * 0.4f);
+            yield return null;
+        }
+        if (go != null) Destroy(go);
     }
 
     // ==================== ミニゲーム：デュアルゲージ ====================
@@ -1871,13 +2494,14 @@ public class ProtoBattle : MonoBehaviour
         Time.timeScale = 1f;
         foreach (Transform c in _pieceArea) Destroy(c.gameObject);
         _challengePrompt.text = $"「{card.displayName}」発動！　2本とも会心ゾーンで止めろ！";
+        ProtoUI.SetGauge(_timerFill, 1f, 500f);
         const float W = 640f;
         float[] result = new float[2];
         for (int g = 0; g < 2; g++)
         {
             foreach (Transform c in _pieceArea) Destroy(c.gameObject);
             var barBg = ProtoUI.CreatePanel($"DBar{g}", _pieceArea, new Vector2(0, g == 0 ? 40 : -40), new Vector2(W, 40), new Color(0.12f, 0.12f, 0.2f, 0.98f));
-            ProtoUI.CreatePanel("DZone", barBg.transform, Vector2.zero, new Vector2(W * 0.16f, 40), new Color(0.9f, 0.35f, 0.25f, 0.9f)).raycastTarget = false;
+            ProtoUI.CreatePanel("DZone", barBg.transform, Vector2.zero, new Vector2(W * 0.16f * MgZone, 40), new Color(0.9f, 0.35f, 0.25f, 0.9f)).raycastTarget = false;
             var cursor = ProtoUI.CreatePanel("DCur", barBg.transform, Vector2.zero, new Vector2(8, 54), Color.white);
             cursor.raycastTarget = false;
             _challengePrompt.text = g == 0 ? "1本目！クリックで止める" : "2本目！クリックで止める";
@@ -1892,7 +2516,7 @@ public class ProtoBattle : MonoBehaviour
                 yield return null;
             }
             float dist = Mathf.Abs(pos - 0.5f);
-            result[g] = !stopped ? 0.7f : dist <= 0.08f ? 1.4f : dist <= 0.18f ? 1.1f : 0.8f;
+            result[g] = !stopped ? 0.7f : dist <= 0.08f * MgZone ? 1.4f : dist <= 0.18f * MgZone ? 1.1f : 0.8f;
             yield return new WaitForSeconds(0.2f);
         }
         _challengeMultiplier = result[0] * result[1];   // 両方1.4→約1.96倍
@@ -1902,40 +2526,77 @@ public class ProtoBattle : MonoBehaviour
         _challengeRoot.gameObject.SetActive(false);
     }
 
-    // ==================== ミニゲーム：カウントダウン読み ====================
-    // 「3・2・1」の表示が消えたあと、頭の中で数えて「今！」のタイミングでクリック
+    // ==================== ミニゲーム：カウントダウン（タイミング斬り） ====================
+    // 3・2・1のリズムに乗って、縮んでくるひし形が枠にピッタリ重なった瞬間にクリック
     IEnumerator RunCountdown(CardDef card)
     {
         _challengeRoot.gameObject.SetActive(true);
         Time.timeScale = 1f;
         foreach (Transform c in _pieceArea) Destroy(c.gameObject);
-        _challengePrompt.text = $"「{card.displayName}」発動！　拍を数えて『斬！』の瞬間にクリック！";
-        var big = ProtoUI.CreateText("CDNum", _pieceArea, "", 140, Vector2.zero, new Vector2(400, 200), Color.white);
-        big.fontStyle = FontStyles.Bold;
+        _challengePrompt.text = $"「{card.displayName}」発動！　リズムに乗って、枠に重なった瞬間クリック！";
+        ProtoUI.SetGauge(_timerFill, 1f, 500f);
+
+        const float beat = 0.7f;
+        const float targetSize = 110f;
+        var center = new Vector2(0, 10f);
+
+        // 目標の枠（固定のひし形の輪郭）
+        var frame = ProtoUI.CreatePanel("CDFrame", _pieceArea, center, new Vector2(targetSize, targetSize), new Color(0.45f, 0.95f, 1f, 0.95f));
+        frame.raycastTarget = false; frame.transform.localRotation = Quaternion.Euler(0, 0, 45);
+        var hole = ProtoUI.CreatePanel("CDHole", frame.transform, Vector2.zero, new Vector2(targetSize - 14f, targetSize - 14f), new Color(0.04f, 0.06f, 0.10f, 0.75f));
+        hole.raycastTarget = false;
+        // カウント数字（枠の上）
+        var big = ProtoUI.CreateText("CDNum", _pieceArea, "", 120, new Vector2(0, 150f), new Vector2(400, 200), Color.white);
+        big.fontStyle = FontStyles.Bold; big.raycastTarget = false;
+        // 縮んでくるひし形（beat*3かけて targetSize まで縮む＝1の直後にピッタリ重なる）
+        float startSize = targetSize * 4.2f;
+        var incoming = ProtoUI.CreatePanel("CDIn", _pieceArea, center, new Vector2(startSize, startSize), new Color(1f, 0.55f, 0.2f, 0.5f));
+        incoming.raycastTarget = false; incoming.transform.localRotation = Quaternion.Euler(0, 0, 45);
+        var inRt = (RectTransform)incoming.transform;
         yield return null;
 
-        // 3・2・1 を等間隔で表示、その後同じ間隔で「斬！」がジャスト
-        const float beat = 0.7f;
-        foreach (var n in new[] { "3", "2", "1" })
-        {
-            big.text = n; big.color = Color.white; big.rectTransform.localScale = Vector3.one * 1.3f;
-            float e = 0f; while (e < beat) { e += Time.deltaTime; big.rectTransform.localScale = Vector3.Lerp(big.rectTransform.localScale, Vector3.one, Time.deltaTime * 8f); if (ClickedThisFrame()) { } yield return null; }
-        }
-        big.text = "？"; big.color = new Color(0.5f, 0.5f, 0.6f);
-        float target = beat; float t = 0f; bool clicked = false;
-        while (t < beat * 2f)
+        const float total = beat * 3f;   // 3→2→1 のリズムでちょうど重なる
+        float t = 0f; bool clicked = false; float clickErr = 999f; int lastBeat = -1;
+        // 少し行き過ぎても取れるよう total*1.35 まで待つ
+        while (t < total * 1.35f)
         {
             t += Time.deltaTime;
-            if (ClickedThisFrame()) { clicked = true; break; }
+            float p = t / total;                    // 1.0 で枠にピッタリ
+            float size = Mathf.Lerp(startSize, targetSize, Mathf.Clamp01(p));
+            inRt.sizeDelta = new Vector2(size, size);
+            // ジャストに近いほど明るく
+            float near = 1f - Mathf.Clamp01(Mathf.Abs(size - targetSize) / (targetSize * 1.5f));
+            incoming.color = Color.Lerp(new Color(1f, 0.55f, 0.2f, 0.45f), new Color(1f, 0.95f, 0.5f, 0.9f), near);
+
+            // 拍ごとに数字と鼓動
+            int b = Mathf.Clamp(3 - Mathf.FloorToInt(t / beat), 0, 3);
+            if (b != lastBeat && b >= 1 && t < total)
+            {
+                lastBeat = b;
+                big.text = b.ToString(); big.color = Color.white; big.rectTransform.localScale = Vector3.one * 1.4f;
+                if (_sfx != null && _heartbeatClip != null) _sfx.PlayOneShot(_heartbeatClip, 0.9f);
+            }
+            big.rectTransform.localScale = Vector3.Lerp(big.rectTransform.localScale, Vector3.one, Time.deltaTime * 8f);
+            ProtoUI.SetGauge(_timerFill, Mathf.Clamp01(1f - t / (total * 1.35f)), 500f);
+
+            if (ClickedThisFrame()) { clicked = true; clickErr = Mathf.Abs(t - total); break; }
             yield return null;
         }
-        float err = Mathf.Abs(t - target);
-        _challengeMultiplier = !clicked ? 0.7f : err <= 0.08f ? 2.2f : err <= 0.2f ? 1.4f : 0.9f;
+
+        _challengeMultiplier = !clicked ? 0.7f
+            : clickErr <= 0.07f * MgZone ? 2.2f
+            : clickErr <= 0.18f * MgZone ? 1.4f : 0.9f;
         big.text = _challengeMultiplier >= 2f ? "斬！！" : _challengeMultiplier > 1f ? "斬！" : "外し";
         big.color = _challengeMultiplier > 1f ? new Color(1f, 0.85f, 0.4f) : new Color(0.7f, 0.7f, 0.8f);
+        if (_challengeMultiplier > 1f)
+        {
+            StartCoroutine(ShockExpand(_pieceArea.anchoredPosition + center, new Color(1f, 0.9f, 0.4f), _challengeMultiplier >= 2f ? 2.2f : 1.5f));
+            SpawnBurst(_pieceArea.anchoredPosition + center, new Color(1f, 0.9f, 0.4f), _challengeMultiplier >= 2f ? 18 : 10, 120f);
+        }
+        yield return MinigameResultFx(_challengeMultiplier, _pieceArea.anchoredPosition + center);
         _challengePrompt.text = _challengeMultiplier >= 2f ? "ジャスト！（威力220%）"
             : _challengeMultiplier > 1f ? "惜しい！（威力140%）" : "タイミングを外した…";
-        yield return new WaitForSeconds(0.9f);
+        yield return new WaitForSeconds(0.7f);
         Time.timeScale = _main.GameSpeed;
         _challengeRoot.gameObject.SetActive(false);
     }
@@ -2009,6 +2670,9 @@ public class ProtoBattle : MonoBehaviour
     }
 
     // ==================== ミニゲーム：ゲージストップ ====================
+    // 達人のペンダント：ミニゲームの成功判定ゾーンが1.5倍に広がる
+    float MgZone => _main.Equipped == EquipKind.MasterPendant ? 1.5f : 1f;
+
     // 高速で往復するカーソルを会心ゾーンで止める。ど真ん中=2倍 / ゾーン内=1.4倍 / 外=0.9倍
     IEnumerator RunGauge(CardDef card)
     {
@@ -2019,20 +2683,36 @@ public class ProtoBattle : MonoBehaviour
         ProtoUI.SetGauge(_timerFill, 1f, 500f);
 
         const float W = 640f;
-        var barBg = ProtoUI.CreatePanel("GBar", _pieceArea, new Vector2(0, 0), new Vector2(W, 46), new Color(0.12f, 0.12f, 0.2f, 0.98f));
-        ProtoUI.CreatePanel("GZone", barBg.transform, new Vector2(0, 0), new Vector2(W * 0.26f, 46), new Color(0.85f, 0.65f, 0.2f, 0.85f)).raycastTarget = false;   // 1.4倍ゾーン
-        ProtoUI.CreatePanel("GCrit", barBg.transform, new Vector2(0, 0), new Vector2(W * 0.08f, 46), new Color(0.95f, 0.3f, 0.25f, 0.95f)).raycastTarget = false;   // 2倍ゾーン
-        var cursor = ProtoUI.CreatePanel("GCur", barBg.transform, Vector2.zero, new Vector2(8, 62), Color.white);
+        // 台座＋金縁のバー（高級感）
+        ProtoUI.CreateGlow("GBarHalo", _pieceArea, Vector2.zero, new Vector2(W + 90f, 120f), new Color(0.5f, 0.42f, 0.2f, 0.25f)).raycastTarget = false;
+        ProtoUI.CreatePanel("GBarFrame", _pieceArea, Vector2.zero, new Vector2(W + 20f, 62f), new Color(0.82f, 0.68f, 0.34f, 0.95f)).raycastTarget = false;
+        var barBg = ProtoUI.CreatePanel("GBar", _pieceArea, new Vector2(0, 0), new Vector2(W, 46), new Color(0.08f, 0.09f, 0.15f, 1f));
+        // ゾーン（発光つき）。会心ゾーンは脈動させて狙いを誘う
+        var zone = ProtoUI.CreatePanel("GZone", barBg.transform, new Vector2(0, 0), new Vector2(W * 0.26f * MgZone, 46), new Color(0.9f, 0.7f, 0.25f, 0.9f)); zone.raycastTarget = false;
+        var critGlow = ProtoUI.CreateGlow("GCritGlow", barBg.transform, Vector2.zero, new Vector2(W * 0.2f * MgZone, 90f), new Color(1f, 0.35f, 0.25f, 0.8f)); critGlow.raycastTarget = false;
+        var crit = ProtoUI.CreatePanel("GCrit", barBg.transform, new Vector2(0, 0), new Vector2(W * 0.08f * MgZone, 46), new Color(1f, 0.35f, 0.28f, 1f)); crit.raycastTarget = false;
+        // 発光するカーソル（芯＋ハロー）
+        var curGlow = ProtoUI.CreateGlow("GCurGlow", barBg.transform, Vector2.zero, new Vector2(46, 90), new Color(0.7f, 0.95f, 1f, 0.9f)); curGlow.raycastTarget = false;
+        var cursor = ProtoUI.CreatePanel("GCur", barBg.transform, Vector2.zero, new Vector2(7, 66), Color.white);
         cursor.raycastTarget = false;
 
         yield return null; // 開いた瞬間のクリックを無視
 
-        float t = 0f; const float speed = 1.6f; float timeout = 5f; float pos = 0f; bool stopped = false;
+        float t = 0f; const float speed = 1.6f; float timeout = 5f; float pos = 0f; bool stopped = false; float trailAcc = 0f;
         while (timeout > 0f)
         {
             t += Time.deltaTime * speed;
             pos = Mathf.PingPong(t, 1f);                       // 0..1
-            ((RectTransform)cursor.transform).anchoredPosition = new Vector2((pos - 0.5f) * W, 0);
+            float cx = (pos - 0.5f) * W;
+            ((RectTransform)cursor.transform).anchoredPosition = new Vector2(cx, 0);
+            ((RectTransform)curGlow.transform).anchoredPosition = new Vector2(cx, 0);
+            // 会心ゾーンの脈動
+            float pulse = 1f + Mathf.Sin(Time.time * 10f) * 0.15f;
+            ((RectTransform)critGlow.transform).localScale = new Vector3(pulse, pulse, 1f);
+            var cc = new Color(1f, 0.35f, 0.25f, 0.55f + 0.3f * Mathf.Sin(Time.time * 10f)); critGlow.color = cc;
+            // カーソルの残像（軌跡）
+            trailAcc += Time.deltaTime;
+            if (trailAcc >= 0.02f) { trailAcc = 0f; StartCoroutine(CursorTrail(barBg.transform, new Vector2(cx, 0))); }
             timeout -= Time.deltaTime;
             ProtoUI.SetGauge(_timerFill, timeout / 5f, 500f);
             if (ClickedThisFrame()) { stopped = true; break; }
@@ -2040,12 +2720,46 @@ public class ProtoBattle : MonoBehaviour
         }
 
         float dist = Mathf.Abs(pos - 0.5f); // 中心からの距離（0〜0.5）
-        _challengeMultiplier = !stopped ? 0.9f : dist <= 0.04f ? 2f : dist <= 0.13f ? 1.4f : 0.9f;
+        _challengeMultiplier = !stopped ? 0.9f : dist <= 0.04f * MgZone ? 2f : dist <= 0.13f * MgZone ? 1.4f : 0.9f;
+        // 止めた瞬間の演出
+        Vector2 hitPos = _pieceArea.anchoredPosition + new Vector2((pos - 0.5f) * W, 0);
+        yield return MinigameResultFx(_challengeMultiplier, hitPos);
         _challengePrompt.text = _challengeMultiplier >= 2f ? "ジャスト！ 会心の一撃！（威力200%）"
             : _challengeMultiplier > 1f ? "いい感じ！（威力140%）" : "うーん、外した…（威力90%）";
-        yield return new WaitForSeconds(0.9f);
+        yield return new WaitForSeconds(0.7f);
         Time.timeScale = _main.GameSpeed;
         _challengeRoot.gameObject.SetActive(false);
+    }
+
+    // カーソルの淡い残像
+    IEnumerator CursorTrail(Transform parent, Vector2 pos)
+    {
+        var g = ProtoUI.CreateGlow("Trail", parent, pos, new Vector2(30, 70), new Color(0.6f, 0.9f, 1f, 0.5f)); g.raycastTarget = false;
+        float t = 0f, dur = 0.22f; Color c = g.color;
+        while (t < dur && g != null) { t += Time.deltaTime; float p = t / dur; c.a = 0.5f * (1f - p); g.color = c; yield return null; }
+        if (g != null) Destroy(g.gameObject);
+    }
+
+    // ミニゲーム成功/失敗の共通フィードバック（止めた位置で炸裂）
+    IEnumerator MinigameResultFx(float mult, Vector2 pos)
+    {
+        bool crit = mult >= 2f, good = mult > 1f;
+        Color col = crit ? new Color(1f, 0.5f, 0.2f) : good ? new Color(1f, 0.85f, 0.35f) : new Color(0.6f, 0.65f, 0.8f);
+        if (crit || good)
+        {
+            _sfx?.PlayOneShot(_parryClip, crit ? 1f : 0.7f);
+            StartCoroutine(ScreenFlash(col, crit ? 0.35f : 0.2f));
+            if (crit) StartCoroutine(ScreenShake(16f, 0.3f));
+            StartCoroutine(ShockExpand(pos, Color.Lerp(col, Color.white, 0.6f), crit ? 2.2f : 1.4f));
+            SpawnBurst(pos, col, crit ? 40 : 22, crit ? 200f : 130f);
+            if (crit) { SpawnBurst(pos, Color.white, 20, 120f); StartCoroutine(TextPopup(pos + new Vector2(0, 70f), "PERFECT!", col, 46)); }
+            yield return HitStop(crit ? 0.1f : 0.05f);
+        }
+        else
+        {
+            _sfx?.PlayOneShot(_swingClip, 0.5f);
+            SpawnBurst(pos, col, 8, 70f);
+        }
     }
 
     // ==================== ミニゲーム：数字順タップ ====================
@@ -2107,42 +2821,161 @@ public class ProtoBattle : MonoBehaviour
     }
 
     // ==================== ミニゲーム：スロット ====================
-    // 3つのリールをクリックで順に止める。7×3=2.5倍 / 絵柄3つ=1.8倍 / 2つ=1.2倍 / バラバラ=0.8倍
+    // 3つのリールをクリックで順に止める。絵柄は固定順で回るので「目押し」ができる。
+    // 7×3=2.5倍 / 絵柄3つ=1.8倍 / 2つ=1.2倍 / バラバラ=0.8倍
     static readonly string[] SlotSymbols = { "７", "♦", "♥", "★" };
+    static readonly Color[] SlotSymbolColors = {
+        new Color(0.95f, 0.2f, 0.2f),    // ７＝赤
+        new Color(0.2f, 0.55f, 1f),      // ♦＝青
+        new Color(0.9f, 0.25f, 0.45f),   // ♥＝ピンク
+        new Color(1f, 0.8f, 0.2f),       // ★＝金
+    };
     IEnumerator RunSlot(CardDef card)
     {
         _challengeRoot.gameObject.SetActive(true);
         Time.timeScale = 1f;   // ミニゲーム中は演出速度に関係なく等速（反射神経ゲーのため）
         foreach (Transform c in _pieceArea) Destroy(c.gameObject);
         _challengePrompt.text = $"「{card.displayName}」発動！　クリックでリールを止めろ！";
-        ProtoUI.SetGauge(_timerFill, 1f, 500f);
+        if (_timerFill != null) _timerFill.transform.parent.gameObject.SetActive(false);   // スロットは時間制限なし＝ゲージを隠す
 
-        var labels = new TextMeshProUGUI[3];
-        var result = new int[3];
+        // ==== 実機風の筐体 ====
+        ProtoUI.CreateGlow("SlotHalo", _pieceArea, new Vector2(0, 0), new Vector2(620, 380), new Color(1f, 0.5f, 0.2f, 0.25f)).raycastTarget = false;
+        ProtoUI.CreatePanel("SlotCabOuter", _pieceArea, new Vector2(0, 0), new Vector2(540, 300), new Color(0.85f, 0.68f, 0.28f, 1f)).raycastTarget = false;    // 金の外枠
+        ProtoUI.CreatePanel("SlotCabRed", _pieceArea, new Vector2(0, -6), new Vector2(516, 276), new Color(0.62f, 0.12f, 0.14f, 1f)).raycastTarget = false;       // 赤いキャビネット
+        // 上部マーキー
+        var marquee = ProtoUI.CreatePanel("SlotMarquee", _pieceArea, new Vector2(0, 116), new Vector2(300, 44), new Color(0.15f, 0.05f, 0.06f, 1f)); marquee.raycastTarget = false;
+        ProtoUI.CreatePanel("SlotMarqueeFr", _pieceArea, new Vector2(0, 116), new Vector2(310, 52), new Color(0.9f, 0.75f, 0.35f, 1f)).transform.SetAsFirstSibling();
+        var mt = ProtoUI.CreateText("SlotTitle", marquee.transform, "★ JACKPOT ★", 24, Vector2.zero, new Vector2(300, 44), new Color(1f, 0.9f, 0.4f)); mt.fontStyle = FontStyles.Bold;
+        // リール背景（黒）＋ペイライン
+        ProtoUI.CreatePanel("SlotReelBg", _pieceArea, new Vector2(0, -14), new Vector2(470, 168), new Color(0.04f, 0.04f, 0.06f, 1f)).raycastTarget = false;
+        // ペイライン（中央の横ライン＋左右の矢印）
+        ProtoUI.CreatePanel("SlotPayline", _pieceArea, new Vector2(0, -14), new Vector2(470, 4), new Color(1f, 0.85f, 0.3f, 0.85f)).raycastTarget = false;
+        var payL = ProtoUI.CreatePanel("SlotPayL", _pieceArea, new Vector2(-250, -14), new Vector2(20, 20), new Color(1f, 0.5f, 0.2f)); payL.raycastTarget = false; payL.transform.localRotation = Quaternion.Euler(0, 0, 45);
+        var payR = ProtoUI.CreatePanel("SlotPayR", _pieceArea, new Vector2(250, -14), new Vector2(20, 20), new Color(1f, 0.5f, 0.2f)); payR.raycastTarget = false; payR.transform.localRotation = Quaternion.Euler(0, 0, 45);
+
+        // リールごとの独立したSTOPボタン（各リール真下。押したリールだけが止まる）
+        for (int i = 0; i < 3; i++) _slotStopReq[i] = false;
+        var stopBtns = new Button[3];
         for (int i = 0; i < 3; i++)
         {
-            var box = ProtoUI.CreatePanel($"Reel{i}", _pieceArea, new Vector2((i - 1) * 150f, 0), new Vector2(130, 150), new Color(0.1f, 0.1f, 0.18f, 0.98f));
-            ProtoUI.CreatePanel("RB", box.transform, Vector2.zero, new Vector2(136, 156), new Color(0.85f, 0.72f, 0.4f, 0.9f)).transform.SetAsFirstSibling();
-            labels[i] = ProtoUI.CreateText("RS", box.transform, "７", 64, Vector2.zero, new Vector2(130, 150), Color.white);
-            labels[i].fontStyle = FontStyles.Bold;
+            int idx = i;
+            float bx = (i - 1) * 150f;
+            ProtoUI.CreatePanel($"SlotStopRing{i}", _pieceArea, new Vector2(bx, -122), new Vector2(120, 56), new Color(0.9f, 0.75f, 0.35f, 1f)).raycastTarget = false;
+            var sb = ProtoUI.CreateButton($"SlotStop{i}", _pieceArea, "STOP", 22, new Vector2(bx, -122), new Vector2(110, 46),
+                new Color(0.85f, 0.15f, 0.15f, 1f), () => _slotStopReq[idx] = true);
+            var sl = sb.GetComponentInChildren<TextMeshProUGUI>();
+            if (sl != null) sl.fontStyle = FontStyles.Bold;
+            stopBtns[i] = sb;
+        }
+
+        // ==== 縦に流れる本物風リール ====
+        // 各リールは縦に並んだシンボル帯（cell）で構成し、上から下へスクロールする。
+        // 窓（box）にRectMask2Dを付けてはみ出しをクリップ＝リールが回っているように見える。
+        const int CELLS = 5;          // 窓に収まる縦セル数（中央±2）
+        const float CELL_H = 84f;     // セルの縦間隔
+        var boxes = new Image[3];
+        var cellRt = new RectTransform[3][];
+        var cellLbl = new TextMeshProUGUI[3][];
+        var cellSym = new int[3][];   // 各セルが表示しているシンボル
+        var topSym = new int[3];      // 一番上のセルの次に流し込むシンボル
+        var result = new int[3];
+        var resultLbl = new TextMeshProUGUI[3];   // 停止後、中央にあるラベル（演出用）
+        for (int i = 0; i < 3; i++)
+        {
+            ProtoUI.CreatePanel($"ReelFr{i}", _pieceArea, new Vector2((i - 1) * 150f, -14), new Vector2(140, 160), new Color(0.7f, 0.72f, 0.78f, 1f)).raycastTarget = false;   // リール窓の銀縁
+            var box = ProtoUI.CreatePanel($"Reel{i}", _pieceArea, new Vector2((i - 1) * 150f, -14), new Vector2(128, 150), new Color(0.96f, 0.96f, 0.98f, 1f));   // 白いリール面
+            box.raycastTarget = false;
+            box.gameObject.AddComponent<UnityEngine.UI.RectMask2D>();   // 窓の外をクリップ
+
+            cellRt[i] = new RectTransform[CELLS];
+            cellLbl[i] = new TextMeshProUGUI[CELLS];
+            cellSym[i] = new int[CELLS];
+            int start = Random.Range(0, SlotSymbols.Length);
+            for (int j = 0; j < CELLS; j++)
+            {
+                // j=0 が一番上、j=CELLS-1 が一番下。中央(j=2)がペイライン
+                int sym = ((start + j) % SlotSymbols.Length + SlotSymbols.Length) % SlotSymbols.Length;
+                float y = (CELLS / 2 - j) * CELL_H;   // 168,84,0,-84,-168
+                var lbl = ProtoUI.CreateText($"RS{i}_{j}", box.transform, SlotSymbols[sym], 78, new Vector2(0, y), new Vector2(128, CELL_H), SlotSymbolColors[sym]);
+                lbl.fontStyle = FontStyles.Bold; lbl.raycastTarget = false;
+                cellRt[i][j] = lbl.rectTransform; cellLbl[i][j] = lbl; cellSym[i][j] = sym;
+            }
+            topSym[i] = ((start - 1) % SlotSymbols.Length + SlotSymbols.Length) % SlotSymbols.Length;
+
+            // 上下の陰影を最前面に（回転する円筒っぽい暗がり）
+            ProtoUI.CreatePanel("RShTop", box.transform, new Vector2(0, 60), new Vector2(128, 34), new Color(0f, 0f, 0f, 0.4f)).raycastTarget = false;
+            ProtoUI.CreatePanel("RShBot", box.transform, new Vector2(0, -60), new Vector2(128, 34), new Color(0f, 0f, 0f, 0.4f)).raycastTarget = false;
+            boxes[i] = box;
         }
 
         yield return null;
 
-        for (int reel = 0; reel < 3; reel++)
+        _challengePrompt.text = "各リールのSTOPボタンで、狙って止めろ！";
+
+        // 3リール同時回転。上から下へシンボルが流れ、押したリールだけが独立して止まる（目押し）
+        const float bottomLimit = -(CELLS / 2) * CELL_H - CELL_H / 2f;   // これを下回ったセルは上へ再利用
+        var spinning = new bool[3] { true, true, true };
+        var speed = new float[3];
+        for (int i = 0; i < 3; i++) speed[i] = (255f + i * 35f) / MgZone;   // px/秒。CELL_H=84なので約3絵柄/秒＝目押しできる速さ（達人でさらにゆっくり）
+
+        int stoppedCount = 0; bool reachAnnounced = false;
+        while (stoppedCount < 3)   // 時間制限なし。全リールをSTOPで止めるまで回り続ける
         {
-            float spin = 0f; int cur = 0; float timeout = 6f;
-            while (timeout > 0f)
+            for (int i = 0; i < 3; i++)
             {
-                spin += Time.deltaTime;
-                if (spin >= 0.07f) { spin = 0f; cur = (cur + 1) % SlotSymbols.Length; labels[reel].text = SlotSymbols[cur]; }
-                timeout -= Time.deltaTime;
-                if (ClickedThisFrame()) break;
-                yield return null;
+                if (!spinning[i]) continue;
+                float dy = speed[i] * Time.deltaTime;
+                for (int j = 0; j < CELLS; j++)
+                {
+                    var rt = cellRt[i][j];
+                    float y = rt.anchoredPosition.y - dy;
+                    if (y < bottomLimit)
+                    {
+                        y += CELLS * CELL_H;                       // 一番上へ回す
+                        int sym = topSym[i];
+                        topSym[i] = ((topSym[i] - 1) % SlotSymbols.Length + SlotSymbols.Length) % SlotSymbols.Length;
+                        cellSym[i][j] = sym;
+                        cellLbl[i][j].text = SlotSymbols[sym]; cellLbl[i][j].color = SlotSymbolColors[sym];
+                    }
+                    rt.anchoredPosition = new Vector2(0, y);
+                }
+
+                // このリールのSTOP要求（そのボタンだけが自分を止める）
+                if (_slotStopReq[i])
+                {
+                    _slotStopReq[i] = false;
+                    spinning[i] = false; stoppedCount++;
+                    // 中央(y=0)に一番近いセルを結果に採用し、そこへピタッと吸着
+                    int best = 0; float bestAbs = 9999f;
+                    for (int j = 0; j < CELLS; j++)
+                    {
+                        float ay = Mathf.Abs(cellRt[i][j].anchoredPosition.y);
+                        if (ay < bestAbs) { bestAbs = ay; best = j; }
+                    }
+                    result[i] = cellSym[i][best]; resultLbl[i] = cellLbl[i][best];
+                    StartCoroutine(SlotSnap(cellRt[i], cellRt[i][best].anchoredPosition.y));
+                    stopBtns[i].interactable = false;
+                    if (stopBtns[i].targetGraphic is Image bi) bi.color = new Color(0.35f, 0.2f, 0.2f, 1f);
+                    StartCoroutine(Pulse(boxes[i].rectTransform, 1.1f, 0.16f));
+                    if (_sfx != null && _swingClip != null) _sfx.PlayOneShot(_swingClip, 0.5f);
+                }
             }
-            result[reel] = cur;
-            labels[reel].color = ProtoUI.Gold;
-            yield return new WaitForSeconds(0.15f); // 連打で複数リールが同時に止まるのを防ぐ
+            // ---- リーチ演出：2つ止まって揃っていて、残り1つが回転中 ----
+            if (!reachAnnounced && stoppedCount == 2)
+            {
+                int a = -1, b = -1;
+                for (int i = 0; i < 3; i++) { if (!spinning[i]) { if (a < 0) a = i; else b = i; } }
+                if (a >= 0 && b >= 0 && result[a] == result[b])
+                {
+                    reachAnnounced = true;
+                    if (_sfx != null && _reachClip != null) _sfx.PlayOneShot(_reachClip);
+                    _challengePrompt.text = result[a] == 0 ? "７が2つ…！ 大チャンス！！" : "リーチ！！ 残り1つを狙え！";
+                    StartCoroutine(ScreenFlash(new Color(1f, 0.25f, 0.2f), 0.25f));
+                    StartCoroutine(TextPopup(new Vector2(0, 210f), "リーチ！！", new Color(1f, 0.35f, 0.25f), 58));
+                    for (int i = 0; i < 3; i++) if (spinning[i]) speed[i] = 175f / MgZone;   // 残りをスローにして狙わせる
+                }
+            }
+            yield return null;
         }
 
         bool all = result[0] == result[1] && result[1] == result[2];
@@ -2151,9 +2984,114 @@ public class ProtoBattle : MonoBehaviour
         _challengePrompt.text = all && result[0] == 0 ? "７７７！ 大当たり！（威力250%）"
             : all ? "絵柄が揃った！（威力180%）"
             : pair ? "惜しい！2つ揃い（威力120%）" : "揃わず…（威力80%）";
-        yield return new WaitForSeconds(1.1f);
+
+        // 全部揃ったらジャックポット演出
+        if (all) yield return SlotJackpotFx(resultLbl, boxes, result[0] == 0);
+        else yield return new WaitForSeconds(1.1f);
+        if (_timerFill != null) _timerFill.transform.parent.gameObject.SetActive(true);   // 隠したゲージを他ミニゲーム用に戻す
         Time.timeScale = _main.GameSpeed;
         _challengeRoot.gameObject.SetActive(false);
+    }
+
+    // 停止時：中央に一番近いセルがちょうど y=0 になるよう、全セルを少し戻して吸着（本物の「ガコン」）
+    IEnumerator SlotSnap(RectTransform[] cells, float centerY)
+    {
+        float delta = -centerY;               // これだけ全体をずらすと中央セルが 0 に来る
+        var from = new float[cells.Length];
+        for (int j = 0; j < cells.Length; j++) from[j] = cells[j].anchoredPosition.y;
+        float t = 0f, dur = 0.14f;
+        while (t < dur)
+        {
+            t += Time.deltaTime;
+            float p = 1f - Mathf.Pow(1f - Mathf.Clamp01(t / dur), 3f);   // ease-out
+            for (int j = 0; j < cells.Length; j++)
+                if (cells[j] != null) cells[j].anchoredPosition = new Vector2(0, from[j] + delta * p);
+            yield return null;
+        }
+        for (int j = 0; j < cells.Length; j++)
+            if (cells[j] != null) cells[j].anchoredPosition = new Vector2(0, from[j] + delta);
+    }
+
+    // ジャックポット演出：一拍タメ→白フラッシュ→昇天ファンファーレ＋コインの雨。777は虹色の祝祭
+    IEnumerator SlotJackpotFx(TextMeshProUGUI[] labels, Image[] boxes, bool is777)
+    {
+        Color gold = new Color(1f, 0.85f, 0.25f);
+        Color goldW = new Color(1f, 0.97f, 0.75f);
+
+        // ①タメの静寂（一拍おいてから炸裂＝脳汁の基本）
+        yield return new WaitForSeconds(0.35f);
+
+        // ②炸裂：白フラッシュ→ファンファーレ＋コインシャワー音＋シェイク
+        StartCoroutine(ScreenFlash(Color.white, is777 ? 0.85f : 0.55f));
+        if (_sfx != null && _fanfareClip != null) _sfx.PlayOneShot(_fanfareClip);
+        if (_sfx != null && _coinShowerClip != null) _sfx.PlayOneShot(_coinShowerClip);
+        StartCoroutine(ScreenShake(is777 ? 26f : 14f, is777 ? 0.7f : 0.4f));
+        StartCoroutine(TextPopup(new Vector2(0, 190f), is777 ? "★ JACKPOT!! ★" : "大当たり！", gold, is777 ? 72 : 50));
+        StartCoroutine(CoinRain(is777 ? 46 : 22, is777 ? 2.4f : 1.4f));
+
+        float t = 0f, dur = is777 ? 2.6f : 1.5f;
+        int wave = 0; float shower = 0f;
+        while (t < dur)
+        {
+            t += Time.deltaTime;
+            for (int i = 0; i < 3; i++)
+            {
+                float ph = t * 10f - i * 1.2f;
+                // 777は虹色に回る（パチンコの虹＝最高予告）
+                Color hi = is777 ? Color.HSVToRGB((t * 0.8f + i * 0.15f) % 1f, 0.75f, 1f) : gold;
+                labels[i].color = Color.Lerp(hi, Color.white, Mathf.Sin(ph) * 0.5f + 0.5f);
+                labels[i].rectTransform.localScale = Vector3.one * (1f + Mathf.Max(0f, Mathf.Sin(ph)) * (is777 ? 0.4f : 0.25f));
+                if (boxes[i] != null) boxes[i].color = Color.Lerp(new Color(0.1f, 0.1f, 0.18f, 0.98f), new Color(hi.r * 0.5f, hi.g * 0.4f, hi.b * 0.15f, 0.98f), Mathf.Sin(ph) * 0.5f + 0.5f);
+            }
+            // 光の吹き出し（波状。リール位置＝画面中央やや上）
+            if (t * 6f > wave)
+            {
+                wave++;
+                for (int i = 0; i < 3; i++)
+                    SpawnBurst(new Vector2((i - 1) * 150f, 30f), wave % 2 == 0 ? gold : goldW, is777 ? 6 : 3, 100f + wave * 10f);
+                if (is777 && wave % 2 == 0) StartCoroutine(ShockExpand(new Vector2(0, 30f), Color.HSVToRGB((wave * 0.13f) % 1f, 0.7f, 1f), 0.9f + wave * 0.12f));
+            }
+            // 追いコイン音（チャリンチャリンが続く）
+            shower += Time.deltaTime;
+            if (shower >= 0.5f && is777)
+            {
+                shower = 0f;
+                if (_sfx != null && _coinClip != null) _sfx.PlayOneShot(_coinClip, 0.7f);
+            }
+            yield return null;
+        }
+        for (int i = 0; i < 3; i++) { labels[i].color = ProtoUI.Gold; labels[i].rectTransform.localScale = Vector3.one; }
+    }
+
+    // コインの雨：金色のコインが画面上から回転しながら降り注ぐ
+    IEnumerator CoinRain(int count, float dur)
+    {
+        for (int i = 0; i < count; i++)
+        {
+            StartCoroutine(CoinFall(new Vector2(Random.Range(-620f, 620f), 480f)));
+            yield return new WaitForSeconds(dur / count);
+        }
+    }
+    IEnumerator CoinFall(Vector2 from)
+    {
+        var coin = ProtoUI.CreatePanel("Coin", _root, from, new Vector2(22, 22), new Color(1f, 0.84f, 0.2f));
+        coin.raycastTarget = false;
+        var rim = ProtoUI.CreatePanel("CoinRim", coin.transform, Vector2.zero, new Vector2(14, 14), new Color(1f, 0.95f, 0.6f));
+        rim.raycastTarget = false;
+        var rt = (RectTransform)coin.transform;
+        float vy = Random.Range(520f, 760f), vx = Random.Range(-60f, 60f), rot = Random.Range(240f, 520f);
+        float t = 0f, life = 1.9f;
+        while (t < life && rt != null)
+        {
+            t += Time.deltaTime;
+            rt.anchoredPosition += new Vector2(vx, -vy) * Time.deltaTime;
+            rt.Rotate(0, 0, rot * Time.deltaTime);
+            // くるくる回って見えるよう横幅を揺らす
+            rt.localScale = new Vector3(Mathf.Abs(Mathf.Sin(t * 9f)) * 0.7f + 0.3f, 1f, 1f);
+            if (rt.anchoredPosition.y < -500f) break;
+            yield return null;
+        }
+        if (coin != null) Destroy(coin.gameObject);
     }
 
     IEnumerator RunChallenge(CardDef card)
@@ -2291,6 +3229,9 @@ public class ProtoBattle : MonoBehaviour
     void Update()
     {
         if (_root == null || !_root.gameObject.activeSelf) return;
+
+        // 効果音の再生速度をゲーム速度（倍速）に同期させ、演出と音のズレを防ぐ
+        if (_sfx != null) _sfx.pitch = Mathf.Max(0.2f, Time.timeScale);
 
         bool esc = false;
 #if ENABLE_INPUT_SYSTEM
@@ -3017,9 +3958,17 @@ public class ProtoBattle : MonoBehaviour
     IEnumerator DamagePopup(Vector2 pos, int damage, float multiplier)
     {
         float fontSize, popScale, life; bool useGradient; TMPro.VertexGradient gradient = default; Color flatColor = Color.white;
-        if (multiplier >= 1.25f) { fontSize = 88; popScale = 2.6f; life = 0.8f; useGradient = true; gradient = new TMPro.VertexGradient(new Color(1f, 0.98f, 0.8f), new Color(1f, 0.95f, 0.65f), new Color(1f, 0.55f, 0.12f), new Color(0.95f, 0.38f, 0.08f)); }
+        // 3桁ダメージは倍率に関係なく最上位の演出（爆発ビルドのご褒美）
+        bool huge = damage >= 100;
+        if (huge || multiplier >= 1.25f) { fontSize = huge ? 110 : 88; popScale = huge ? 3.2f : 2.6f; life = huge ? 1.0f : 0.8f; useGradient = true; gradient = new TMPro.VertexGradient(new Color(1f, 0.98f, 0.8f), new Color(1f, 0.95f, 0.65f), new Color(1f, 0.55f, 0.12f), new Color(0.95f, 0.38f, 0.08f)); }
         else if (multiplier >= 1.05f) { fontSize = 64; popScale = 1.8f; life = 0.65f; useGradient = false; flatColor = new Color(1f, 0.92f, 0.45f); }
         else { fontSize = 46; popScale = 1.3f; life = 0.55f; useGradient = false; flatColor = Color.white; }
+        if (huge)
+        {
+            StartCoroutine(ScreenFlash(new Color(1f, 0.7f, 0.2f), 0.3f));
+            StartCoroutine(ScreenShake(20f, 0.35f));
+            StartCoroutine(TextPopup(pos + new Vector2(0, 90f), damage >= 300 ? "壊滅的一撃！！" : "強烈な一撃！", new Color(1f, 0.6f, 0.15f), damage >= 300 ? 44 : 36));
+        }
 
         var holder = ProtoUI.CreateRect("DamagePopup", _root);
         holder.anchoredPosition = pos + new Vector2(Random.Range(-35f, 35f), 0); holder.sizeDelta = new Vector2(500, 120);
@@ -3117,35 +4066,44 @@ public class ProtoBattle : MonoBehaviour
 // 手札カード：ホバーで上昇＋発光、クリックで発動
 public class CardHover : MonoBehaviour, IPointerEnterHandler, IPointerExitHandler, IPointerClickHandler
 {
-    RectTransform _rt;
-    Vector2 _home;
-    Quaternion _homeRot;
-    Image _frame;
+    RectTransform _rt;         // 見た目カード（焼き込み画像のRawImage。通常は _home 直下で扇の角度に回転）
+    RectTransform _home;       // 通常時の親（_handArea）
+    RectTransform _hoverLayer; // ホバー中だけ退避する最前面レイヤー
+    Vector2 _slotPos;          // カードの定位置
+    Quaternion _homeRot;       // 扇の傾き（戻すときに復元。平面画像なので回転しても崩れない）
+    Graphic _frame;            // 見た目（RawImage）。ホバーで少し明るく
     Color _base;
+    bool _hovering;
     System.Action _onEnter, _onExit, _onClick;
 
-    public void Setup(RectTransform rt, Vector2 home, Quaternion homeRot, Image frame, Color baseCol,
+    public void Setup(RectTransform rt, RectTransform home, RectTransform hoverLayer, Vector2 slotPos, Quaternion homeRot, Graphic frame, Color baseCol,
         System.Action onEnter, System.Action onExit, System.Action onClick)
     {
-        _rt = rt; _home = home; _homeRot = homeRot; _frame = frame; _base = baseCol;
+        _rt = rt; _home = home; _hoverLayer = hoverLayer; _slotPos = slotPos; _homeRot = homeRot; _frame = frame; _base = baseCol;
         _onEnter = onEnter; _onExit = onExit; _onClick = onClick;
     }
 
     public void OnPointerEnter(PointerEventData e)
     {
-        if (_rt == null) return;
-        _rt.SetAsLastSibling();
-        _rt.anchoredPosition = _home + new Vector2(0, 80f);   // 上に上がる
-        _rt.localRotation = Quaternion.identity;              // まっすぐに
-        _rt.localScale = Vector3.one * 1.18f;
-        if (_frame != null) _frame.color = Color.Lerp(_base, Color.white, 0.55f); // 光る
+        if (_rt == null || _hovering) return;
+        _hovering = true;
+        // 山より上へしっかり持ち上げ、まっすぐ拡大（最前面レイヤーへ退避）
+        float hx = Mathf.Clamp(_slotPos.x, -560f, 560f);
+        _rt.SetParent(_hoverLayer, false);
+        _rt.anchoredPosition = new Vector2(hx, _slotPos.y + 290f);
+        _rt.localRotation = Quaternion.identity;
+        _rt.localScale = Vector3.one * 1.28f;
+        if (_frame != null) _frame.color = new Color(1.15f, 1.15f, 1.15f, 1f); // 少し明るく
         _onEnter?.Invoke();
     }
 
     public void OnPointerExit(PointerEventData e)
     {
-        if (_rt == null) return;
-        _rt.anchoredPosition = _home;
+        if (_rt == null || !_hovering) return;
+        _hovering = false;
+        // 通常の親へ戻し、扇の位置・傾きを復元（平面画像なので回転しても崩れない）
+        if (_home != null) _rt.SetParent(_home, false);
+        _rt.anchoredPosition = _slotPos;
         _rt.localRotation = _homeRot;
         _rt.localScale = Vector3.one;
         if (_frame != null) _frame.color = _base;
