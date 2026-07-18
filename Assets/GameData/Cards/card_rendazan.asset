@@ -14,7 +14,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::CardDef
   id: rendazan
   displayName: "\u4E71\u308C\u9023\u6253"
-  description: "\u9023\u6253\u30C1\u30E3\u30EC\u30F3\u30B8\u767A\u52D5\uFF01\u9023\u6253\u6570\u3067\u5A01\u529BUP\u3002"
+  description: "\u9023\u6253\u30C1\u30E3\u30EC\u30F3\u30B8\u767A\u52D5\uFF01\u5927\u6210\u529F\u3067\u30AA\u30FC\u30D0\u30FC\u30C9\u30E9\u30A4\u30D6+1\u3002"
   kind: 0
   shapeRows:
   - XXX

@@ -14,7 +14,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::CardDef
   id: kaishin
   displayName: "\u4F1A\u5FC3\u306E\u4E00\u6483"
-  description: "\u30B2\u30FC\u30B8\u30B9\u30C8\u30C3\u30D7\u767A\u52D5\uFF01\u4F1A\u5FC3\u30BE\u30FC\u30F3\u3067\u5A01\u529BUP\u3002"
+  description: "\u30B2\u30FC\u30B8\u30B9\u30C8\u30C3\u30D7\u767A\u52D5\uFF01\u30B8\u30E3\u30B9\u30C8\u3067\u5A01\u529BUP\uFF0B\u6575\u3092\u9EBB\u75FA\u3002"
   kind: 0
   shapeRows:
   - XXX

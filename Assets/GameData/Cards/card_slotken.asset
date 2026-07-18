@@ -14,7 +14,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::CardDef
   id: slotken
   displayName: "\u30B9\u30ED\u30C3\u30C8\u5263"
-  description: "\u30B9\u30ED\u30C3\u30C8\u767A\u52D5\uFF01\u7D75\u67C4\u304C\u63C3\u3048\u3070\u5A01\u529BUP\u3002"
+  description: "\u30B9\u30ED\u30C3\u30C8\u767A\u52D5\uFF01\u63C3\u3048\u3070\u5A01\u529BUP\uFF0B\u30B3\u30A4\u30F3\u7372\u5F97\uFF08777\u3067\u5927\u91D1\uFF09\u3002"
   kind: 0
   shapeRows:
   - XXX

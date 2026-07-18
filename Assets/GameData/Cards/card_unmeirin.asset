@@ -14,7 +14,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::CardDef
   id: unmeirin
   displayName: "\u904B\u547D\u306E\u8F2A"
-  description: "\u30EB\u30FC\u30EC\u30C3\u30C8\u767A\u52D5\uFF01\u8D64\u3044\u5370\u3067\u6B62\u3081\u308C\u3070\u5A01\u529BUP\u3002"
+  description: "\u30EB\u30FC\u30EC\u30C3\u30C8\u767A\u52D5\uFF01200%\u3092\u5F15\u3051\u3070\u6B21\u30BF\u30FC\u30F3\u624B\u672D+1\u3002"
   kind: 0
   shapeRows:
   - XXXX

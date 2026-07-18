@@ -2162,17 +2162,24 @@ public class ProtoBattle : MonoBehaviour
         var pts = TracePattern();
         int N = pts.Length;
 
-        // ガイド軌道（ノード間を結ぶ点線＝なぞる線が見える）
+        // ガイド軌道：区間ごとに色を①→順にグラデーション（虹）させ、どの線がどの順かを色で追えるようにする
         var trailLayer = ProtoUI.CreateRect("TraceGuide", _pieceArea); trailLayer.anchoredPosition = Vector2.zero;
-        for (int i = 0; i < N - 1; i++)
+        int segCount = N - 1;
+        var segDots = new System.Collections.Generic.List<Image>[segCount];
+        var segBase = new Color[segCount];
+        for (int i = 0; i < segCount; i++)
         {
+            float f = segCount <= 1 ? 0f : i / (float)(segCount - 1);
+            segBase[i] = Color.HSVToRGB((0.5f - 0.5f * f + 1f) % 1f, 0.7f, 1f);   // 青緑→紫→赤へ順に変化
+            segDots[i] = new System.Collections.Generic.List<Image>();
             Vector2 a = pts[i], b = pts[i + 1];
-            int dots = Mathf.CeilToInt(Vector2.Distance(a, b) / 22f);
+            int dots = Mathf.Max(2, Mathf.CeilToInt(Vector2.Distance(a, b) / 17f));   // 密に打って「連続した線」に見せる
             for (int k = 1; k < dots; k++)
             {
                 var gp = Vector2.Lerp(a, b, k / (float)dots);
-                var d = ProtoUI.CreatePanel("TGuide", trailLayer, gp, new Vector2(7, 7), new Color(0.5f, 0.55f, 0.75f, 0.55f));
-                d.raycastTarget = false; d.transform.localRotation = Quaternion.Euler(0, 0, 45);
+                var d = ProtoUI.CreatePanel($"TGuide{i}", trailLayer, gp, new Vector2(9, 9), segBase[i]);
+                d.raycastTarget = false;
+                segDots[i].Add(d);
             }
         }
 
@@ -2198,9 +2205,29 @@ public class ProtoBattle : MonoBehaviour
         const float TOL = 32f;        // ノード到達判定（狭め＝難しい）
         const float PATH_TOL = 38f;   // 線からの許容外れ幅（超えたら失敗＝難しい）
         var area = (RectTransform)_pieceArea;
+
+        // ガイドの強調更新：今なぞる線（reached-1区間）だけを明るく点滅、済みは薄く、これからは中間の濃さ
+        void RefreshGuide()
+        {
+            float ps = 0.5f + 0.5f * Mathf.Sin(Time.time * 8f);
+            int active = reached - 1;
+            for (int s = 0; s < segCount; s++)
+            {
+                Color c; float sz;
+                if (s == active) { c = Color.Lerp(segBase[s], Color.white, 0.4f); c.a = 0.55f + 0.45f * ps; sz = 12f; }   // 今の線
+                else if (s < active) { c = segBase[s]; c.a = 0.16f; sz = 8f; }                                            // 済み
+                else { c = segBase[s]; c.a = 0.42f; sz = 9f; }                                                            // これから
+                foreach (var d in segDots[s]) { if (d == null) continue; d.color = c; ((RectTransform)d.transform).sizeDelta = new Vector2(sz, sz); }
+            }
+            // 次に目指すノードを少し脈動させて分かりやすく
+            for (int i = 0; i < N; i++) if (nodes[i] != null) nodes[i].rectTransform.localScale = Vector3.one;
+            if (reached < N && nodes[reached] != null) nodes[reached].rectTransform.localScale = Vector3.one * (1f + 0.14f * ps);
+        }
+
         while (t < dur && reached < N && !brokeOff)
         {
             t += Time.deltaTime;
+            RefreshGuide();
             ProtoUI.SetGauge(_timerFill, 1f - t / dur, 500f);
             Vector2 lp;
             if (RectTransformUtility.ScreenPointToLocalPointInRectangle(area, MouseScreenPos(), null, out lp))
@@ -2257,7 +2284,7 @@ public class ProtoBattle : MonoBehaviour
     // 剣型パターンを毎回ランダム生成（正規化(-1..1)で作り、プレイエリアに合わせて拡大）
     Vector2[] TracePattern()
     {
-        const float RX = 300f, RY = 122f; var C = new Vector2(0, 8f);
+        const float RX = 345f, RY = 178f; var C = new Vector2(0, -12f);   // 縦に大きく広げ、中心を少し下げて下の余白も使う
         Vector2 Map(float nx, float ny) => C + new Vector2(nx * RX, ny * RY);
         System.Func<float, Vector2> Pol = deg => { float r = deg * Mathf.Deg2Rad; return new Vector2(Mathf.Cos(r), Mathf.Sin(r)); };
 
@@ -2269,26 +2296,26 @@ public class ProtoBattle : MonoBehaviour
         {
             case 0: // 五芒星（一筆書きで線が交差する）
             {
-                for (int k = 0; k <= 5; k++) { int idx = (k * 2) % 5; var d = Pol(rot + 90f + 72f * idx); list.Add(Map(d.x, d.y)); }
+                for (int k = 0; k < 5; k++) { int idx = (k * 2) % 5; var d = Pol(rot + 90f + 72f * idx); list.Add(Map(d.x, d.y)); }
                 break;
             }
             case 1: // 渦巻き（外→内へ巻き込む）
             {
-                int n = 9;
-                for (int k = 0; k < n; k++) { float ang = rot + k * 150f; float rr = 1f - 0.085f * k; var d = Pol(ang); list.Add(Map(d.x * rr, d.y * rr)); }
+                int n = 7;
+                for (int k = 0; k < n; k++) { float ang = rot + k * 150f; float rr = 1f - 0.1f * k; var d = Pol(ang); list.Add(Map(d.x * rr, d.y * rr)); }
                 break;
             }
             case 2: // 稲妻の折り返し（右へ往路→左へ復路。x が反転して交差）
             {
-                int top = 5;
-                for (int k = 0; k < top; k++) { float x = -1f + 2f * k / (top - 1); float y = (k % 2 == 0 ? 0.95f : 0.15f); list.Add(Map(x, y)); }
-                int bot = 4;
-                for (int k = 0; k < bot; k++) { float x = 0.7f - 1.7f * k / (bot - 1); float y = (k % 2 == 0 ? -0.2f : -0.95f); list.Add(Map(x, y)); }
+                int top = 4;
+                for (int k = 0; k < top; k++) { float x = -1f + 2f * k / (top - 1); float y = (k % 2 == 0 ? 0.95f : 0.2f); list.Add(Map(x, y)); }
+                int bot = 3;
+                for (int k = 0; k < bot; k++) { float x = 0.6f - 1.6f * k / (bot - 1); float y = (k % 2 == 0 ? -0.25f : -0.95f); list.Add(Map(x, y)); }
                 break;
             }
-            default: // 砂時計／蝶（上辺→対角→下辺→対角＝×字に交差）
+            default: // 砂時計／蝶（×字に交差する対角軌道）
             {
-                float[,] hg = { { -1f, 0.9f }, { 1f, 0.9f }, { -1f, -0.9f }, { 1f, -0.9f }, { -0.35f, 0f }, { 0.55f, 0.6f }, { -0.55f, -0.6f }, { 0.9f, -0.1f } };
+                float[,] hg = { { -1f, 0.9f }, { 1f, 0.9f }, { -1f, -0.9f }, { 1f, -0.9f }, { 0f, 0f }, { 0.8f, 0.3f } };
                 for (int k = 0; k < hg.GetLength(0); k++)
                 {
                     float x = hg[k, 0], y = hg[k, 1];
@@ -2300,9 +2327,9 @@ public class ProtoBattle : MonoBehaviour
                 break;
             }
         }
-        // 画面外に出ないようクランプ
+        // 画面外に出ないようクランプ（下の余白まで使う）
         for (int i = 0; i < list.Count; i++)
-            list[i] = new Vector2(Mathf.Clamp(list[i].x, -320f, 320f), Mathf.Clamp(list[i].y, -132f, 140f));
+            list[i] = new Vector2(Mathf.Clamp(list[i].x, -350f, 350f), Mathf.Clamp(list[i].y, -195f, 155f));
         return list.ToArray();
     }
 
