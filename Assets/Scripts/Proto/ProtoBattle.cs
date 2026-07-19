@@ -811,7 +811,7 @@ public class ProtoBattle : MonoBehaviour
         ProtoUI.CreateText("DManaT", dMana.transform, card.ManaCost.ToString(), 20, Vector2.zero, new Vector2(34, 34)).fontStyle = FontStyles.Bold;
 
         ProtoUI.CreateText("DName", _detailContent, card.displayName, 24, new Vector2(12, 118), new Vector2(190, 32), ProtoUI.Gold);
-        ProtoUI.CreateText("DKind", _detailContent, $"{(CardDef.KindLabel(card.Category))}　{card.Size}マス", 15,
+        ProtoUI.CreateText("DKind", _detailContent, $"{card.ThemeTagRich()}{(CardDef.KindLabel(card.Category))}　{card.Size}マス", 15,
             new Vector2(0, 88), new Vector2(250, 22), new Color(0.8f, 0.88f, 1f));
 
         // 形状アート
@@ -986,7 +986,7 @@ public class ProtoBattle : MonoBehaviour
         string footText = !string.IsNullOrEmpty(card.description)
             ? (card.power > 0 ? $"威力{card.power}　{card.description}" : card.description)
             : (card.kind == CardKind.Attack ? $"威力 {card.power}" : "");
-        var ft = ProtoUI.CreateText("FT", footer.transform, footText, 13, Vector2.zero, new Vector2(160, 60), ProtoUI.Gold);
+        var ft = ProtoUI.CreateText("FT", footer.transform, card.ThemeTagRich() + footText, 13, Vector2.zero, new Vector2(160, 60), ProtoUI.Gold);
         ft.enableAutoSizing = true; ft.fontSizeMin = 9; ft.fontSizeMax = 14;
 
         // マナ不足のカードは暗いオーバーレイを重ねて「使えない」を明確化
@@ -1846,7 +1846,7 @@ public class ProtoBattle : MonoBehaviour
         nm.fontStyle = FontStyles.Bold;
         if (card.rarity >= 2) { var rg = nm.gameObject.AddComponent<RareGlow>(); rg.target = nm; rg.colA = card.RarityColor; rg.colB = Color.white; }   // レアは光る
         ProtoUI.CreateText("K", inner.transform,
-            $"{(CardDef.KindLabel(card.Category))} / {card.Size}マス / マナ{card.ManaCost}", 14,
+            $"{card.ThemeTagRich()}{(CardDef.KindLabel(card.Category))} / {card.Size}マス / マナ{card.ManaCost}", 14,
             new Vector2(0, 92), new Vector2(230, 22), new Color(0.8f, 0.85f, 1f));
 
         var art = ProtoUI.CreatePanel("Art", inner.transform, new Vector2(0, 20), new Vector2(210, 120), new Color(0.05f, 0.04f, 0.10f));

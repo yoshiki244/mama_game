@@ -21,6 +21,9 @@
 - **盤面**：初期5×5、精神樹で最大10×10まで拡張。出現確率 = ピースのマス数 ÷ 盤面マス数。空白マス=通常攻撃。
 - **点滅順番当て**：効果（`BlinkOnUse` を持つアタック、または「点滅」スキルで直前にprime）でのみ発動。
   光った順番をタップ再現。採点はLCSベース、正答率0%→0倍 / 80%→1.0倍 / 100%→1.25倍。
+- **系統（テーマ）タグ**：カードは効果から7系統（会心/布陣/侵蝕/回復/鉄壁/計略/剛力）に自動分類され、
+  報酬・ショップ・図鑑・手札・ビルドのUIに色付き【タグ】で表示される（`CardDef.Theme`、アセット変更不要）。
+  複数効果を持つカードは優先順（会心>布陣>侵蝕>回復>鉄壁>計略>剛力）で主系統を1つ表示。素のアタックは無系統（タグなし）。
 - **深度**：マップの列番号。カードは `minDepth`〜`maxDepth` の範囲でのみ報酬/ショップに出現（**隠しパラメータ**、画面非表示）。
 
 ---
@@ -56,6 +59,7 @@
 | `EnemyDef.cs` | 敵定義。HP・攻撃・`EnemySpriteKey`(ProtoPixelArtの絵)・`moneyReward`・`attacks`。`PickAttack()` |
 | `GameConfig.cs` | 全体調整値。プレイヤーHP/攻撃・baseMana・手札枚数・拡張コスト・ショップ・点滅速度・初期所持カード |
 | `ContentDatabase.cs` | カード/敵/Configを束ねる。`FindCard/FindEnemy`・`RandomCards(n,exclude,depth)`(深度フィルタ) |
+| `CardDef.cs` の `Theme` | カードの系統（7分類）を効果から自動判定。ラベル/色/タグは `ThemeLabel`/`ThemeColor`/`ThemeTagRich` |
 
 ### Assets/Scripts/Editor/
 | `ContentGenerator.cs` | `MamaGame > コンテンツ(SO)を生成` メニュー。本ガイドのカード/敵/設定の .asset を一括生成 |

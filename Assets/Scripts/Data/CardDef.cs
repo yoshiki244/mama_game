@@ -76,6 +76,20 @@ public class CardEffect
     public int duration; // 必要な効果のみ使用（Weak等）
 }
 
+// カードの系統（ビルドテーマ）。効果から自動判定するためアセット側の変更は不要。
+// UIに【タグ】として色付き表示し、「いま自分は何ビルドか」を見える化する。
+public enum CardTheme
+{
+    None,      // 無系統（素のアタックなど）
+    Critical,  // 会心：ミニゲームで威力を伸ばす
+    Formation, // 布陣：盤面・手札・マナの状態を参照する（このゲームの独自軸）
+    Ailment,   // 侵蝕：毒・やけどでじわじわ削る
+    Heal,      // 回復：回復・吸血で粘り勝つ
+    Guard,     // 鉄壁：ブロック・軽減・反撃・パリィで受け切る
+    Tactics,   // 計略：ドロー・マナ・妨害で流れを支配する
+    Might,     // 剛力：多段・自己強化・捨て身の一撃
+}
+
 // カード（=スキルピース）の定義。ScriptableObjectとしてUnity上で編集・追加できる。
 [CreateAssetMenu(fileName = "Card", menuName = "MamaGame/Card")]
 public class CardDef : ScriptableObject
@@ -140,6 +154,91 @@ public class CardDef : ScriptableObject
                 || HasEffect(CardEffectType.Counter)) return CardKind.Defense;
             return CardKind.Skill;
         }
+    }
+
+    // ==================== 系統（テーマ）判定 ====================
+
+    // 効果から系統を自動判定。複数系統にまたがる場合は優先順（会心>布陣>侵蝕>回復>鉄壁>計略>剛力）で主系統を1つ返す
+    public CardTheme Theme
+    {
+        get
+        {
+            if (HasAny(CardEffectType.BlinkOnUse, CardEffectType.PrimeNextAttackBlink,
+                CardEffectType.GaugeOnUse, CardEffectType.TapOrderOnUse, CardEffectType.SlotOnUse,
+                CardEffectType.MashOnUse, CardEffectType.RouletteOnUse, CardEffectType.TraceOnUse,
+                CardEffectType.ChargeOnUse, CardEffectType.DualGaugeOnUse, CardEffectType.CountdownOnUse)) return CardTheme.Critical;
+            if (HasAny(CardEffectType.AdjacencyPower, CardEffectType.BoardPower, CardEffectType.FillEmptyOnUse,
+                CardEffectType.HandPower, CardEffectType.ManaBurst, CardEffectType.GambleDiscard)) return CardTheme.Formation;
+            if (HasAny(CardEffectType.Poison, CardEffectType.Burn, CardEffectType.PoisonBoost,
+                CardEffectType.BurnBoost, CardEffectType.Detonate, CardEffectType.AilmentAmp)) return CardTheme.Ailment;
+            if (HasAny(CardEffectType.Heal, CardEffectType.HealPercent, CardEffectType.Regen,
+                CardEffectType.HealMissing, CardEffectType.HealOverflowBlock, CardEffectType.LifeSteal)) return CardTheme.Heal;
+            if (HasAny(CardEffectType.Protect, CardEffectType.Block, CardEffectType.Thorns,
+                CardEffectType.BlockRegen, CardEffectType.Reflect, CardEffectType.GuardTurns,
+                CardEffectType.Counter, CardEffectType.ParryStance)) return CardTheme.Guard;
+            if (HasAny(CardEffectType.Draw, CardEffectType.ManaBoostNextTurn, CardEffectType.ManaNow,
+                CardEffectType.RandomDiscardDraw, CardEffectType.RedrawAll, CardEffectType.NextTurnExtraCards,
+                CardEffectType.Weak, CardEffectType.Vulnerable, CardEffectType.Stun, CardEffectType.StunChance,
+                CardEffectType.GainMoney, CardEffectType.TimeBomb)) return CardTheme.Tactics;
+            if (HasAny(CardEffectType.MultiHit, CardEffectType.Strength, CardEffectType.GrowingPower,
+                CardEffectType.Execute, CardEffectType.LowHpPower, CardEffectType.Gamble5050,
+                CardEffectType.SelfDamage, CardEffectType.CurrentHpDmg)) return CardTheme.Might;
+            return CardTheme.None;
+        }
+    }
+
+    bool HasAny(params CardEffectType[] types)
+    {
+        if (effects == null) return false;
+        foreach (var e in effects)
+            foreach (var t in types)
+                if (e.type == t) return true;
+        return false;
+    }
+
+    public static string ThemeLabel(CardTheme t)
+    {
+        switch (t)
+        {
+            case CardTheme.Critical: return "会心";
+            case CardTheme.Formation: return "布陣";
+            case CardTheme.Ailment: return "侵蝕";
+            case CardTheme.Heal: return "回復";
+            case CardTheme.Guard: return "鉄壁";
+            case CardTheme.Tactics: return "計略";
+            case CardTheme.Might: return "剛力";
+            default: return "無系統";
+        }
+    }
+
+    public static Color ThemeColor(CardTheme t)
+    {
+        switch (t)
+        {
+            case CardTheme.Critical: return new Color(1f, 0.80f, 0.30f);   // 金
+            case CardTheme.Formation: return new Color(0.40f, 0.88f, 0.85f); // 青緑
+            case CardTheme.Ailment: return new Color(0.62f, 0.85f, 0.32f); // 毒緑
+            case CardTheme.Heal: return new Color(0.40f, 0.95f, 0.62f);    // 若草
+            case CardTheme.Guard: return new Color(0.48f, 0.72f, 1f);      // 青
+            case CardTheme.Tactics: return new Color(0.72f, 0.66f, 1f);    // 藤
+            case CardTheme.Might: return new Color(1f, 0.52f, 0.38f);      // 朱
+            default: return new Color(0.7f, 0.7f, 0.75f);
+        }
+    }
+
+    // 系統選択UI（将来の看板・初期セット）で列挙する一覧（Noneを除く）
+    public static readonly CardTheme[] AllThemes =
+    {
+        CardTheme.Critical, CardTheme.Formation, CardTheme.Ailment, CardTheme.Heal,
+        CardTheme.Guard, CardTheme.Tactics, CardTheme.Might,
+    };
+
+    // リッチテキストのタグ（例: <color=#..>【侵蝕】</color>）。無系統は空文字
+    public string ThemeTagRich()
+    {
+        var t = Theme;
+        if (t == CardTheme.None) return "";
+        return $"<color=#{ColorUtility.ToHtmlStringRGB(ThemeColor(t))}>【{ThemeLabel(t)}】</color>";
     }
 
     // 効果を日本語で要約（ホバー詳細などで使用）

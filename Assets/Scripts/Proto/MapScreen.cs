@@ -1117,7 +1117,7 @@ public class MapScreen : MonoBehaviour
             nm.fontStyle = FontStyles.Bold; nm.enableAutoSizing = true; nm.fontSizeMin = 11; nm.fontSizeMax = 17; nm.textWrappingMode = TMPro.TextWrappingModes.NoWrap;
             var art = ProtoUI.CreatePanel("Art", inner.transform, new Vector2(0, 8), new Vector2(cw - 30, 56), new Color(0.05f, 0.04f, 0.10f));
             art.raycastTarget = false; DrawMini(art.transform, card, 11f);
-            ProtoUI.CreateText("K", inner.transform, $"{CardDef.KindLabel(card.Category)} / {card.Size}マス", 12, new Vector2(0, -62), new Vector2(cw - 16, 18), new Color(0.8f, 0.85f, 1f)).raycastTarget = false;
+            ProtoUI.CreateText("K", inner.transform, $"{card.ThemeTagRich()}{CardDef.KindLabel(card.Category)} / {card.Size}マス", 12, new Vector2(0, -62), new Vector2(cw - 16, 18), new Color(0.8f, 0.85f, 1f)).raycastTarget = false;
             var btn = frame.gameObject.AddComponent<Button>(); btn.targetGraphic = frame;
             var cd = card;
             btn.onClick.AddListener(() => { Destroy(_growPicker); _growPicker = null; onPick?.Invoke(cd); });
@@ -1175,7 +1175,7 @@ public class MapScreen : MonoBehaviour
         string eff = !string.IsNullOrEmpty(card.description)
             ? (card.power > 0 ? $"威力 {card.power}\n{card.description}" : card.description)
             : (card.kind == CardKind.Attack ? $"威力 {card.power}" : "");
-        string body = $"種別：{CardDef.KindLabel(card.Category)}\nマス数：{card.Size}\nマナ：{card.ManaCost}\n\n{eff}";
+        string body = $"種別：{card.ThemeTagRich()}{CardDef.KindLabel(card.Category)}\nマス数：{card.Size}\nマナ：{card.ManaCost}\n\n{eff}";
         ProtoUI.CreateText("CBBody", ov, body, 21, new Vector2(170, 30), new Vector2(500, 320), new Color(0.92f, 0.94f, 1f), TextAlignmentOptions.TopLeft);
 
         ProtoUI.CreateGoldButton("CBYes", ov, yesLabel, 22, new Vector2(-175, -270), new Vector2(280, 68),
@@ -1531,7 +1531,7 @@ public class MapScreen : MonoBehaviour
         string eff = !string.IsNullOrEmpty(c.description)
             ? (c.power > 0 ? $"威力 {c.power}\n{c.description}" : c.description)
             : (c.kind == CardKind.Attack ? $"威力 {c.power}" : "");
-        ProtoUI.CreateText("D", inner.transform, $"{CardDef.KindLabel(c.Category)}／{c.Size}マス／マナ{c.ManaCost}\n{eff}", 15,
+        ProtoUI.CreateText("D", inner.transform, $"{c.ThemeTagRich()}{CardDef.KindLabel(c.Category)}／{c.Size}マス／マナ{c.ManaCost}\n{eff}", 15,
             new Vector2(0, -104), new Vector2(224, 132), new Color(0.92f, 0.94f, 1f), TextAlignmentOptions.Top).raycastTarget = false;
         return (RectTransform)frame.transform;
     }
