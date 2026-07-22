@@ -605,7 +605,9 @@ public class ProtoBattle : MonoBehaviour
             new Color(0.04f, 0.05f, 0.09f, 0.94f), new Color(0.85f, 0.72f, 0.4f, 0.85f)).raycastTarget = false;
         _challengePrompt = ProtoUI.CreateText("CPrompt", _challengeRoot, "", 24, new Vector2(0, 320), new Vector2(820, 58));
         _challengePrompt.fontStyle = FontStyles.Bold; _challengePrompt.outlineWidth = 0.2f; _challengePrompt.outlineColor = new Color32(8, 6, 20, 255);
-        _challengePrompt.textWrappingMode = TMPro.TextWrappingModes.Normal;
+        // 常に1行で表示（長文は自動縮小）＝語の途中で折り返して読みにくくなるのを防ぐ
+        _challengePrompt.textWrappingMode = TMPro.TextWrappingModes.NoWrap;
+        _challengePrompt.enableAutoSizing = true; _challengePrompt.fontSizeMin = 15; _challengePrompt.fontSizeMax = 24;
         _pieceArea = ProtoUI.CreateRect("PieceArea", _challengeRoot);
         _pieceArea.anchoredPosition = new Vector2(0, 30);
         ProtoUI.CreateGauge("Timer", _challengeRoot, new Vector2(0, -290), new Vector2(500, 14),
@@ -2575,9 +2577,10 @@ public class ProtoBattle : MonoBehaviour
         frame.raycastTarget = false; frame.transform.localRotation = Quaternion.Euler(0, 0, 45);
         var hole = ProtoUI.CreatePanel("CDHole", frame.transform, Vector2.zero, new Vector2(targetSize - 14f, targetSize - 14f), new Color(0.04f, 0.06f, 0.10f, 0.75f));
         hole.raycastTarget = false;
-        // カウント数字（枠の上）
-        var big = ProtoUI.CreateText("CDNum", _pieceArea, "", 110, new Vector2(0, 140f), new Vector2(400, 160), Color.white);
+        // カウント数字（的のひし形の中央＝視線を1点に集める）
+        var big = ProtoUI.CreateText("CDNum", _pieceArea, "", 84, center, new Vector2(320, 120), Color.white);
         big.fontStyle = FontStyles.Bold; big.raycastTarget = false;
+        big.outlineWidth = 0.25f; big.outlineColor = new Color32(8, 6, 20, 255);
         // 縮んでくるひし形（beat*3かけて targetSize まで縮む＝1の直後にピッタリ重なる）
         // ※回転45°の頂点がステージ枠（上端270・下端-230）からはみ出さないサイズに抑える
         float startSize = targetSize * 2.9f;
