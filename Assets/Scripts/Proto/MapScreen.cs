@@ -1100,17 +1100,33 @@ public class MapScreen : MonoBehaviour
         var t = ProtoUI.CreateText("GPT", ov, "鍛えるカードを選ぶ（攻撃・防御・回復のみ）", 30, new Vector2(0, 250), new Vector2(960, 44), new Color(0.8f, 1f, 0.85f));
         ProtoUI.StyleTitle(t, new Color(0.8f, 1f, 0.85f), 5f);
 
+        // スクロール領域（カードが多くても枠内に収める）
+        var viewport = ProtoUI.CreateRect("GPView", ov);
+        viewport.anchoredPosition = new Vector2(0, -15);
+        viewport.sizeDelta = new Vector2(940, 430);
+        viewport.gameObject.AddComponent<Image>().color = new Color(0, 0, 0, 0.25f);
+        viewport.gameObject.AddComponent<RectMask2D>();
+        var sr = viewport.gameObject.AddComponent<ScrollRect>();
+        sr.horizontal = false; sr.vertical = true; sr.viewport = viewport;
+        sr.scrollSensitivity = 30f; sr.movementType = ScrollRect.MovementType.Clamped;
+        var content = ProtoUI.CreateRect("GPContent", viewport);
+        content.anchorMin = new Vector2(0.5f, 1f); content.anchorMax = new Vector2(0.5f, 1f);
+        content.pivot = new Vector2(0.5f, 1f); content.anchoredPosition = Vector2.zero;
+        sr.content = content;
+
         // 配置済みも含め、所持している「攻撃・防御・回復」カードのみ対象
         var owned = new List<CardDef>();
         foreach (var id in _main.OwnedCardIds) { var c = _main.Db != null ? _main.Db.FindCard(id) : null; if (c != null && ProtoMain.IsForgeable(c)) owned.Add(c); }
         int perRow = 4; float cw = 224f, ch = 150f, gx = 8f, gy = 12f;
-        float startX = -(perRow - 1) * (cw + gx) / 2f, startY = 150f;
+        float startX = -(perRow - 1) * (cw + gx) / 2f;
         for (int i = 0; i < owned.Count; i++)
         {
             var card = owned[i];
             int r = i / perRow, c = i % perRow;
-            var pos = new Vector2(startX + c * (cw + gx), startY - r * (ch + gy));
-            var frame = ProtoUI.CreatePanel($"GP_{card.id}", ov, pos, new Vector2(cw, ch), new Color(0.66f, 0.55f, 0.34f));
+            var pos = new Vector2(startX + c * (cw + gx), -16f - ch / 2f - r * (ch + gy));
+            var frame = ProtoUI.CreatePanel($"GP_{card.id}", content, pos, new Vector2(cw, ch), new Color(0.66f, 0.55f, 0.34f));
+            var frt = (RectTransform)frame.transform;
+            frt.anchorMin = frt.anchorMax = new Vector2(0.5f, 1f);   // コンテンツ上端基準で並べる
             var inner = ProtoUI.CreatePanel("In", frame.transform, Vector2.zero, new Vector2(cw - 10, ch - 10), new Color(0.10f, 0.08f, 0.16f));
             inner.raycastTarget = false;
             var nm = ProtoUI.CreateText("N", inner.transform, card.displayName, 17, new Vector2(0, 58), new Vector2(cw - 16, 24), Color.white);
@@ -1122,8 +1138,10 @@ public class MapScreen : MonoBehaviour
             var cd = card;
             btn.onClick.AddListener(() => { Destroy(_growPicker); _growPicker = null; onPick?.Invoke(cd); });
         }
+        int growRows = Mathf.CeilToInt(owned.Count / (float)perRow);
+        content.sizeDelta = new Vector2(940, 32f + growRows * (ch + gy));
 
-        ProtoUI.CreateGoldButton("GPCancel", ov, "やめる", 22, new Vector2(0, -250), new Vector2(240, 60),
+        ProtoUI.CreateGoldButton("GPCancel", ov, "やめる", 22, new Vector2(0, -270), new Vector2(240, 60),
             new Color(0.45f, 0.3f, 0.4f, 0.98f), () => { Destroy(_growPicker); _growPicker = null; });
     }
 
