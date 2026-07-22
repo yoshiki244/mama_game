@@ -2576,13 +2576,15 @@ public class ProtoBattle : MonoBehaviour
         var hole = ProtoUI.CreatePanel("CDHole", frame.transform, Vector2.zero, new Vector2(targetSize - 14f, targetSize - 14f), new Color(0.04f, 0.06f, 0.10f, 0.75f));
         hole.raycastTarget = false;
         // カウント数字（枠の上）
-        var big = ProtoUI.CreateText("CDNum", _pieceArea, "", 120, new Vector2(0, 150f), new Vector2(400, 200), Color.white);
+        var big = ProtoUI.CreateText("CDNum", _pieceArea, "", 110, new Vector2(0, 140f), new Vector2(400, 160), Color.white);
         big.fontStyle = FontStyles.Bold; big.raycastTarget = false;
         // 縮んでくるひし形（beat*3かけて targetSize まで縮む＝1の直後にピッタリ重なる）
-        float startSize = targetSize * 4.2f;
+        // ※回転45°の頂点がステージ枠（上端270・下端-230）からはみ出さないサイズに抑える
+        float startSize = targetSize * 2.9f;
         var incoming = ProtoUI.CreatePanel("CDIn", _pieceArea, center, new Vector2(startSize, startSize), new Color(1f, 0.55f, 0.2f, 0.5f));
         incoming.raycastTarget = false; incoming.transform.localRotation = Quaternion.Euler(0, 0, 45);
         var inRt = (RectTransform)incoming.transform;
+        big.rectTransform.SetAsLastSibling();   // カウント数字はひし形より前面に描く
         yield return null;
 
         const float total = beat * 3f;   // 3→2→1 のリズムでちょうど重なる
