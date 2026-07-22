@@ -600,7 +600,10 @@ public class ProtoBattle : MonoBehaviour
             ProtoUI.CreatePanel("CCornerH", _challengeRoot, cp, new Vector2(44, 5), new Color(0.95f, 0.8f, 0.4f, 0.9f)).raycastTarget = false;
             ProtoUI.CreatePanel("CCornerV", _challengeRoot, cp, new Vector2(5, 44), new Color(0.95f, 0.8f, 0.4f, 0.9f)).raycastTarget = false;
         }
-        _challengePrompt = ProtoUI.CreateText("CPrompt", _challengeRoot, "", 26, new Vector2(0, 212), new Vector2(740, 72));
+        // 説明文はステージ枠の上の専用バンドに表示（枠内は盤面専用＝ノードや図形と重ならない）
+        ProtoUI.CreateFramedPanel("CPromptBox", _challengeRoot, new Vector2(0, 320), new Vector2(860, 66),
+            new Color(0.04f, 0.05f, 0.09f, 0.94f), new Color(0.85f, 0.72f, 0.4f, 0.85f)).raycastTarget = false;
+        _challengePrompt = ProtoUI.CreateText("CPrompt", _challengeRoot, "", 24, new Vector2(0, 320), new Vector2(820, 58));
         _challengePrompt.fontStyle = FontStyles.Bold; _challengePrompt.outlineWidth = 0.2f; _challengePrompt.outlineColor = new Color32(8, 6, 20, 255);
         _challengePrompt.textWrappingMode = TMPro.TextWrappingModes.Normal;
         _pieceArea = ProtoUI.CreateRect("PieceArea", _challengeRoot);
