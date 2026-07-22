@@ -545,7 +545,7 @@ public class ProtoBattle : MonoBehaviour
 
         // 手札
         _handArea = ProtoUI.CreateRect("Hand", _root);
-        _handArea.anchoredPosition = new Vector2(0, -230);   // 扇の外側カードが画面下で切れないよう高めに
+        _handArea.anchoredPosition = new Vector2(0, -262);   // 横一列（アーチ無し）なので少し下げて中央に収める
         _handArea.sizeDelta = new Vector2(1500, 240);
 
         // 盤面プレビュー（キャラの左横・常時表示）：外周金枠＋不透明内側
@@ -738,10 +738,8 @@ public class ProtoBattle : MonoBehaviour
         ReleaseCardTextures();   // 前ターンの焼き込み画像を解放
         int n = _hand.Count;
         float mid = (n - 1) / 2f;
-        // 扇形：等間隔の横位置＋放物線アーチ（端が下がる）＋線形の傾き。カードは焼き込んだ平面画像なので傾けても崩れない
-        float spacing = n > 1 ? Mathf.Min(88f, 500f / (n - 1)) : 0f;    // 横間隔
-        float tiltPer = n > 1 ? Mathf.Min(6f, 36f / (n - 1)) : 0f;      // 1枚あたりの傾き（手で持った扇形）
-        const float ArchDepth = 46f;                                    // 端の下がり量
+        // 横一列：等間隔で水平に並べる（傾き・アーチなし）。枚数が多いときだけ間隔を詰める
+        float spacing = n > 1 ? Mathf.Min(204f, 1360f / (n - 1)) : 0f;  // カード幅ぶんの間隔（多いと圧縮）
         Vector2 cardSize = new Vector2(BakeUnitW, BakeUnitH);           // 表示サイズ（焼き込みの論理サイズと同じ比率）
 
         var cards = new List<RectTransform>();
@@ -751,9 +749,8 @@ public class ProtoBattle : MonoBehaviour
         {
             int idx = i;
             float d = i - mid;
-            float norm = mid > 0 ? d / mid : 0f;
-            Vector2 pos = new Vector2(d * spacing, -ArchDepth * norm * norm);
-            var rot = Quaternion.Euler(0, 0, -tiltPer * d);
+            Vector2 pos = new Vector2(d * spacing, 0f);
+            var rot = Quaternion.identity;   // 横一列＝傾けない
 
             bool canAfford = _mana >= _hand[i].ManaCost;
             bool affordable = !_inputLocked && canAfford;
