@@ -550,7 +550,7 @@ public class BuildScreen : MonoBehaviour
             string kindTag = CardDef.KindLabel(c.Category);
             string rhex = ColorUtility.ToHtmlStringRGB(c.RarityColor);
             var title = ProtoUI.CreateText("T", img.transform,
-                $"<color=#{rhex}>{c.displayName}</color>　<size=13>[{kindTag}] {c.Size}マス / マナ{c.ManaCost}</size>", 16,
+                $"<color=#{rhex}>{c.displayName}</color>　<size=13>{c.ThemeTagRich()}[{kindTag}] {c.Size}マス / マナ{c.ManaCost}</size>", 16,
                 new Vector2(40, 12), new Vector2(360, 24), Color.white, TextAlignmentOptions.Left);
             title.raycastTarget = false;
             var desc = ProtoUI.CreateText("D", img.transform,
@@ -565,7 +565,7 @@ public class BuildScreen : MonoBehaviour
             cnt.fontStyle = FontStyles.Bold; cnt.raycastTarget = false;
 
             // ホバーで効果詳細を出現率枠に表示
-            string detail = $"<size=15>[{kindTag}]　{c.Size}マス　マナ{c.ManaCost}</size>\n\n{c.EffectSummary()}";
+            string detail = $"<size=15>{c.ThemeTagRich()}[{kindTag}]　{c.Size}マス　マナ{c.ManaCost}</size>\n\n{c.EffectSummary()}";
             var ch = img.gameObject.AddComponent<CardDetailHover>();
             ch.titleLabel = _probTitle; ch.infoLabel = _info;
             ch.cardName = c.displayName; ch.content = detail;

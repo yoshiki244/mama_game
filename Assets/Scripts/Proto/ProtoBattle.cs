@@ -545,7 +545,7 @@ public class ProtoBattle : MonoBehaviour
 
         // 手札
         _handArea = ProtoUI.CreateRect("Hand", _root);
-        _handArea.anchoredPosition = new Vector2(0, -230);   // 扇の外側カードが画面下で切れないよう高めに
+        _handArea.anchoredPosition = new Vector2(0, -262);   // 横一列（アーチ無し）なので少し下げて中央に収める
         _handArea.sizeDelta = new Vector2(1500, 240);
 
         // 盤面プレビュー（画面中央・常時表示）：外周金枠＋不透明内側
@@ -601,9 +601,14 @@ public class ProtoBattle : MonoBehaviour
             ProtoUI.CreatePanel("CCornerH", _challengeRoot, cp, new Vector2(44, 5), new Color(0.95f, 0.8f, 0.4f, 0.9f)).raycastTarget = false;
             ProtoUI.CreatePanel("CCornerV", _challengeRoot, cp, new Vector2(5, 44), new Color(0.95f, 0.8f, 0.4f, 0.9f)).raycastTarget = false;
         }
-        _challengePrompt = ProtoUI.CreateText("CPrompt", _challengeRoot, "", 26, new Vector2(0, 212), new Vector2(740, 72));
+        // 説明文はステージ枠の上の専用バンドに表示（枠内は盤面専用＝ノードや図形と重ならない）
+        ProtoUI.CreateFramedPanel("CPromptBox", _challengeRoot, new Vector2(0, 320), new Vector2(860, 66),
+            new Color(0.04f, 0.05f, 0.09f, 0.94f), new Color(0.85f, 0.72f, 0.4f, 0.85f)).raycastTarget = false;
+        _challengePrompt = ProtoUI.CreateText("CPrompt", _challengeRoot, "", 24, new Vector2(0, 320), new Vector2(820, 58));
         _challengePrompt.fontStyle = FontStyles.Bold; _challengePrompt.outlineWidth = 0.2f; _challengePrompt.outlineColor = new Color32(8, 6, 20, 255);
-        _challengePrompt.textWrappingMode = TMPro.TextWrappingModes.Normal;
+        // 常に1行で表示（長文は自動縮小）＝語の途中で折り返して読みにくくなるのを防ぐ
+        _challengePrompt.textWrappingMode = TMPro.TextWrappingModes.NoWrap;
+        _challengePrompt.enableAutoSizing = true; _challengePrompt.fontSizeMin = 15; _challengePrompt.fontSizeMax = 24;
         _pieceArea = ProtoUI.CreateRect("PieceArea", _challengeRoot);
         _pieceArea.anchoredPosition = new Vector2(0, 30);
         ProtoUI.CreateGauge("Timer", _challengeRoot, new Vector2(0, -290), new Vector2(500, 14),
@@ -820,7 +825,7 @@ public class ProtoBattle : MonoBehaviour
         ProtoUI.CreateText("DManaT", dMana.transform, card.ManaCost.ToString(), 20, Vector2.zero, new Vector2(34, 34)).fontStyle = FontStyles.Bold;
 
         ProtoUI.CreateText("DName", _detailContent, card.displayName, 24, new Vector2(12, 118), new Vector2(190, 32), ProtoUI.Gold);
-        ProtoUI.CreateText("DKind", _detailContent, $"{(CardDef.KindLabel(card.Category))}　{card.Size}マス", 15,
+        ProtoUI.CreateText("DKind", _detailContent, $"{card.ThemeTagRich()}{(CardDef.KindLabel(card.Category))}　{card.Size}マス", 15,
             new Vector2(0, 88), new Vector2(250, 22), new Color(0.8f, 0.88f, 1f));
 
         // 形状アート
@@ -1002,7 +1007,7 @@ public class ProtoBattle : MonoBehaviour
         string footText = !string.IsNullOrEmpty(card.description)
             ? (card.power > 0 ? $"威力{card.power}　{card.description}" : card.description)
             : (card.kind == CardKind.Attack ? $"威力 {card.power}" : "");
-        var ft = ProtoUI.CreateText("FT", footer.transform, footText, 13, Vector2.zero, new Vector2(160, 60), ProtoUI.Gold);
+        var ft = ProtoUI.CreateText("FT", footer.transform, card.ThemeTagRich() + footText, 13, Vector2.zero, new Vector2(160, 60), ProtoUI.Gold);
         ft.enableAutoSizing = true; ft.fontSizeMin = 9; ft.fontSizeMax = 14;
 
         // マナ不足のカードは暗いオーバーレイを重ねて「使えない」を明確化
@@ -1862,7 +1867,7 @@ public class ProtoBattle : MonoBehaviour
         nm.fontStyle = FontStyles.Bold;
         if (card.rarity >= 2) { var rg = nm.gameObject.AddComponent<RareGlow>(); rg.target = nm; rg.colA = card.RarityColor; rg.colB = Color.white; }   // レアは光る
         ProtoUI.CreateText("K", inner.transform,
-            $"{(CardDef.KindLabel(card.Category))} / {card.Size}マス / マナ{card.ManaCost}", 14,
+            $"{card.ThemeTagRich()}{(CardDef.KindLabel(card.Category))} / {card.Size}マス / マナ{card.ManaCost}", 14,
             new Vector2(0, 92), new Vector2(230, 22), new Color(0.8f, 0.85f, 1f));
 
         var art = ProtoUI.CreatePanel("Art", inner.transform, new Vector2(0, 20), new Vector2(210, 120), new Color(0.05f, 0.04f, 0.10f));
@@ -2588,14 +2593,17 @@ public class ProtoBattle : MonoBehaviour
         frame.raycastTarget = false; frame.transform.localRotation = Quaternion.Euler(0, 0, 45);
         var hole = ProtoUI.CreatePanel("CDHole", frame.transform, Vector2.zero, new Vector2(targetSize - 14f, targetSize - 14f), new Color(0.04f, 0.06f, 0.10f, 0.75f));
         hole.raycastTarget = false;
-        // カウント数字（枠の上）
-        var big = ProtoUI.CreateText("CDNum", _pieceArea, "", 120, new Vector2(0, 150f), new Vector2(400, 200), Color.white);
+        // カウント数字（的のひし形の中央＝視線を1点に集める）
+        var big = ProtoUI.CreateText("CDNum", _pieceArea, "", 84, center, new Vector2(320, 120), Color.white);
         big.fontStyle = FontStyles.Bold; big.raycastTarget = false;
+        big.outlineWidth = 0.25f; big.outlineColor = new Color32(8, 6, 20, 255);
         // 縮んでくるひし形（beat*3かけて targetSize まで縮む＝1の直後にピッタリ重なる）
-        float startSize = targetSize * 4.2f;
+        // ※回転45°の頂点がステージ枠（上端270・下端-230）からはみ出さないサイズに抑える
+        float startSize = targetSize * 2.9f;
         var incoming = ProtoUI.CreatePanel("CDIn", _pieceArea, center, new Vector2(startSize, startSize), new Color(1f, 0.55f, 0.2f, 0.5f));
         incoming.raycastTarget = false; incoming.transform.localRotation = Quaternion.Euler(0, 0, 45);
         var inRt = (RectTransform)incoming.transform;
+        big.rectTransform.SetAsLastSibling();   // カウント数字はひし形より前面に描く
         yield return null;
 
         const float total = beat * 3f;   // 3→2→1 のリズムでちょうど重なる

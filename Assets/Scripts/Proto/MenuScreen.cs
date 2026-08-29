@@ -371,7 +371,7 @@ public class MenuScreen : MonoBehaviour
             }
 
             ProtoUI.CreateText("K", inner.transform,
-                $"{card.RarityLabel}　{CardDef.KindLabel(card.Category)} / {card.Size}マス / マナ{card.ManaCost}" +
+                $"{card.ThemeTagRich()}{card.RarityLabel}　{CardDef.KindLabel(card.Category)} / {card.Size}マス / マナ{card.ManaCost}" +
                 (placed > 0 ? $"　<color=#8FE08F>配置中{placed}</color>" : ""), 12,
                 new Vector2(0, 44), new Vector2(cw - 16, 18), new Color(0.8f, 0.85f, 1f));
 
