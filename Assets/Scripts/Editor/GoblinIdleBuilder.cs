@@ -136,8 +136,8 @@ public static class GoblinIdleBuilder
         var cam = Camera.main;
         if (cam == null) return;
         cam.orthographic = true;
-        cam.orthographicSize = 4.2f;
-        cam.transform.position = new Vector3(0f, 4.4f, -10f);
+        cam.orthographicSize = 5.3f;                            // leaves headroom for the raised knife
+        cam.transform.position = new Vector3(0f, 5.4f, -10f);
         cam.clearFlags = CameraClearFlags.SolidColor;
         cam.backgroundColor = new Color(0.30f, 0.33f, 0.36f);
     }
@@ -358,14 +358,19 @@ public static class GoblinIdleBuilder
         return c;
     }
 
+    // Reuses the controller if it exists so states added by other builders (Attack, ...)
+    // survive an Idle rebuild.
     static AnimatorController BuildController(AnimationClip clip)
     {
-        if (AssetDatabase.LoadAssetAtPath<AnimatorController>(ControllerPath) != null)
-            AssetDatabase.DeleteAsset(ControllerPath);
-        var controller = AnimatorController.CreateAnimatorControllerAtPath(ControllerPath);
-        var state = controller.layers[0].stateMachine.AddState("Idle");
+        var controller = AssetDatabase.LoadAssetAtPath<AnimatorController>(ControllerPath);
+        if (controller == null) controller = AnimatorController.CreateAnimatorControllerAtPath(ControllerPath);
+        var sm = controller.layers[0].stateMachine;
+        AnimatorState state = null;
+        foreach (var cs in sm.states) if (cs.state.name == "Idle") state = cs.state;
+        if (state == null) state = sm.AddState("Idle");
         state.motion = clip;
-        controller.layers[0].stateMachine.defaultState = state;
+        sm.defaultState = state;
+        EditorUtility.SetDirty(controller);
         return controller;
     }
 }
